@@ -393,4 +393,54 @@ final class FirestoreService: ObservableObject {
         let url = try await ref.downloadURL()
         return url.absoluteString
     }
+    
+    // MARK: - Admin Operations
+    
+    /// Unclaim a character so it can be re-selected by someone else.
+    /// The affected user's next `bootstrap()` check will detect the mismatch and bounce them to character select.
+    func unclaimCharacter(characterId: String) async throws {
+        try await db.collection(Collections.users)
+            .document(characterId)
+            .updateData([
+                "claimed": false,
+                "deviceId": NSNull()
+            ])
+    }
+    
+    /// Admin force-unlock: bypasses balance check. Optionally deducts points.
+    /// Uses a batch write (no transaction needed — admin is sole writer).
+    func adminForceUnlockReward(
+        rewardId: String,
+        pointCost: Int,
+        deductPoints: Bool,
+        timelineEvent: TimelineEvent
+    ) async throws {
+        let batch = db.batch()
+        let now = Timestamp(date: Date())
+        
+        // 1. Mark reward unlocked
+        let rewardRef = db.collection(Collections.rewards).document(rewardId)
+        batch.updateData([
+            "isUnlocked": true,
+            "unlockedAt": now
+        ], forDocument: rewardRef)
+        
+        // 2. Update game state
+        let gsRef = db.collection(Collections.gameState).document(Collections.gameStateDoc)
+        var gsUpdate: [String: Any] = [
+            "rewardsUnlocked": FieldValue.increment(Int64(1)),
+            "updatedAt": now
+        ]
+        if deductPoints {
+            gsUpdate["totalPointsSpent"] = FieldValue.increment(Int64(pointCost))
+            gsUpdate["currentPoints"] = FieldValue.increment(Int64(-pointCost))
+        }
+        batch.updateData(gsUpdate, forDocument: gsRef)
+        
+        // 3. Add timeline event
+        let timelineRef = db.collection(Collections.timelineEvents).document()
+        try batch.setData(from: timelineEvent, forDocument: timelineRef)
+        
+        try await batch.commit()
+    }
 }
