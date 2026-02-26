@@ -36,10 +36,11 @@ struct ChallengeDetailView: View {
                     infoSection
                     
                     // Submission area
-                    if !challenge.isCompleted {
-                        submissionSection
-                    } else {
+                    if challenge.isCompleted || viewModel.submitSuccess {
                         completedBanner
+                        proofSection
+                    } else {
+                        submissionSection
                     }
                     
                     // Timeline prompt
@@ -321,6 +322,145 @@ private extension ChallengeDetailView {
                         .stroke(BQDesign.Colors.success.opacity(0.3), lineWidth: 1)
                 )
         )
+    }
+    
+    // MARK: Proof Section
+    @ViewBuilder
+    var proofSection: some View {
+        let type = challenge.proofType ?? challenge.submissionType.rawValue
+        
+        VStack(spacing: BQDesign.Spacing.sm) {
+            Text("Your Proof")
+                .font(BQDesign.Typography.sectionTitle)
+                .foregroundColor(BQDesign.Colors.textPrimary)
+            
+            if type == "photo" {
+                photoProofView
+            } else if type == "text" {
+                textProofView
+            } else {
+                buttonProofView
+            }
+        }
+    }
+    
+    // MARK: Photo Proof
+    var photoProofView: some View {
+        Group {
+            if let localImage = viewModel.previewImage {
+                // Just submitted — use local preview
+                Image(uiImage: localImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
+                    .bqShadow(BQDesign.Shadows.card)
+            } else if let urlString = challenge.proofUrl, let url = URL(string: urlString) {
+                // Reopened — load from Firebase URL
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
+                            .bqShadow(BQDesign.Shadows.card)
+                    case .failure:
+                        proofPlaceholder(icon: "photo", text: "Couldn't load photo")
+                    case .empty:
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 240)
+                            .background(
+                                RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
+                                    .fill(BQDesign.Colors.cardBackground)
+                            )
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                proofPlaceholder(icon: "camera.fill", text: "Photo submitted")
+            }
+        }
+    }
+    
+    // MARK: Text Proof
+    var resolvedProofText: String? {
+        if !viewModel.textProof.isEmpty { return viewModel.textProof }
+        if let pt = challenge.proofText, !pt.isEmpty { return pt }
+        return nil
+    }
+    
+    var textProofView: some View {
+        Group {
+            if let text = resolvedProofText {
+                VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
+                    HStack(spacing: BQDesign.Spacing.xs) {
+                        Image(systemName: "text.quote")
+                            .font(.system(size: 14))
+                            .foregroundColor(BQDesign.Colors.primaryPurple)
+                        Text("Your response")
+                            .font(BQDesign.Typography.caption)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
+                    }
+                    
+                    Text(text)
+                        .font(BQDesign.Typography.body)
+                        .foregroundColor(BQDesign.Colors.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(BQDesign.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
+                        .fill(BQDesign.Colors.cardBackground)
+                )
+                .bqShadow(BQDesign.Shadows.card)
+            } else {
+                proofPlaceholder(icon: "text.cursor", text: "Text submitted")
+            }
+        }
+    }
+    
+    // MARK: Button Proof
+    var buttonProofView: some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Image(systemName: "hand.thumbsup.fill")
+                .font(.system(size: 20))
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+            Text("Verified by friends")
+                .font(BQDesign.Typography.body)
+                .foregroundColor(BQDesign.Colors.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(BQDesign.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
+                .fill(BQDesign.Colors.cardBackground)
+        )
+        .bqShadow(BQDesign.Shadows.card)
+    }
+    
+    // MARK: Proof Placeholder
+    func proofPlaceholder(icon: String, text: String) -> some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundColor(BQDesign.Colors.textTertiary)
+            Text(text)
+                .font(BQDesign.Typography.body)
+                .foregroundColor(BQDesign.Colors.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(BQDesign.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
+                .fill(BQDesign.Colors.cardBackground)
+        )
+        .bqShadow(BQDesign.Shadows.card)
     }
     
     // MARK: Timeline Button

@@ -14,8 +14,6 @@ struct TimelineView: View {
     // Node tap → detail sheets
     @State private var selectedChallenge: Challenge?
     @State private var selectedReward: Reward?
-    @State private var showChallengeDetail = false
-    @State private var showRewardContent = false
     @State private var isLoadingDetail = false
     
     var body: some View {
@@ -61,17 +59,15 @@ struct TimelineView: View {
                 }
             }
         }
-        .sheet(isPresented: $showChallengeDetail) {
-            if let challenge = selectedChallenge {
-                ChallengeDetailView(challenge: challenge, onDismiss: { showChallengeDetail = false })
-                    .environmentObject(session)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.hidden)
-            }
+        .sheet(item: $selectedChallenge) { challenge in
+            ChallengeDetailView(challenge: challenge, onDismiss: { selectedChallenge = nil })
+                .environmentObject(session)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
-        .sheet(isPresented: $showRewardContent) {
-            if let reward = selectedReward, reward.isUnlocked {
-                RewardContentSheet(reward: reward, onDismiss: { showRewardContent = false })
+        .sheet(item: $selectedReward) { reward in
+            if reward.isUnlocked {
+                RewardContentSheet(reward: reward, onDismiss: { selectedReward = nil })
                     .environmentObject(session)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.hidden)
@@ -92,12 +88,10 @@ struct TimelineView: View {
             case .challengeCompleted:
                 if let challenge = try? await FirestoreService.shared.fetchChallenge(byId: event.referenceId) {
                     selectedChallenge = challenge
-                    showChallengeDetail = true
                 }
             case .rewardUnlocked:
                 if let reward = try? await FirestoreService.shared.fetchReward(byId: event.referenceId) {
                     selectedReward = reward
-                    showRewardContent = true
                 }
             }
         }
