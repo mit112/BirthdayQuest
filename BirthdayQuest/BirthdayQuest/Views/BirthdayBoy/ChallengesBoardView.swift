@@ -12,7 +12,7 @@ struct ChallengesBoardView: View {
             ChallengesBackgroundView()
             
             if viewModel.isLoading {
-                ProgressView().tint(BQDesign.Colors.primaryPurple)
+                ChallengesSkeletonView()
             } else if viewModel.regularChallenges.isEmpty {
                 emptyState
             } else {

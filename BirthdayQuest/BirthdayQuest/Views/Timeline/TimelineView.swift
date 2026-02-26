@@ -24,7 +24,7 @@ struct TimelineView: View {
             TimelineBackgroundView()
             
             if viewModel.isLoading {
-                ProgressView().tint(BQDesign.Colors.primaryPurple)
+                TimelineSkeletonView()
             } else {
                 mainContent
             }

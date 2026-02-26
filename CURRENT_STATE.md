@@ -1,11 +1,12 @@
-## Current State (updated Feb 25 — Post all fixes)
+## Current State (updated Feb 25 — Post skeleton loading states)
 
 ### What's Done
-- **ALL 9 CHUNKS + CHUNK 10 COMPLETE.** 45+ Swift files, zero compiler errors.
+- **ALL 9 CHUNKS + CHUNK 10 COMPLETE.** 46+ Swift files, zero compiler errors.
 - Every screen built and functional: Character Select, Rewards Carousel, Challenges Board, Challenge Submission, Secret Challenge Home, Timeline, Profile, Admin Controls.
 - Points system fully working end-to-end.
 - "Check timeline →" heartbeat wired across all flows.
-- DiceBear Micah avatars — all happy (`&mouth=laughing`), Milloni has feminine features, crown overlay for birthday boy.
+- Skeleton loading states on all data screens (shimmer animation, screen-matched ghost layouts).
+- DiceBear Lorelei avatars — local assets per character, crown overlay for birthday boy.
 - App icon: warm gradient crown (light + dark variants) in asset catalog.
 - Launch screen: warm cream background (LaunchBackground color set, wired in pbxproj).
 - Timeline polish: 96px final badge, improved trail opacity, visible empty state dots.
@@ -23,6 +24,7 @@
 - Bundle ID: `com.mitsheth.birthdayquest`
 - Team ID: `3P89U4WZAB`
 - Signing: Automatic
+- Deployment target: iOS 26.0
 
 ### Seeded Content
 - 17 challenges (5 easy @ 25pts, 7 medium @ 50pts, 4 hard @ 75pts, 1 legendary @ 100pts) = 875 total pts
@@ -32,10 +34,10 @@
 - All content editable in Firestore without code changes.
 - DataSeeder checks each collection independently before seeding.
 
-### ⚠️ CRITICAL: Deployment Target
-- Currently set to iOS 26.0 in BOTH project-level build configs (Debug + Release)
-- Must lower to 17.0 in Xcode if friends aren't on iOS 26
-- Lowering may surface compile errors if any iOS 26-only APIs were used — needs testing
+### ⚠️ Content Still Needed
+- Profile personalities (taglines, role badges, fun facts) — in progress
+- Challenge list — being reviewed and expanded
+- Real reward content from friends & family — expected soon
 
 ### Architecture Notes
 - SessionManager.shared is central state hub — all views read points via @EnvironmentObject
@@ -46,6 +48,7 @@
 - ConfettiSwiftUI uses `trigger` parameter (not `counter`)
 - Firestore settings configured in App init BEFORE any Firestore access (crash fix)
 - SubmissionType has safe decoder fallback — unknown values (e.g. old "video" docs) decode as .photo
+- Skeleton loading system: `SkeletonView.swift` contains shimmer modifier + screen-specific ghost layouts (RewardsSkeletonView, ChallengesSkeletonView, TimelineSkeletonView, DossierSkeletonView). Each matches the real screen's card dimensions and layout so the transition from loading → content feels seamless.
 
 ### Before TestFlight Checklist
 - [x] Remove SubmissionType.video from Challenge model + all references
@@ -53,8 +56,9 @@
 - [x] Build VideoPlayerView, AudioPlayerView, TextRewardView components
 - [x] Update RewardContentSheet to use real components instead of placeholders
 - [x] Add AVAudioSession.playback setup in BirthdayQuestApp.swift
-- [ ] Lower deployment target to iOS 17.0 (if needed)
-- [ ] Fix any compile errors from deployment target change
+- [x] Skeleton loading states on all data screens
+- [ ] Populate real profile content (taglines, role badges, fun facts)
+- [ ] Finalize challenge list
 - [ ] Collect real reward content (videos/audio/text from friends & family)
 - [ ] Upload reward content to Firebase Storage `/rewards/{rewardId}/`
 - [ ] Update reward docs in Firestore with real contentUrl and contentType

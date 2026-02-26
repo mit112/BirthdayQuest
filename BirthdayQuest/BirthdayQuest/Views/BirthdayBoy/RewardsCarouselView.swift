@@ -25,8 +25,7 @@ struct RewardsCarouselView: View {
             BQDesign.Colors.background.ignoresSafeArea()
             
             if viewModel.isLoading {
-                ProgressView()
-                    .tint(BQDesign.Colors.primaryPurple)
+                RewardsSkeletonView()
             } else if viewModel.rewards.isEmpty {
                 emptyState
             } else {

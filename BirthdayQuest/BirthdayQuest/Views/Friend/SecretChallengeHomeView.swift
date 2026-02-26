@@ -26,8 +26,8 @@ struct SecretChallengeHomeView: View {
                         .opacity(appeared ? 1 : 0)
                     
                     if viewModel.isLoading {
-                        ProgressView().tint(BQDesign.Colors.secretAccent)
-                            .padding(.top, BQDesign.Spacing.xxl)
+                        DossierSkeletonView()
+                            .padding(.top, BQDesign.Spacing.md)
                     } else {
                         // The dossier card
                         dossierCard
