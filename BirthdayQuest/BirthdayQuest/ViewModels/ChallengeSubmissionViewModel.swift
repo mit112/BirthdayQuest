@@ -14,7 +14,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     @Published var selectedPhoto: PhotosPickerItem?
     @Published var selectedImageData: Data?
     @Published var previewImage: UIImage?
-    @Published var selectedVideoData: Data?
+
     @Published var isSubmitting = false
     @Published var submitSuccess = false
     @Published var showTimelinePrompt = false
@@ -34,8 +34,6 @@ final class ChallengeSubmissionViewModel: ObservableObject {
         switch challenge.submissionType {
         case .photo:
             return selectedImageData != nil
-        case .video:
-            return selectedVideoData != nil
         case .text:
             return !textProof.trimmingCharacters(in: .whitespaces).isEmpty
         case .button:
@@ -76,11 +74,6 @@ final class ChallengeSubmissionViewModel: ObservableObject {
                     let compressed = compressImage(data)
                     proofUrl = try await uploadProof(data: compressed, ext: "jpg", challengeId: challengeId)
                     proofType = "photo"
-                }
-            case .video:
-                if let data = selectedVideoData {
-                    proofUrl = try await uploadProof(data: data, ext: "mov", challengeId: challengeId)
-                    proofType = "video"
                 }
             case .text:
                 proofText = textProof.trimmingCharacters(in: .whitespaces)
@@ -149,17 +142,5 @@ final class ChallengeSubmissionViewModel: ObservableObject {
         }
         return compressed ?? data
     }
-    
-    // MARK: - Video Selection
-    
-    func handleVideoSelection() async {
-        guard let item = selectedPhoto else { return }
-        do {
-            if let data = try await item.loadTransferable(type: Data.self) {
-                selectedVideoData = data
-            }
-        } catch {
-            print("❌ Video load error: \(error.localizedDescription)")
-        }
-    }
+
 }

@@ -26,7 +26,7 @@ final class ChallengesViewModel: ObservableObject {
     
     var completedCount: Int {
         regularChallenges.filter(\.isCompleted).count
-    }
+    }   
     
     var totalRegular: Int {
         regularChallenges.count

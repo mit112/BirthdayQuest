@@ -10,6 +10,7 @@ struct TimelineNodeView: View {
     let isNew: Bool
     let index: Int
     let totalCount: Int
+    var onTap: (() -> Void)? = nil
     
     @State private var appeared = false
     @State private var badgePop = false
@@ -69,6 +70,11 @@ struct TimelineNodeView: View {
                     .foregroundColor(BQDesign.Colors.textTertiary)
                     .opacity(appeared ? 1 : 0)
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            BQDesign.Haptics.selection()
+            onTap?()
         }
         .onAppear { animateEntrance() }
     }

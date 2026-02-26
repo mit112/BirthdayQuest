@@ -15,6 +15,7 @@ struct StatCard: View {
         VStack(spacing: 8) {
             Text(icon)
                 .font(.system(size: 26))
+                .foregroundColor(color)
             
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .rounded))

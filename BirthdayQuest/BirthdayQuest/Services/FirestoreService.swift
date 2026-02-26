@@ -373,6 +373,18 @@ final class FirestoreService: ObservableObject {
             ])
     }
     
+    // MARK: - Fetch by ID
+    
+    func fetchChallenge(byId id: String) async throws -> Challenge? {
+        let doc = try await db.collection(Collections.challenges).document(id).getDocument()
+        return try? doc.data(as: Challenge.self)
+    }
+    
+    func fetchReward(byId id: String) async throws -> Reward? {
+        let doc = try await db.collection(Collections.rewards).document(id).getDocument()
+        return try? doc.data(as: Reward.self)
+    }
+    
     // MARK: - Storage Upload
     
     func uploadProofData(_ data: Data, path: String) async throws -> String {

@@ -29,12 +29,12 @@ struct CharacterCardView: View {
             // Avatar Platform
             ZStack {
                 // Large ambient glow
-                if isSelected && !isClaimed {
+                if isSelected {
                     ambientGlow
                 }
                 
                 // Decorative orbit ring
-                if isSelected && !isClaimed {
+                if isSelected {
                     orbitRing
                 }
                 
@@ -105,10 +105,8 @@ struct CharacterCardView: View {
         }
         
         // Ring rotation
-        if !isClaimed {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
-                ringRotation = 360
-            }
+        withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
+            ringRotation = 360
         }
     }
 }
@@ -193,22 +191,18 @@ private extension CharacterCardView {
                 showCrown: true
             )
             
-            // Claimed overlay
+            // Claimed indicator — small lock badge in bottom-right, avatar stays visible
             if isClaimed {
-                Circle()
-                    .fill(Color.black.opacity(0.55))
-                    .frame(width: 142, height: 142)
-                
-                // Glass lock badge
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 30, height: 30)
                     
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white.opacity(0.85))
                 }
+                .offset(x: 50, y: 50)
             }
         }
         .shadow(color: accentColor.opacity(isSelected ? 0.3 : 0.1), radius: 16, y: 6)

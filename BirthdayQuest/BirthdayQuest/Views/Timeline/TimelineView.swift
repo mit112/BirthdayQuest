@@ -11,6 +11,13 @@ struct TimelineView: View {
     @State private var crownBounce = false
     @State private var scrollOffset: CGFloat = 0
     
+    // Node tap → detail sheets
+    @State private var selectedChallenge: Challenge?
+    @State private var selectedReward: Reward?
+    @State private var showChallengeDetail = false
+    @State private var showRewardContent = false
+    @State private var isLoadingDetail = false
+    
     var body: some View {
         ZStack {
             // Layer 1 & 2: Living gradient + bokeh + sparkles
@@ -51,6 +58,46 @@ struct TimelineView: View {
                             scrollProxy?.scrollTo(lastId, anchor: .center)
                         }
                     }
+                }
+            }
+        }
+        .sheet(isPresented: $showChallengeDetail) {
+            if let challenge = selectedChallenge {
+                ChallengeDetailView(challenge: challenge, onDismiss: { showChallengeDetail = false })
+                    .environmentObject(session)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+            }
+        }
+        .sheet(isPresented: $showRewardContent) {
+            if let reward = selectedReward, reward.isUnlocked {
+                RewardContentSheet(reward: reward, onDismiss: { showRewardContent = false })
+                    .environmentObject(session)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+            }
+        }
+    }
+    
+    // MARK: - Node Tap Handler
+    
+    private func handleNodeTap(_ event: TimelineEvent) {
+        guard !isLoadingDetail else { return }
+        isLoadingDetail = true
+        
+        Task {
+            defer { isLoadingDetail = false }
+            
+            switch event.type {
+            case .challengeCompleted:
+                if let challenge = try? await FirestoreService.shared.fetchChallenge(byId: event.referenceId) {
+                    selectedChallenge = challenge
+                    showChallengeDetail = true
+                }
+            case .rewardUnlocked:
+                if let reward = try? await FirestoreService.shared.fetchReward(byId: event.referenceId) {
+                    selectedReward = reward
+                    showRewardContent = true
                 }
             }
         }
@@ -142,7 +189,8 @@ private extension TimelineView {
                         event: event,
                         isNew: viewModel.isNewEvent(event),
                         index: index,
-                        totalCount: viewModel.events.count
+                        totalCount: viewModel.events.count,
+                        onTap: { handleNodeTap(event) }
                     )
                     .id(event.id)
                     .padding(.leading, padding.leading)

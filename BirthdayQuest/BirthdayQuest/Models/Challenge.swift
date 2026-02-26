@@ -5,14 +5,12 @@ import FirebaseFirestore
 
 enum SubmissionType: String, Codable, CaseIterable {
     case photo
-    case video
     case text
     case button
     
     var icon: String {
         switch self {
         case .photo: return "camera.fill"
-        case .video: return "video.fill"
         case .text: return "text.cursor"
         case .button: return "checkmark.circle.fill"
         }
@@ -21,10 +19,15 @@ enum SubmissionType: String, Codable, CaseIterable {
     var label: String {
         switch self {
         case .photo: return "Photo"
-        case .video: return "Video"
         case .text: return "Text"
         case .button: return "Done"
         }
+    }
+    
+    // Graceful fallback: any old "video" docs in Firestore decode as photo
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = SubmissionType(rawValue: value) ?? .photo
     }
 }
 

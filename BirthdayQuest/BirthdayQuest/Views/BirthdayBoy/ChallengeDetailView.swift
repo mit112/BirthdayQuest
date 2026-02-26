@@ -72,13 +72,7 @@ struct ChallengeDetailView: View {
             if success { confettiTrigger += 1 }
         }
         .onChange(of: viewModel.selectedPhoto) { _, _ in
-            Task {
-                if challenge.submissionType == .video {
-                    await viewModel.handleVideoSelection()
-                } else {
-                    await viewModel.handlePhotoSelection()
-                }
-            }
+            Task { await viewModel.handlePhotoSelection() }
         }
         .alert("Oops", isPresented: $viewModel.showError) {
             Button("OK", role: .cancel) {}
@@ -190,8 +184,6 @@ private extension ChallengeDetailView {
             switch challenge.submissionType {
             case .photo:
                 photoSubmission
-            case .video:
-                videoSubmission
             case .text:
                 textSubmission
             case .button:
@@ -220,48 +212,6 @@ private extension ChallengeDetailView {
                     Image(systemName: viewModel.previewImage != nil ? "arrow.triangle.2.circlepath" : challenge.submissionType.icon)
                         .font(.system(size: 16))
                     Text(viewModel.previewImage != nil ? "Choose Different" : "Select \(challenge.submissionType.label)")
-                        .font(BQDesign.Typography.bodyBold)
-                }
-                .foregroundColor(BQDesign.Colors.primaryPurple)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(
-                    RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                        .stroke(BQDesign.Colors.primaryPurple, lineWidth: 1.5)
-                )
-            }
-            
-            submitButton
-        }
-    }
-    
-    // MARK: Video Submission
-    var videoSubmission: some View {
-        VStack(spacing: BQDesign.Spacing.md) {
-            if viewModel.selectedVideoData != nil {
-                HStack(spacing: BQDesign.Spacing.sm) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(BQDesign.Colors.success)
-                    Text("Video selected")
-                        .font(BQDesign.Typography.body)
-                        .foregroundColor(BQDesign.Colors.textPrimary)
-                }
-                .padding(BQDesign.Spacing.md)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                        .fill(BQDesign.Colors.success.opacity(0.1))
-                )
-            }
-            
-            PhotosPicker(
-                selection: $viewModel.selectedPhoto,
-                matching: .videos
-            ) {
-                HStack(spacing: BQDesign.Spacing.sm) {
-                    Image(systemName: viewModel.selectedVideoData != nil ? "arrow.triangle.2.circlepath" : "video.fill")
-                        .font(.system(size: 16))
-                    Text(viewModel.selectedVideoData != nil ? "Choose Different" : "Select Video")
                         .font(BQDesign.Typography.bodyBold)
                 }
                 .foregroundColor(BQDesign.Colors.primaryPurple)

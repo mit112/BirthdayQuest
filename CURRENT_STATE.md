@@ -1,25 +1,34 @@
-## Current State (updated Feb 25 — Post Chunk 9, Pre-Content)
+## Current State (updated Feb 25 — Post all fixes)
 
 ### What's Done
-- **ALL 9 CHUNKS COMPLETE.** 39+ Swift files, zero compiler errors.
+- **ALL 9 CHUNKS + CHUNK 10 COMPLETE.** 45+ Swift files, zero compiler errors.
 - Every screen built and functional: Character Select, Rewards Carousel, Challenges Board, Challenge Submission, Secret Challenge Home, Timeline, Profile, Admin Controls.
 - Points system fully working end-to-end.
 - "Check timeline →" heartbeat wired across all flows.
-- DiceBear Micah avatars with crown overlay for birthday boy.
+- DiceBear Micah avatars — all happy (`&mouth=laughing`), Milloni has feminine features, crown overlay for birthday boy.
 - App icon: warm gradient crown (light + dark variants) in asset catalog.
 - Launch screen: warm cream background (LaunchBackground color set, wired in pbxproj).
 - Timeline polish: 96px final badge, improved trail opacity, visible empty state dots.
+- Timeline nodes are tappable → opens challenge detail or reward content sheet.
 - Testing shortcuts reverted (0 TODOs remaining).
+- Video submission fully removed from challenges (code + Firestore).
+- Reward content players built: VideoPlayerView, AudioPlayerView (with scrubbing/skip), TextRewardView.
+- RewardContentSheet wired to real media players.
+- AVAudioSession.playback configured in app init.
+- Infinite looping rewards carousel with centered cards.
+- Points stat icon color fixed (was invisible white on white).
+- Points update bug fixed (no duplicate gameState listeners).
+- Timeline scroll on reward unlock fixed (matching challenge behavior).
+- PIN override system: universal PIN `0228` for claimed characters.
 - Bundle ID: `com.mitsheth.birthdayquest`
 - Team ID: `3P89U4WZAB`
 - Signing: Automatic
 
 ### Seeded Content
 - 17 challenges (5 easy @ 25pts, 7 medium @ 50pts, 4 hard @ 75pts, 1 legendary @ 100pts) = 875 total pts
-- ⚠️ 6 challenges still have `submissionType: "video"` — need changing to `"photo"` (code + Firestore)
+- ✅ All challenges use photo/text/button submission (no video anywhere)
 - 7 placeholder rewards (Mit, Kashish, Gaurav, Milloni, Mom, Dad, Family) = 800 total cost
 - Reward content is placeholder text — real videos/audio/messages TBD from friends & family
-- RewardContentSheet has placeholders for video/audio — real players not yet built
 - All content editable in Firestore without code changes.
 - DataSeeder checks each collection independently before seeding.
 
@@ -36,22 +45,14 @@
 - FieldValue.serverTimestamp() is BANNED — use Timestamp(date: Date()) everywhere
 - ConfettiSwiftUI uses `trigger` parameter (not `counter`)
 - Firestore settings configured in App init BEFORE any Firestore access (crash fix)
-
-### Next Implementation (IMPLEMENTATION_PLAN.md)
-- **Part 1:** Remove video submission from challenges (SubmissionType.video → all become .photo)
-- **Part 2:** Build real reward content playback:
-  - VideoPlayerView (AVPlayer from AVKit, auto-play, loading states)
-  - AudioPlayerView (custom UI, waveform progress, AVPlayer for remote URLs)
-  - TextRewardView (warm card, decorative quotes, scrollable)
-- Store HTTPS download URLs directly in Firestore `contentUrl` (not gs:// paths)
-- ~2 hours coding, zero risk to existing screens
+- SubmissionType has safe decoder fallback — unknown values (e.g. old "video" docs) decode as .photo
 
 ### Before TestFlight Checklist
-- [ ] Remove SubmissionType.video from Challenge model + all references
-- [ ] Update 6 seeded challenges from "video" to "photo" submissionType
-- [ ] Build VideoPlayerView, AudioPlayerView, TextRewardView components
-- [ ] Update RewardContentSheet to use real components instead of placeholders
-- [ ] Add AVAudioSession.playback setup in BirthdayQuestApp.swift
+- [x] Remove SubmissionType.video from Challenge model + all references
+- [x] Update 6 seeded challenges from "video" to "photo" submissionType in Firestore
+- [x] Build VideoPlayerView, AudioPlayerView, TextRewardView components
+- [x] Update RewardContentSheet to use real components instead of placeholders
+- [x] Add AVAudioSession.playback setup in BirthdayQuestApp.swift
 - [ ] Lower deployment target to iOS 17.0 (if needed)
 - [ ] Fix any compile errors from deployment target change
 - [ ] Collect real reward content (videos/audio/text from friends & family)
@@ -74,10 +75,10 @@
 - Project root: `/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/`
 - Source code: `/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/BirthdayQuest/`
 - Models: `Models/` (User.swift, Reward.swift, Challenge.swift, TimelineEvent.swift, GameState.swift)
-- Services: `Services/` (FirestoreService.swift, SessionManager.swift, DataSeeder.swift, StorageService.swift)
+- Services: `Services/` (FirestoreService.swift, SessionManager.swift, DataSeeder.swift)
 - ViewModels: `ViewModels/` (one per major screen)
 - Views: `Views/` (CharacterSelect/, BirthdayBoy/, Friend/, Timeline/, Profile/, Components/)
-- Design System: `Design/BQDesign.swift`
+- Design System: `DesignSystem.swift` (BQDesign namespace)
 - Assets: `Assets.xcassets/` (AppIcon, LaunchBackground, AccentColor)
 
 ### Build Command

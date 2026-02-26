@@ -1,8 +1,8 @@
 import SwiftUI
 
 // MARK: - DiceBear Avatar View
-// Loads unique illustrated avatars from DiceBear's Micah style API.
-// Each character gets a consistent avatar based on their name as seed.
+// Loads unique illustrated avatars from DiceBear's Open Peeps style API.
+// Each character gets a hand-tuned avatar with unique features.
 
 struct AvatarView: View {
     let name: String
@@ -10,38 +10,110 @@ struct AvatarView: View {
     var isBirthdayBoy: Bool = false
     var showCrown: Bool = false
     
-    // DiceBear Micah style — colorful, playful, Duolingo-like
+    // MARK: - Per-Character Avatar Configuration
+    // Open Peeps by Pablo Stanley — hand-drawn, expressive, great variety
+    // Milloni uses a custom Lorelei asset; others use DiceBear Open Peeps
+    
+    // Local asset override — used when a custom illustration is provided
+    private var localAssetName: String? {
+        switch name.lowercased() {
+        case "aaryan": return "avatar-aaryan"
+        case "mit": return "avatar-mit"
+        case "kashish": return "avatar-kashish"
+        case "gaurav": return "avatar-gaurav"
+        case "milloni": return "avatar-milloni"
+        default: return nil
+        }
+    }
+    
     private var avatarURL: URL? {
         let seed = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         let pixelSize = Int(size * 2) // 2x for retina
-        return URL(string: "https://api.dicebear.com/9.x/micah/png?seed=\(seed)&size=\(pixelSize)")
+        var urlString = "https://api.dicebear.com/9.x/open-peeps/png?seed=\(seed)&size=\(pixelSize)"
+        
+        // Per-character customization
+        switch name.lowercased() {
+        case "aaryan":
+            // Birthday King: beard + warm skin
+            urlString += "&skinColor=9e5622"
+            urlString += "&facialHairProbability=100&facialHair=full"
+            urlString += "&face=smile"
+            urlString += "&accessoriesProbability=0"
+            
+        case "mit":
+            // The Mastermind: glasses
+            urlString += "&skinColor=ecad80"
+            urlString += "&facialHairProbability=0"
+            urlString += "&accessoriesProbability=100&accessories=glasses,glasses2,glasses3,glasses4,glasses5"
+            urlString += "&face=smile"
+            
+        case "milloni":
+            // Blue-haired chaos
+            urlString += "&skinColor=f2d3b1"
+            urlString += "&facialHairProbability=0"
+            urlString += "&accessoriesProbability=0"
+            urlString += "&face=smile"
+            urlString += "&clothingColor=fc909f"
+            
+        case "kashish":
+            // Clean masculine look — headphones guy
+            urlString += "&skinColor=ecad80"
+            urlString += "&facialHairProbability=0"
+            urlString += "&accessoriesProbability=0"
+            urlString += "&face=smile"
+            urlString += "&clothingColor=ffeba4"
+            
+        case "gaurav":
+            // Clean & simple: warm skin, dark hair
+            urlString += "&skinColor=9e5622"
+            urlString += "&facialHairProbability=0"
+            urlString += "&accessoriesProbability=0"
+            urlString += "&face=smile"
+            urlString += "&clothingColor=77311d"
+            
+        default:
+            break
+        }
+        
+        return URL(string: urlString)
     }
     
     var body: some View {
         ZStack {
-            AsyncImage(url: avatarURL, transaction: Transaction(animation: .easeIn(duration: 0.3))) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    fallbackEmoji
-                case .empty:
-                    ProgressView()
-                        .tint(isBirthdayBoy ? BQDesign.Colors.gold : BQDesign.Colors.primaryPurple)
-                @unknown default:
-                    fallbackEmoji
+            if let assetName = localAssetName {
+                // Local custom avatar (e.g. Milloni's Lorelei illustration)
+                Image(assetName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                // DiceBear remote avatar
+                AsyncImage(url: avatarURL, transaction: Transaction(animation: .easeIn(duration: 0.3))) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        fallbackEmoji
+                    case .empty:
+                        ProgressView()
+                            .tint(isBirthdayBoy ? BQDesign.Colors.gold : BQDesign.Colors.primaryPurple)
+                    @unknown default:
+                        fallbackEmoji
+                    }
                 }
+                .frame(width: size, height: size)
+                .clipShape(Circle())
             }
-            .frame(width: size, height: size)
-            .clipShape(Circle())
             
-            // Crown overlay for birthday boy
+            // Crown overlay for birthday boy — sits on top of the circle ring, tilted for fun
             if showCrown && isBirthdayBoy {
                 Text("👑")
-                    .font(.system(size: size * 0.3))
-                    .offset(y: -(size * 0.42))
+                    .font(.system(size: size * 0.4))
+                    .rotationEffect(.degrees(-15))
+                    .offset(x: -(size * 0.08), y: -(size * 0.55))
             }
         }
     }
