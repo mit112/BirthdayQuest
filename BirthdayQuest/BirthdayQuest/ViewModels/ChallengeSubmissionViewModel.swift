@@ -10,6 +10,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     // MARK: - Published
     
     @Published var challenge: Challenge
+    @Published var selectedSubmissionType: SubmissionType = .photo
     @Published var textProof: String = ""
     @Published var selectedPhoto: PhotosPickerItem?
     @Published var selectedImageData: Data?
@@ -31,7 +32,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     
     var canSubmit: Bool {
         guard !isSubmitting, !challenge.isCompleted else { return false }
-        switch challenge.submissionType {
+        switch selectedSubmissionType {
         case .photo:
             return selectedImageData != nil
         case .text:
@@ -68,7 +69,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
             var proofType: String? = nil
             var proofText: String? = nil
             
-            switch challenge.submissionType {
+            switch selectedSubmissionType {
             case .photo:
                 if let data = selectedImageData {
                     let compressed = compressImage(data)

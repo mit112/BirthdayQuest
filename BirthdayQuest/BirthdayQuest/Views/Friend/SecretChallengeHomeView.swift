@@ -147,43 +147,6 @@ private extension SecretChallengeHomeView {
                     .disabled(!viewModel.isEditable)
             }
             
-            // Submission type picker
-            VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
-                Text("PROOF REQUIRED")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.4))
-                
-                HStack(spacing: BQDesign.Spacing.sm) {
-                    ForEach(SubmissionType.allCases, id: \.self) { type in
-                        Button {
-                            viewModel.submissionType = type
-                            BQDesign.Haptics.selection()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: type.icon)
-                                    .font(.system(size: 12))
-                                Text(type.label)
-                                    .font(BQDesign.Typography.captionSmall)
-                            }
-                            .foregroundColor(
-                                viewModel.submissionType == type
-                                ? .white : .white.opacity(0.5)
-                            )
-                            .padding(.horizontal, BQDesign.Spacing.sm)
-                            .padding(.vertical, BQDesign.Spacing.xs + 2)
-                            .background(
-                                Capsule().fill(
-                                    viewModel.submissionType == type
-                                    ? BQDesign.Colors.secretAccent.opacity(0.4)
-                                    : Color.white.opacity(0.08)
-                                )
-                            )
-                        }
-                        .disabled(!viewModel.isEditable)
-                    }
-                }
-            }
-            
             // Point value picker
             VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
                 Text("REWARD POINTS")

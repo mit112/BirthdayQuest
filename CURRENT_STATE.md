@@ -1,4 +1,4 @@
-## Current State (updated Feb 25 — Post skeleton loading states)
+## Current State (updated Feb 26 — Post challenge system overhaul)
 
 ### What's Done
 - **ALL 9 CHUNKS + CHUNK 10 COMPLETE.** 46+ Swift files, zero compiler errors.
@@ -21,23 +21,34 @@
 - Points update bug fixed (no duplicate gameState listeners).
 - Timeline scroll on reward unlock fixed (matching challenge behavior).
 - PIN override system: universal PIN `0228` for claimed characters.
+- **Challenge system overhaul (Feb 26):**
+  - Removed hardcoded `submissionType` from Challenge model entirely.
+  - Every challenge now shows **universal 3-option submission** (photo / text / completed) via a tab picker in ChallengeDetailView.
+  - Added **2-in-1 challenge support**: `optionBTitle` + `optionBDescription` fields on Challenge model. Detail view shows Option A / Option B toggle that swaps title + description. 4 challenges use this.
+  - Removed submission type picker from Secret Challenge creation (friends no longer choose a type).
+  - Challenge card metadata row shows orange ⚡ "2-in-1" badge for dual-option challenges.
+  - Seed data replaced with final 12-challenge list from CHALLENGES.md (3 easy, 6 medium, 2 hard, 1 legendary = 12 total, 635 total pts).
+  - Fixed Kashish's pronoun in reward teaser ("He" not "She").
 - Bundle ID: `com.mitsheth.birthdayquest`
 - Team ID: `3P89U4WZAB`
 - Signing: Automatic
 - Deployment target: iOS 26.0
 
 ### Seeded Content
-- 17 challenges (5 easy @ 25pts, 7 medium @ 50pts, 4 hard @ 75pts, 1 legendary @ 100pts) = 875 total pts
-- ✅ All challenges use photo/text/button submission (no video anywhere)
+- 12 challenges (3 easy @ 35pts, 6 medium @ 50-60pts, 2 hard @ 75pts, 1 legendary @ 100pts) = 635 total pts from regular challenges
+- 4 of 12 are 2-in-1 challenges (Blind Menu Roulette, Stranger Photo, Karaoke Roulette, Letter/Time Capsule)
+- + up to 4 secret challenges from friends (25-100 pts each) = ~100-400 pts additional
+- Grand total available: ~735-1035 pts
+- ✅ All challenges use universal submission (photo/text/completed — no hardcoded type)
 - 7 placeholder rewards (Mit, Kashish, Gaurav, Milloni, Mom, Dad, Family) = 800 total cost
 - Reward content is placeholder text — real videos/audio/messages TBD from friends & family
 - All content editable in Firestore without code changes.
 - DataSeeder checks each collection independently before seeding.
 
 ### ⚠️ Content Still Needed
-- Profile personalities (taglines, role badges, fun facts) — in progress
-- Challenge list — being reviewed and expanded
 - Real reward content from friends & family — expected soon
+- Challenge list personalization (inside jokes, specific photos to recreate, etc.)
+- ⚠️ **Must wipe existing Firestore challenges** for new seed data to take effect (DataSeeder skips if non-secret challenges already exist)
 
 ### Architecture Notes
 - SessionManager.shared is central state hub — all views read points via @EnvironmentObject
@@ -47,22 +58,24 @@
 - FieldValue.serverTimestamp() is BANNED — use Timestamp(date: Date()) everywhere
 - ConfettiSwiftUI uses `trigger` parameter (not `counter`)
 - Firestore settings configured in App init BEFORE any Firestore access (crash fix)
-- SubmissionType has safe decoder fallback — unknown values (e.g. old "video" docs) decode as .photo
+- `submissionType` field is **gone** from Challenge model. Old Firestore docs with this field are silently ignored (not in CodingKeys). The `SubmissionType` enum still exists — used by `ChallengeSubmissionViewModel.selectedSubmissionType` for the UI picker.
+- 2-in-1 challenges: `optionBTitle` and `optionBDescription` are optional fields. Custom `init(from decoder:)` defaults them to nil so existing Firestore docs without these fields decode fine.
 - Skeleton loading system: `SkeletonView.swift` contains shimmer modifier + screen-specific ghost layouts (RewardsSkeletonView, ChallengesSkeletonView, TimelineSkeletonView, DossierSkeletonView). Each matches the real screen's card dimensions and layout so the transition from loading → content feels seamless.
 
 ### Before TestFlight Checklist
 - [x] Remove SubmissionType.video from Challenge model + all references
-- [x] Update 6 seeded challenges from "video" to "photo" submissionType in Firestore
 - [x] Build VideoPlayerView, AudioPlayerView, TextRewardView components
 - [x] Update RewardContentSheet to use real components instead of placeholders
 - [x] Add AVAudioSession.playback setup in BirthdayQuestApp.swift
 - [x] Skeleton loading states on all data screens
-- [ ] Populate real profile content (taglines, role badges, fun facts)
-- [ ] Finalize challenge list
+- [x] Remove hardcoded submissionType — universal 3-option submission
+- [x] Build 2-in-1 card UI for dual-option challenges
+- [x] Replace seed data with final 12-challenge list from CHALLENGES.md
+- [ ] **Wipe Firestore challenges collection** so new seed data takes effect
 - [ ] Collect real reward content (videos/audio/text from friends & family)
 - [ ] Upload reward content to Firebase Storage `/rewards/{rewardId}/`
 - [ ] Update reward docs in Firestore with real contentUrl and contentType
-- [ ] Review/edit the 17 challenges in Firestore
+- [ ] Personalize challenge descriptions with inside jokes
 - [ ] Test video/audio playback on real device (Simulator has AVPlayer quirks)
 - [ ] Archive → Distribute → TestFlight Internal Testing
 - [ ] Add 4 friends as internal testers in App Store Connect

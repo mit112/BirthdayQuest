@@ -5,39 +5,16 @@ Two changes: (1) Remove video upload from challenge submissions, (2) Build real 
 
 ---
 
-## Part 1: Remove Video Upload from Challenges
+## Part 1: Remove Video Upload + Challenge System Overhaul ✅ COMPLETE (Feb 26)
 
-**Why:** iPhone videos are 100-500MB. Upload on cellular is unreliable, slow, and burns through Firebase free tier storage. All challenges can use photo proof instead.
+Video upload was removed earlier. On Feb 26, the entire `submissionType` system was replaced:
+- `submissionType` field removed from Challenge model entirely
+- Every challenge now shows a universal 3-option tab picker (Photo / Text / Done)
+- 2-in-1 challenge support added (`optionBTitle` + `optionBDescription`)
+- Seed data replaced with final 12-challenge list from CHALLENGES.md
+- Secret Challenge creation simplified (no type picker)
 
-**Scope:** Surgical removal — no new features, just cleanup.
-
-### Files to modify:
-
-**1. `Models/Challenge.swift` — SubmissionType enum**
-- Remove `case video` from `SubmissionType`
-- Remove its `icon` and `label` switch cases
-- This is the source of truth — removing the case will surface compiler errors everywhere it's referenced, making cleanup safe
-
-**2. `DataSeeder.swift` — Seed challenges**
-- Change all challenges that currently have `"submissionType": "video"` to `"photo"`
-- Affected challenges: "Subway Serenade", "Shot Caller", "Street Food Roulette", "The Negotiator", "Karaoke King", "The Birthday Speech"
-- 6 challenges total need updating
-
-**3. `ViewModels/ChallengeSubmissionViewModel.swift`**
-- Remove `case .video` from `canSubmit` switch
-- Remove `case .video` from `submit()` switch
-- The photo picker logic stays untouched since video was already using the photo path as a fallback
-
-**4. `Views/BirthdayBoy/ChallengeDetailView.swift`**
-- In `submissionSection`, the `case .photo, .video:` combined case becomes just `case .photo:`
-- In `photoSubmission`, the PhotosPicker matching filter `challenge.submissionType == .video ? .videos : .images` simplifies to just `.images`
-- No other changes needed — the UI already handles photo submission cleanly
-
-**5. Firestore cleanup (if already seeded)**
-- If challenges have been seeded to Firestore, update the 6 documents that have `submissionType: "video"` → `"photo"`
-- Or wipe and re-seed (since Firestore is empty per current state, this may not be needed)
-
-**Risk:** Zero. Video was never properly implemented for challenge uploads anyway — it was falling through to the photo path. This just removes dead code.
+See CHALLENGES.md and CURRENT_STATE.md for full details.
 
 ---
 
@@ -154,15 +131,13 @@ All three content viewers follow BQDesign system:
 
 ## Implementation Order
 
-1. **Remove video from challenges** (15 min) — quick, safe, no dependencies
-2. **Build TextRewardView** (20 min) — simplest, no AVFoundation needed
-3. **Build AudioPlayerView** (45 min) — AVPlayer + custom UI + progress tracking
-4. **Build VideoPlayerView** (30 min) — AVKit VideoPlayer + loading states
-5. **Update RewardContentSheet** (15 min) — swap placeholders for real components
-6. **Add AVAudioSession setup** (5 min) — one line in BirthdayQuestApp.swift
-7. **Test with real content** — once you provide the files
-
-Total estimated effort: ~2 hours of focused coding
+1. ~~**Remove video from challenges**~~ ✅ DONE
+2. ~~**Build TextRewardView**~~ ✅ DONE
+3. ~~**Build AudioPlayerView**~~ ✅ DONE
+4. ~~**Build VideoPlayerView**~~ ✅ DONE
+5. ~~**Update RewardContentSheet**~~ ✅ DONE
+6. ~~**Add AVAudioSession setup**~~ ✅ DONE
+7. **Test with real content** — once content is provided
 
 ---
 
@@ -188,8 +163,12 @@ Total estimated effort: ~2 hours of focused coding
 
 ## Pre-Flight Checklist (before TestFlight)
 
-- [ ] All `submissionType: "video"` removed from challenge seed data
-- [ ] SubmissionType.video case removed from enum
+- [x] All `submissionType: "video"` removed from challenge seed data
+- [x] SubmissionType.video case removed from enum
+- [x] Hardcoded submissionType removed entirely — universal 3-option picker
+- [x] 2-in-1 challenge UI built
+- [x] Seed data replaced with final 12-challenge list
+- [ ] **Wipe Firestore challenges collection** so new seed data takes effect
 - [ ] All reward content uploaded to Firebase Storage
 - [ ] All Firestore reward docs updated with real contentType + contentUrl/contentText
 - [ ] Video playback tested on real device (Simulator has quirks with AVPlayer)

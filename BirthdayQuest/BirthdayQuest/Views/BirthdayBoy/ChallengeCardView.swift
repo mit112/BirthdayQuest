@@ -161,15 +161,19 @@ private extension ChallengeCardView {
             }
             .foregroundColor(Color(hex: challenge.difficulty.color))
             
-            // Submission type icon
+            // 2-in-1 badge or completion indicator
             if isCompleted {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 10))
                     .foregroundColor(BQDesign.Colors.success.opacity(0.6))
-            } else {
-                Image(systemName: challenge.submissionType.icon)
-                    .font(.system(size: 10))
-                    .foregroundColor(BQDesign.Colors.textTertiary)
+            } else if challenge.isTwoInOne {
+                HStack(spacing: 2) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 8))
+                    Text("2-in-1")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(BQDesign.Colors.primaryOrange)
             }
         }
         .padding(.top, 2)

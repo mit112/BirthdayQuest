@@ -10,6 +10,7 @@ struct ChallengeDetailView: View {
     @EnvironmentObject private var session: SessionManager
     @StateObject private var viewModel: ChallengeSubmissionViewModel
     @State private var confettiTrigger = 0
+    @State private var selectedOption: Int = 0 // For 2-in-1: 0 = option A, 1 = option B
     
     init(challenge: Challenge, onDismiss: @escaping () -> Void) {
         self.challenge = challenge
@@ -31,6 +32,11 @@ struct ChallengeDetailView: View {
                     
                     // Hero illustration
                     challengeHero
+                    
+                    // 2-in-1 option picker (if applicable)
+                    if challenge.isTwoInOne {
+                        twoInOnePicker
+                    }
                     
                     // Info section
                     infoSection
@@ -102,20 +108,88 @@ private extension ChallengeDetailView {
         .padding(.top, BQDesign.Spacing.md)
     }
     
+    // MARK: 2-in-1 Option Picker
+    var twoInOnePicker: some View {
+        VStack(spacing: BQDesign.Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(BQDesign.Colors.primaryOrange)
+                Text("2-in-1 Challenge")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(BQDesign.Colors.primaryOrange)
+            }
+            
+            HStack(spacing: 10) {
+                optionTab(label: "Option A", index: 0)
+                optionTab(label: "Option B", index: 1)
+            }
+        }
+    }
+    
+    func optionTab(label: String, index: Int) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                selectedOption = index
+            }
+            BQDesign.Haptics.selection()
+        } label: {
+            Text(label)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(selectedOption == index ? .white : BQDesign.Colors.textSecondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(
+                    RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
+                        .fill(selectedOption == index
+                              ? AnyShapeStyle(BQDesign.Colors.primaryGradient)
+                              : AnyShapeStyle(BQDesign.Colors.cardBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
+                        .stroke(
+                            selectedOption == index
+                            ? Color.clear
+                            : BQDesign.Colors.textTertiary.opacity(0.2),
+                            lineWidth: 1
+                        )
+                )
+        }
+    }
+    
     // MARK: Info
     var infoSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
-            Text(challenge.title)
-                .font(BQDesign.Typography.screenTitle)
-                .foregroundColor(BQDesign.Colors.textPrimary)
-                .multilineTextAlignment(.center)
+            // Show option A or B title/description based on selection
+            if challenge.isTwoInOne && selectedOption == 1,
+               let bTitle = challenge.optionBTitle,
+               let bDesc = challenge.optionBDescription {
+                Text(bTitle)
+                    .font(BQDesign.Typography.screenTitle)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.2), value: selectedOption)
+                
+                Text(bDesc)
+                    .font(BQDesign.Typography.body)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.2), value: selectedOption)
+            } else {
+                Text(challenge.title)
+                    .font(BQDesign.Typography.screenTitle)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.2), value: selectedOption)
+                
+                Text(challenge.description)
+                    .font(BQDesign.Typography.body)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.2), value: selectedOption)
+            }
             
-            Text(challenge.description)
-                .font(BQDesign.Typography.body)
-                .foregroundColor(BQDesign.Colors.textSecondary)
-                .multilineTextAlignment(.center)
-            
-            // Metadata row — equal-width columns
+            // Metadata row — points + difficulty (no more submission type column)
             HStack(spacing: 0) {
                 // Points
                 VStack(spacing: 4) {
@@ -147,22 +221,6 @@ private extension ChallengeDetailView {
                         .foregroundColor(BQDesign.Colors.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
-                
-                // Divider
-                Rectangle()
-                    .fill(BQDesign.Colors.textTertiary.opacity(0.15))
-                    .frame(width: 1, height: 32)
-                
-                // Type
-                VStack(spacing: 4) {
-                    Image(systemName: challenge.submissionType.icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(BQDesign.Colors.primaryPurple)
-                    Text(challenge.submissionType.label)
-                        .font(BQDesign.Typography.captionSmall)
-                        .foregroundColor(BQDesign.Colors.textTertiary)
-                }
-                .frame(maxWidth: .infinity)
             }
             .padding(.vertical, BQDesign.Spacing.md)
             .frame(maxWidth: .infinity)
@@ -174,7 +232,7 @@ private extension ChallengeDetailView {
         }
     }
     
-    // MARK: Submission Section
+    // MARK: Submission Section — Universal 3-option UI
     @ViewBuilder
     var submissionSection: some View {
         VStack(spacing: BQDesign.Spacing.md) {
@@ -182,13 +240,62 @@ private extension ChallengeDetailView {
                 .font(BQDesign.Typography.sectionTitle)
                 .foregroundColor(BQDesign.Colors.textPrimary)
             
-            switch challenge.submissionType {
+            // Submission type selector
+            submissionTypePicker
+            
+            // Content area based on selected type
+            switch viewModel.selectedSubmissionType {
             case .photo:
                 photoSubmission
             case .text:
                 textSubmission
             case .button:
                 buttonSubmission
+            }
+        }
+    }
+    
+    // MARK: Submission Type Picker
+    var submissionTypePicker: some View {
+        HStack(spacing: 8) {
+            ForEach(SubmissionType.allCases, id: \.self) { type in
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        viewModel.selectedSubmissionType = type
+                    }
+                    BQDesign.Haptics.selection()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: type.icon)
+                            .font(.system(size: 13))
+                        Text(type.label)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(
+                        viewModel.selectedSubmissionType == type
+                        ? .white
+                        : BQDesign.Colors.textSecondary
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
+                            .fill(
+                                viewModel.selectedSubmissionType == type
+                                ? AnyShapeStyle(BQDesign.Colors.primaryGradient)
+                                : AnyShapeStyle(BQDesign.Colors.cardBackground)
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
+                            .stroke(
+                                viewModel.selectedSubmissionType == type
+                                ? Color.clear
+                                : BQDesign.Colors.textTertiary.opacity(0.2),
+                                lineWidth: 1
+                            )
+                    )
+                }
             }
         }
     }
@@ -210,9 +317,9 @@ private extension ChallengeDetailView {
                 matching: .images
             ) {
                 HStack(spacing: BQDesign.Spacing.sm) {
-                    Image(systemName: viewModel.previewImage != nil ? "arrow.triangle.2.circlepath" : challenge.submissionType.icon)
+                    Image(systemName: viewModel.previewImage != nil ? "arrow.triangle.2.circlepath" : "camera.fill")
                         .font(.system(size: 16))
-                    Text(viewModel.previewImage != nil ? "Choose Different" : "Select \(challenge.submissionType.label)")
+                    Text(viewModel.previewImage != nil ? "Choose Different" : "Select Photo")
                         .font(BQDesign.Typography.bodyBold)
                 }
                 .foregroundColor(BQDesign.Colors.primaryPurple)
@@ -327,7 +434,7 @@ private extension ChallengeDetailView {
     // MARK: Proof Section
     @ViewBuilder
     var proofSection: some View {
-        let type = challenge.proofType ?? challenge.submissionType.rawValue
+        let type = challenge.proofType ?? "button"
         
         VStack(spacing: BQDesign.Spacing.sm) {
             Text("Your Proof")
@@ -348,7 +455,6 @@ private extension ChallengeDetailView {
     var photoProofView: some View {
         Group {
             if let localImage = viewModel.previewImage {
-                // Just submitted — use local preview
                 Image(uiImage: localImage)
                     .resizable()
                     .scaledToFill()
@@ -357,7 +463,6 @@ private extension ChallengeDetailView {
                     .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
                     .bqShadow(BQDesign.Shadows.card)
             } else if let urlString = challenge.proofUrl, let url = URL(string: urlString) {
-                // Reopened — load from Firebase URL
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
@@ -467,7 +572,6 @@ private extension ChallengeDetailView {
     var timelineButton: some View {
         Button {
             onDismiss()
-            // Small delay so sheet dismisses before tab switch
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 session.navigateToTimeline()
             }

@@ -9,7 +9,6 @@ final class SecretChallengeViewModel: ObservableObject {
     
     @Published var title: String = ""
     @Published var description: String = ""
-    @Published var submissionType: SubmissionType = .photo
     @Published var pointValue: Int = 50
     @Published var existingChallenge: Challenge?
     @Published var isLoading = true
@@ -61,7 +60,6 @@ final class SecretChallengeViewModel: ObservableObject {
                     self.existingChallenge = mine
                     self.title = mine.title
                     self.description = mine.description
-                    self.submissionType = mine.submissionType
                     self.pointValue = mine.pointValue
                 }
                 self.isLoading = false
@@ -89,7 +87,6 @@ final class SecretChallengeViewModel: ObservableObject {
                     data: [
                         "title": title.trimmingCharacters(in: .whitespaces),
                         "description": description.trimmingCharacters(in: .whitespaces),
-                        "submissionType": submissionType.rawValue,
                         "pointValue": pointValue
                     ]
                 )
@@ -101,7 +98,6 @@ final class SecretChallengeViewModel: ObservableObject {
                     illustrationAsset: "secret_mission",
                     pointValue: pointValue,
                     difficulty: .medium,
-                    submissionType: submissionType,
                     category: .social,
                     isSecret: true,
                     createdByUserId: userId,

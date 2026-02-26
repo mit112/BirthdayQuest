@@ -78,7 +78,6 @@ struct Challenge: Identifiable, Codable {
     let illustrationAsset: String
     let pointValue: Int
     let difficulty: ChallengeDifficulty
-    let submissionType: SubmissionType
     let category: ChallengeCategory
     let isSecret: Bool
     let createdByUserId: String?
@@ -90,14 +89,62 @@ struct Challenge: Identifiable, Codable {
     var proofText: String?
     let createdAt: Date
     
+    // MARK: - 2-in-1 Challenge Support
+    /// When non-nil, this challenge presents two options in the detail view.
+    let optionBTitle: String?
+    let optionBDescription: String?
+    
     // MARK: - Computed
     
     var isPending: Bool { !isCompleted }
+    var isTwoInOne: Bool { optionBTitle != nil }
     
     enum CodingKeys: String, CodingKey {
         case id, title, description, illustrationAsset
-        case pointValue, difficulty, submissionType, category
+        case pointValue, difficulty, category
         case isSecret, createdByUserId, isDelivered, isCompleted
         case completedAt, proofUrl, proofType, proofText, createdAt
+        case optionBTitle, optionBDescription
+    }
+    
+    // Memberwise init for code usage
+    init(
+        id: String? = nil,
+        title: String,
+        description: String,
+        illustrationAsset: String,
+        pointValue: Int,
+        difficulty: ChallengeDifficulty,
+        category: ChallengeCategory,
+        isSecret: Bool,
+        createdByUserId: String?,
+        isDelivered: Bool,
+        isCompleted: Bool,
+        completedAt: Date? = nil,
+        proofUrl: String? = nil,
+        proofType: String? = nil,
+        proofText: String? = nil,
+        createdAt: Date,
+        optionBTitle: String? = nil,
+        optionBDescription: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.illustrationAsset = illustrationAsset
+        self.pointValue = pointValue
+        self.difficulty = difficulty
+        self.category = category
+        self.isSecret = isSecret
+        self.createdByUserId = createdByUserId
+        self.isDelivered = isDelivered
+        self.isCompleted = isCompleted
+        self.completedAt = completedAt
+        self.proofUrl = proofUrl
+        self.proofType = proofType
+        self.proofText = proofText
+        self.createdAt = createdAt
+        self.optionBTitle = optionBTitle
+        self.optionBDescription = optionBDescription
     }
 }

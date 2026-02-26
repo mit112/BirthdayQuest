@@ -108,7 +108,7 @@ private struct SecretMissionCard: View {
                             .font(BQDesign.Typography.captionSmall)
                             .foregroundColor(BQDesign.Colors.success)
                     } else {
-                        Image(systemName: challenge.submissionType.icon)
+                        Image(systemName: "chevron.right")
                             .font(.system(size: 12))
                             .foregroundColor(.white.opacity(0.4))
                     }
