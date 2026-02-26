@@ -6,6 +6,7 @@ struct ProfileView: View {
     @State private var appeared = false
     @State private var avatarGlow = false
     @State private var crownBounce = false
+    @State private var secretChallengeStatus: String = "—"
     
     private var user: BQUser? { session.currentUser }
     private var gameState: GameState { session.gameState }
@@ -58,6 +59,14 @@ struct ProfileView: View {
             }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.5).delay(0.4)) {
                 crownBounce = true
+            }
+            if !isBirthdayBoy {
+                loadSecretChallengeStatus()
+            }
+        }
+        .onDisappear {
+            if !isBirthdayBoy {
+                FirestoreService.shared.removeListener(forKey: "profile_secret_status")
             }
         }
     }
@@ -222,8 +231,8 @@ private extension ProfileView {
     var friendStats: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                StatCard(icon: "🕵️", value: "Active", label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
-                StatCard(icon: "👀", value: "Day \(gameState.currentDay)", label: "Watching", color: BQDesign.Colors.primaryPurple, index: 1)
+                StatCard(icon: "🕵️", value: secretChallengeStatus, label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
+                StatCard(icon: "🎁", value: "\(gameState.rewardsUnlocked)/\(gameState.totalRewards)", label: "Gifts Unlocked", color: BQDesign.Colors.primaryPink, index: 1)
             }
         }
         .padding(.horizontal, BQDesign.Spacing.lg)
@@ -285,6 +294,31 @@ private extension ProfileView {
             BQDesign.Colors.gold,
         ]
         return colors[index % colors.count]
+    }
+    
+    // MARK: - Secret Challenge Status (Friends)
+    
+    private func loadSecretChallengeStatus() {
+        guard let userId = session.currentUser?.id else { return }
+        
+        FirestoreService.shared.listenToChallenges(listenerKey: "profile_secret_status") { [userId] challenges in
+            let mine = challenges.first {
+                $0.isSecret && $0.createdByUserId == userId
+            }
+            Task { @MainActor in
+                if let mine {
+                    if mine.isCompleted {
+                        secretChallengeStatus = "✅ Done"
+                    } else if mine.isDelivered {
+                        secretChallengeStatus = "📨 Sent"
+                    } else {
+                        secretChallengeStatus = "📝 Draft"
+                    }
+                } else {
+                    secretChallengeStatus = "None"
+                }
+            }
+        }
     }
     
     // MARK: Admin Section (Organizer Only)
