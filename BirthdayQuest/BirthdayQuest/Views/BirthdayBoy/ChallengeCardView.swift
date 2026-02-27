@@ -7,7 +7,6 @@ struct ChallengeCardView: View {
     let onTap: () -> Void
     
     @State private var appeared = false
-    @State private var pressed = false
     
     private var isCompleted: Bool { challenge.isCompleted }
     
@@ -17,7 +16,7 @@ struct ChallengeCardView: View {
             onTap()
         }) {
             HStack(spacing: 14) {
-                // Left: Illustration badge with glow
+                // Left: Illustration badge
                 illustrationBadge
                 
                 // Center: Info
@@ -49,13 +48,14 @@ struct ChallengeCardView: View {
             .background(cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(cardBorder)
-            .shadow(color: cardShadowColor, radius: isCompleted ? 6 : 10, y: isCompleted ? 2 : 4)
-            .shadow(color: cardShadowColor.opacity(0.5), radius: isCompleted ? 2 : 4, y: 1)
+            .compositingGroup()
+            .shadow(color: cardShadowColor, radius: isCompleted ? 4 : 8, y: isCompleted ? 2 : 3)
         }
         .buttonStyle(CardPressStyle())
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 20)
         .onAppear {
+            guard !appeared else { return }
             withAnimation(
                 .spring(response: 0.5, dampingFraction: 0.75)
                 .delay(Double(index) * 0.05 + 0.1)
@@ -84,12 +84,11 @@ private extension ChallengeCardView {
     
     var illustrationBadge: some View {
         ZStack {
-            // Subtle glow behind active badges
+            // Soft glow behind active badges (no blur — just a larger soft circle)
             if !isCompleted {
                 Circle()
-                    .fill(categoryColors[0].opacity(0.12))
-                    .frame(width: 62, height: 62)
-                    .blur(radius: 4)
+                    .fill(categoryColors[0].opacity(0.15))
+                    .frame(width: 60, height: 60)
             }
             
             // Main circle
@@ -117,16 +116,9 @@ private extension ChallengeCardView {
                         .stroke(Color.white.opacity(0.35), lineWidth: 2)
                         .frame(width: 49, height: 49)
                 )
-                .shadow(
-                    color: isCompleted
-                        ? Color.clear
-                        : categoryColors[0].opacity(0.25),
-                    radius: 6, y: 2
-                )
             
             // Icon
             if isCompleted {
-                // Checkmark overlay
                 Image(systemName: "checkmark")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
@@ -134,7 +126,6 @@ private extension ChallengeCardView {
                 Image(systemName: challenge.category.icon)
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
             }
         }
     }
@@ -204,10 +195,8 @@ private extension ChallengeCardView {
     
     var cardBackground: some View {
         ZStack {
-            // Base white
             Color.white
             
-            // Subtle category tint for active cards
             if !isCompleted {
                 LinearGradient(
                     colors: [
@@ -239,7 +228,7 @@ private extension ChallengeCardView {
         if isCompleted {
             return Color.black.opacity(0.04)
         }
-        return categoryColors[0].opacity(0.08)
+        return categoryColors[0].opacity(0.1)
     }
     
     // MARK: Category Colors

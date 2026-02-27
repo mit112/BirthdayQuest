@@ -62,7 +62,7 @@ private extension ChallengesBoardView {
     
     var mainContent: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 14) {
+            VStack(spacing: 14) {
                 // Header with progress ring
                 headerSection
                     .padding(.bottom, BQDesign.Spacing.xs)
@@ -153,9 +153,7 @@ struct ChallengesBackgroundView: View {
                 endPoint: .bottom
             )
             
-            // Subtle sparkle field (fewer particles than timeline)
-            SparkleFieldView()
-                .opacity(0.4)
+
         }
         .ignoresSafeArea()
     }

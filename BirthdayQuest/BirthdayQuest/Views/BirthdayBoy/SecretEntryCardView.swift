@@ -17,28 +17,22 @@ struct SecretEntryCardView: View {
                 // Keyhole icon
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(hex: "1A1A2E"), Color(hex: "2D1B69")],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(Color.white.opacity(0.12))
                         .frame(width: 56, height: 56)
                     
                     Image(systemName: "questionmark")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(BQDesign.Colors.secretAccent)
+                        .foregroundColor(.white)
                 }
                 
                 VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
                     Text("???")
                         .font(BQDesign.Typography.cardTitle)
-                        .foregroundColor(BQDesign.Colors.secretAccent)
+                        .foregroundColor(.white)
                     
                     Text(hasSecrets ? "Something's hiding here..." : "Nothing to see here... yet")
                         .font(BQDesign.Typography.caption)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.white.opacity(0.65))
                 }
                 
                 Spacer()
@@ -46,27 +40,21 @@ struct SecretEntryCardView: View {
                 if hasSecrets {
                     Image(systemName: "eye.fill")
                         .font(.system(size: 16))
-                        .foregroundColor(BQDesign.Colors.secretAccent)
+                        .foregroundColor(.white.opacity(0.8))
                 }
             }
             .padding(BQDesign.Spacing.md)
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(hex: "1A1A2E"), Color(hex: "16213E")],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(Color(hex: "1C1B2E"))
                     
                     // Shimmer sweep
                     if hasSecrets {
                         RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [.clear, .white.opacity(0.05), .clear],
+                                    colors: [.clear, .white.opacity(0.06), .clear],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -75,15 +63,14 @@ struct SecretEntryCardView: View {
                     }
                     
                     RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                        .stroke(BQDesign.Colors.secretAccent.opacity(0.3), lineWidth: 1)
+                        .stroke(.white.opacity(0.1), lineWidth: 1)
                 }
             )
             .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
         }
         .buttonStyle(.plain)
         .rotationEffect(.degrees(wiggle ? 0.8 : -0.8))
-        .disabled(!hasSecrets)
-        .opacity(hasSecrets ? 1 : 0.6)
+        .allowsHitTesting(hasSecrets)
         .onAppear {
             guard hasSecrets else { return }
             // Wiggle
