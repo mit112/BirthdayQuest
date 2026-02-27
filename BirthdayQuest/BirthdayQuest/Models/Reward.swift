@@ -17,6 +17,16 @@ enum RewardContentType: String, Codable, CaseIterable {
         case .image: return "photo.fill"
         }
     }
+    
+    /// Auto-assigned point cost per content tier
+    var defaultPointCost: Int {
+        switch self {
+        case .text:  return 50   // Tier 1
+        case .audio: return 75   // Tier 2
+        case .video: return 100  // Tier 3
+        case .image: return 50   // Same as text
+        }
+    }
 }
 
 // MARK: - Reward Model

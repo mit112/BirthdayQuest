@@ -50,7 +50,13 @@
 - + up to 4 secret challenges from friends (25-100 pts each) = ~100-400 pts additional
 - Grand total available: ~735-1035 pts
 - ✅ All challenges use universal submission (photo/text/completed — no hardcoded type)
-- 7 placeholder rewards (Mit, Kashish, Gaurav, Milloni, Mom, Dad, Family) = 800 total cost
+- 7 rewards with tiered pricing by content type:
+  - **Tier 1 (Text): 50 ✦** — Mit, Milloni, Mom (3 × 50 = 150)
+  - **Tier 2 (Audio): 75 ✦** — Kashish, Dad (2 × 75 = 150)
+  - **Tier 3 (Video): 100 ✦** — Gaurav, Family (2 × 100 = 200)
+  - **Current total cost: 500 ✦** (targeting 9 rewards total, ~650 ✦ when complete)
+  - Pricing auto-derived from `RewardContentType.defaultPointCost` — set content type and cost follows
+- DataSeeder expanded to 9 placeholder rewards (2 new: "The Squad" video, "???" audio mystery)
 - Reward content is placeholder text — real videos/audio/messages TBD from friends & family
 - All content editable in Firestore without code changes.
 - DataSeeder checks each collection independently before seeding.

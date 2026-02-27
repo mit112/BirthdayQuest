@@ -152,35 +152,50 @@ struct DataSeeder {
     
     private static func seedRewards() async throws {
         let now = Timestamp(date: Date())
+        
+        // Helper: pointCost is auto-derived from contentType tier
+        // Tier 1 (text): 50 ✦  |  Tier 2 (audio): 75 ✦  |  Tier 3 (video): 100 ✦
+        func cost(_ type: String) -> Int {
+            return (RewardContentType(rawValue: type) ?? .text).defaultPointCost
+        }
+        
         let rewards: [[String: Any]] = [
             ["fromUserId": CharacterID.mit, "fromName": "Mit", "title": "A message from Mit",
-             "teaser": "The mastermind has something to say", "pointCost": 100,
+             "teaser": "The mastermind has something to say", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 1, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromUserId": CharacterID.kashish, "fromName": "Kashish", "title": "A message from Kashish",
-             "teaser": "He actually wrote something nice", "pointCost": 100,
+             "teaser": "He actually wrote something nice", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 2, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromUserId": CharacterID.gaurav, "fromName": "Gaurav", "title": "A message from Gaurav",
-             "teaser": "Between snacks, he found the words", "pointCost": 100,
+             "teaser": "Between snacks, he found the words", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 3, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromUserId": CharacterID.milloni, "fromName": "Milloni", "title": "A message from Milloni",
-             "teaser": "Chaos coordinator gets sentimental", "pointCost": 100,
+             "teaser": "Chaos coordinator gets sentimental", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 4, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromName": "Mom", "title": "A message from Mom",
-             "teaser": "You'll want to sit down for this", "pointCost": 125,
+             "teaser": "You'll want to sit down for this", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 5, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromName": "Dad", "title": "A message from Dad",
-             "teaser": "He doesn't say this often", "pointCost": 125,
+             "teaser": "He doesn't say this often", "pointCost": cost("text"),
              "contentType": "text", "contentText": "Placeholder — real content coming soon",
              "isUnlocked": false, "sortOrder": 6, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromName": "Family", "title": "A surprise from the family",
-             "teaser": "They all got together for this one", "pointCost": 150,
-             "contentType": "text", "contentText": "Placeholder — real content coming soon",
+             "teaser": "They all got together for this one", "pointCost": cost("video"),
+             "contentType": "video",
              "isUnlocked": false, "sortOrder": 7, "badgeIllustration": "star_badge", "createdAt": now],
+            ["fromName": "The Squad", "title": "From all of us",
+             "teaser": "We have more to say than you think", "pointCost": cost("video"),
+             "contentType": "video",
+             "isUnlocked": false, "sortOrder": 8, "badgeIllustration": "star_badge", "createdAt": now],
+            ["fromName": "???", "title": "A mystery gift",
+             "teaser": "You'll find out when you unlock it", "pointCost": cost("audio"),
+             "contentType": "audio",
+             "isUnlocked": false, "sortOrder": 9, "badgeIllustration": "star_badge", "createdAt": now],
         ]
         
         let batch = db.batch()
