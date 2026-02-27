@@ -48,32 +48,32 @@ struct DataSeeder {
         let users: [(id: String, data: [String: Any])] = [
             (CharacterID.aaryan, [
                 "name": "Aaryan", "role": UserRole.birthdayBoy.rawValue,
-                "avatarId": "king_avatar", "tagline": "Ferrari fan, forever depressed",
-                "funFacts": ["Favorite excuse: 'I'm on my way'", "Most likely to: show up 45 minutes late", "Spirit animal: a raccoon at 3am"],
+                "avatarId": "king_avatar", "tagline": "Main character energy. Side character track record.",
+                "funFacts": ["Least likely to: Meet expectations", "Secret weapon at work: Claude Code", "Real Madrid till death"],
                 "roleBadge": "The Birthday King 👑", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
             (CharacterID.mit, [
                 "name": "Mit", "role": UserRole.organizer.rawValue,
-                "avatarId": "agent_mit", "tagline": "The mastermind behind the curtain",
-                "funFacts": ["Favorite move: pulling strings from the shadows", "Most likely to: have a spreadsheet for everything", "Spirit animal: an owl with a clipboard"],
+                "avatarId": "agent_mit", "tagline": "Will call you at 3am. Will also build you an app.",
+                "funFacts": ["Has an anime rec for any mood", "Explained football 100 times. Gets none of it.", "Wannabe coffee enthusiast"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
             (CharacterID.kashish, [
                 "name": "Kashish", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_kashish", "tagline": "Will judge your outfit before saying hi",
-                "funFacts": ["Favorite hobby: unsolicited fashion advice", "Most likely to: take 40 minutes to get ready", "Spirit animal: a peacock with opinions"],
+                "avatarId": "agent_kashish", "tagline": "Runs on chai, copium, and vape clouds.",
+                "funFacts": ["One Piece is not an anime, it's a lifestyle", "Claims he doesn't cook. Trader Joe's loyalty member.", "Arsenal supporter (pain is familiar)"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
             (CharacterID.gaurav, [
                 "name": "Gaurav", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_gaurav", "tagline": "Gym bro energy, snack drawer reality",
-                "funFacts": ["Favorite lie: 'I'll just have one drink'", "Most likely to: disappear and be found eating", "Spirit animal: a golden retriever at a buffet"],
+                "avatarId": "agent_gaurav", "tagline": "Dodges group trips like it's cardio.",
+                "funFacts": ["His phone only receives texts, apparently", "Always down for garba", "Abs by Halloween (always the next one)"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
             (CharacterID.milloni, [
                 "name": "Milloni", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_milloni", "tagline": "Chaos coordinator extraordinaire",
-                "funFacts": ["Favorite vibe: controlled chaos", "Most likely to: suggest something unhinged at 2am", "Spirit animal: a caffeinated squirrel"],
+                "avatarId": "agent_milloni", "tagline": "Her gifts have lore AND perfect wrapping?!",
+                "funFacts": ["Went from 'no thanks' to 'what are we drinking?'", "Thinks Seattle is a personality trait", "Will cook you the best meals"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ])
         ]

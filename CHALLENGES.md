@@ -101,7 +101,12 @@ This is a **UI-only** feature — one challenge doc in Firestore, the detail vie
 
 ---
 
-## Personalization Phase (TODO)
+## Personalization Phase
+**Profiles: ✅ DONE (Feb 26)**
+All 5 character profiles personalized with custom taglines, fun facts, and per-character emojis in ProfileView.
+Personalized content drafted in `/mnt/user-data/outputs/AARYAN_PERSONALIZED.md`.
+
+**Challenges: TODO**
 These 12 challenges are the structure. Next step: personalize them with Aaryan-specific details:
 - Inside jokes in challenge descriptions
 - Specific photos to recreate

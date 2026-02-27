@@ -29,6 +29,16 @@
   - Challenge card metadata row shows orange ⚡ "2-in-1" badge for dual-option challenges.
   - Seed data replaced with final 12-challenge list from CHALLENGES.md (3 easy, 6 medium, 2 hard, 1 legendary = 12 total, 635 total pts).
   - Fixed Kashish's pronoun in reward teaser ("He" not "She").
+- **Profile personalization (Feb 26):**
+  - All 5 character profiles updated with personalized taglines, fun facts, and per-character emojis.
+  - Aaryan: "Main character energy. Side character track record." (📉🤖⚽)
+  - Mit: "Will call you at 3am. Will also build you an app." (🍥🤷☕)
+  - Kashish: "Runs on chai, copium, and vape clouds." (🏴‍☠️🛒⚽)
+  - Gaurav: "Dodges group trips like it's cardio." (📱💃🎃)
+  - Milloni: "Her gifts have lore AND perfect wrapping?!" (🥂🌧️👩‍🍳)
+  - ProfileView emoji system changed from hardcoded array to per-character emoji map.
+  - Firestore `users` collection updated directly (no wipe needed).
+  - DataSeeder updated to match so fresh installs get correct data.
 - Bundle ID: `com.mitsheth.birthdayquest`
 - Team ID: `3P89U4WZAB`
 - Signing: Automatic
@@ -75,6 +85,7 @@
 - [ ] Collect real reward content (videos/audio/text from friends & family)
 - [ ] Upload reward content to Firebase Storage `/rewards/{rewardId}/`
 - [ ] Update reward docs in Firestore with real contentUrl and contentType
+- [x] **Personalize all 5 character profiles** (taglines, fun facts, per-character emojis)
 - [ ] Personalize challenge descriptions with inside jokes
 - [ ] Test video/audio playback on real device (Simulator has AVPlayer quirks)
 - [ ] Archive → Distribute → TestFlight Internal Testing
