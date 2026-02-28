@@ -1,7 +1,7 @@
-## Current State (updated Feb 26 — Post challenge system overhaul)
+## Current State (updated Feb 28 — Live & in use)
 
 ### What's Done
-- **ALL 9 CHUNKS + CHUNK 10 COMPLETE.** 46+ Swift files, zero compiler errors.
+- **ALL CHUNKS COMPLETE.** 47 Swift files, zero compiler errors.
 - Every screen built and functional: Character Select, Rewards Carousel, Challenges Board, Challenge Submission, Secret Challenge Home, Timeline, Profile, Admin Controls.
 - Points system fully working end-to-end.
 - "Check timeline →" heartbeat wired across all flows.
@@ -13,97 +13,59 @@
 - Timeline nodes are tappable → opens challenge detail or reward content sheet.
 - Testing shortcuts reverted (0 TODOs remaining).
 - Video submission fully removed from challenges (code + Firestore).
-- Reward content players built: VideoPlayerView, AudioPlayerView (with scrubbing/skip), TextRewardView.
-- RewardContentSheet wired to real media players.
+- Reward content players built: VideoPlayerView, AudioPlayerView (with scrubbing/skip), TextRewardView, **ImageGalleryView** (swipeable multi-image gallery with page dots).
+- RewardContentSheet wired to real media players + gallery support via `contentUrls` array.
 - AVAudioSession.playback configured in app init.
 - Infinite looping rewards carousel with centered cards.
-- Points stat icon color fixed (was invisible white on white).
-- Points update bug fixed (no duplicate gameState listeners).
-- Timeline scroll on reward unlock fixed (matching challenge behavior).
 - PIN override system: universal PIN `0228` for claimed characters.
-- **Challenge system overhaul (Feb 26):**
-  - Removed hardcoded `submissionType` from Challenge model entirely.
-  - Every challenge now shows **universal 3-option submission** (photo / text / completed) via a tab picker in ChallengeDetailView.
-  - Added **2-in-1 challenge support**: `optionBTitle` + `optionBDescription` fields on Challenge model. Detail view shows Option A / Option B toggle that swaps title + description. 4 challenges use this.
-  - Removed submission type picker from Secret Challenge creation (friends no longer choose a type).
-  - Challenge card metadata row shows orange ⚡ "2-in-1" badge for dual-option challenges.
-  - Seed data replaced with final 12-challenge list from CHALLENGES.md (3 easy, 6 medium, 2 hard, 1 legendary = 12 total, 635 total pts).
-  - Fixed Kashish's pronoun in reward teaser ("He" not "She").
-- **Profile personalization (Feb 26):**
-  - All 5 character profiles updated with personalized taglines, fun facts, and per-character emojis.
-  - Aaryan: "Main character energy. Side character track record." (📉🤖⚽)
-  - Mit: "Will call you at 3am. Will also build you an app." (🍥🤷☕)
-  - Kashish: "Runs on chai, copium, and vape clouds." (🏴‍☠️🛒⚽)
-  - Gaurav: "Dodges group trips like it's cardio." (📱💃🎃)
-  - Milloni: "Her gifts have lore AND perfect wrapping?!" (🥂🌧️👩‍🍳)
-  - ProfileView emoji system changed from hardcoded array to per-character emoji map.
-  - Firestore `users` collection updated directly (no wipe needed).
-  - DataSeeder updated to match so fresh installs get correct data.
+- **Challenge system:** Universal 3-option submission (photo/text/completed). 4 challenges are 2-in-1 with optionBTitle/optionBDescription.
+- **Profile personalization:** All 5 characters have custom taglines, fun facts, and per-character emojis.
 - Bundle ID: `com.mitsheth.birthdayquest`
 - Team ID: `3P89U4WZAB`
 - Signing: Automatic
 - Deployment target: iOS 26.0
 
-### Seeded Content
-- 12 challenges (3 easy @ 35pts, 6 medium @ 50-60pts, 2 hard @ 75pts, 1 legendary @ 100pts) = 635 total pts from regular challenges
-- 4 of 12 are 2-in-1 challenges (Blind Menu Roulette, Stranger Photo, Karaoke Roulette, Letter/Time Capsule)
-- + up to 4 secret challenges from friends (25-100 pts each) = ~100-400 pts additional
-- Grand total available: ~735-1035 pts
-- ✅ All challenges use universal submission (photo/text/completed — no hardcoded type)
-- 7 rewards with tiered pricing by content type:
-  - **Tier 1 (Text): 50 ✦** — Mit, Milloni, Mom (3 × 50 = 150)
-  - **Tier 2 (Audio): 75 ✦** — Kashish, Dad (2 × 75 = 150)
-  - **Tier 3 (Video): 100 ✦** — Gaurav, Family (2 × 100 = 200)
-  - **Current total cost: 500 ✦** (targeting 9 rewards total, ~650 ✦ when complete)
-  - Pricing auto-derived from `RewardContentType.defaultPointCost` — set content type and cost follows
-- DataSeeder expanded to 9 placeholder rewards (2 new: "The Squad" video, "???" audio mystery)
-- Reward content is placeholder text — real videos/audio/messages TBD from friends & family
-- All content editable in Firestore without code changes.
-- DataSeeder checks each collection independently before seeding.
+### Live Firestore Content (Feb 28)
+
+#### Challenges (15 regular + 4 secret slots)
+- 3 easy @ 35 pts, 7 medium @ 50-60 pts, 2 hard @ 75 pts, 1 legendary @ 100 pts
+- + "Birthday Pushups" (25 pts, easy), "Arm Wrestling Champion" (50 pts, medium), "No Stuti Weekend" (50 pts, medium)
+- 4 of these are 2-in-1 challenges
+- Total regular challenge points: ~790 pts
+- + up to 4 secret challenges from friends (~200-300 pts)
+- **Grand total earnable: ~990-1090 pts**
+
+#### Rewards (9 total, 800 pts total cost)
+| # | From | Type | Cost | Status |
+|---|------|------|------|--------|
+| 1 | Mit | Audio | 50 | ✅ Real audio uploaded |
+| 2 | Kashish | Video | 100 | ✅ Real video uploaded |
+| 3 | Gaurav | Video | 100 | ❌ Placeholder — needs real video |
+| 4 | Milloni | Video | 100 | ❌ Placeholder — needs real video |
+| 5 | Family | Video | 100 | ✅ Real video uploaded |
+| 6 | Abhishek | Video | 100 | ✅ Real video uploaded |
+| 7 | Manan | Video | 100 | ✅ Real video uploaded |
+| 8 | Jay | Video | 100 | ✅ Real video uploaded |
+| 9 | RAJMA | Image gallery | 50 | ✅ 10 photos uploaded (swipeable) |
+
+**Pricing tiers:** Audio = 50, Video = 100, Image gallery = 50
+**Points economy:** 800 cost vs ~1000+ earnable = ~200-290 surplus (healthy)
 
 ### ⚠️ Content Still Needed
-- Real reward content from friends & family — expected soon
-- Challenge list personalization (inside jokes, specific photos to recreate, etc.)
-- ⚠️ **Must wipe existing Firestore challenges** for new seed data to take effect (DataSeeder skips if non-secret challenges already exist)
+- **Gaurav's video** — currently has placeholder URL
+- **Milloni's video** — currently has empty URL
 
 ### Architecture Notes
 - SessionManager.shared is central state hub — all views read points via @EnvironmentObject
 - Do NOT use SessionManager.shared.gameState in computed properties inside ViewModels — SwiftUI won't observe
-- NEVER call listenToGameState from ViewModels — it hijacks SessionManager's listener (same "gameState" key) and breaks points updates globally. Use @EnvironmentObject + .onChange in the view instead.
+- NEVER call listenToGameState from ViewModels — it hijacks SessionManager's listener (same "gameState" key)
 - GameState listener uses manual dictionary parsing, NOT Codable (Firestore Int64/NSNumber issues)
 - FieldValue.serverTimestamp() is BANNED — use Timestamp(date: Date()) everywhere
 - ConfettiSwiftUI uses `trigger` parameter (not `counter`)
-- Firestore settings configured in App init BEFORE any Firestore access (crash fix)
-- `submissionType` field is **gone** from Challenge model. Old Firestore docs with this field are silently ignored (not in CodingKeys). The `SubmissionType` enum still exists — used by `ChallengeSubmissionViewModel.selectedSubmissionType` for the UI picker.
-- 2-in-1 challenges: `optionBTitle` and `optionBDescription` are optional fields. Custom `init(from decoder:)` defaults them to nil so existing Firestore docs without these fields decode fine.
-- Skeleton loading system: `SkeletonView.swift` contains shimmer modifier + screen-specific ghost layouts (RewardsSkeletonView, ChallengesSkeletonView, TimelineSkeletonView, DossierSkeletonView). Each matches the real screen's card dimensions and layout so the transition from loading → content feels seamless.
-
-### Before TestFlight Checklist
-- [x] Remove SubmissionType.video from Challenge model + all references
-- [x] Build VideoPlayerView, AudioPlayerView, TextRewardView components
-- [x] Update RewardContentSheet to use real components instead of placeholders
-- [x] Add AVAudioSession.playback setup in BirthdayQuestApp.swift
-- [x] Skeleton loading states on all data screens
-- [x] Remove hardcoded submissionType — universal 3-option submission
-- [x] Build 2-in-1 card UI for dual-option challenges
-- [x] Replace seed data with final 12-challenge list from CHALLENGES.md
-- [ ] **Wipe Firestore challenges collection** so new seed data takes effect
-- [ ] Collect real reward content (videos/audio/text from friends & family)
-- [ ] Upload reward content to Firebase Storage `/rewards/{rewardId}/`
-- [ ] Update reward docs in Firestore with real contentUrl and contentType
-- [x] **Personalize all 5 character profiles** (taglines, fun facts, per-character emojis)
-- [ ] Personalize challenge descriptions with inside jokes
-- [ ] Test video/audio playback on real device (Simulator has AVPlayer quirks)
-- [ ] Archive → Distribute → TestFlight Internal Testing
-- [ ] Add 4 friends as internal testers in App Store Connect
-- [ ] Share TestFlight link
-
-### TestFlight Steps
-1. Xcode → set destination to "Any iOS Device (arm64)"
-2. Product → Archive
-3. Organizer → Distribute App → TestFlight & App Store
-4. App Store Connect → TestFlight → add internal testers
-5. Share link via iMessage
+- `submissionType` field removed from Challenge model — universal 3-option picker in UI
+- 2-in-1 challenges: `optionBTitle` and `optionBDescription` are optional fields
+- Reward model supports both `contentUrl` (single) and `contentUrls` (array) for multi-image gallery
+- ImageGalleryView: TabView-based swipeable gallery with custom page dots, used when contentUrls has >1 entry
 
 ### Key File Paths
 - Project root: `/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/`
@@ -112,8 +74,8 @@
 - Services: `Services/` (FirestoreService.swift, SessionManager.swift, DataSeeder.swift)
 - ViewModels: `ViewModels/` (one per major screen)
 - Views: `Views/` (CharacterSelect/, BirthdayBoy/, Friend/, Timeline/, Profile/, Components/)
+- Components: `Views/Components/` (AudioPlayerView, AvatarView, FloatingParticlesView, ImageGalleryView, PointsDisplayView, SkeletonView, StatCard, TextRewardView, TimelineBackgroundView, VideoPlayerView)
 - Design System: `DesignSystem.swift` (BQDesign namespace)
-- Assets: `Assets.xcassets/` (AppIcon, LaunchBackground, AccentColor)
 
 ### Build Command
 ```
