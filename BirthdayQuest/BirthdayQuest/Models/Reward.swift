@@ -40,6 +40,7 @@ struct Reward: Identifiable, Codable {
     let pointCost: Int
     let contentType: RewardContentType
     let contentUrl: String?
+    let contentUrls: [String]?
     let contentText: String?
     var isUnlocked: Bool
     var unlockedAt: Date?
@@ -49,7 +50,7 @@ struct Reward: Identifiable, Codable {
     
     enum CodingKeys: String, CodingKey {
         case id, fromUserId, fromName, title, teaser
-        case pointCost, contentType, contentUrl, contentText
+        case pointCost, contentType, contentUrl, contentUrls, contentText
         case isUnlocked, unlockedAt, sortOrder, badgeIllustration, createdAt
     }
 }

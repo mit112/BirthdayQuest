@@ -56,7 +56,9 @@ struct RewardContentSheet: View {
                                 contentUnavailable
                             }
                         case .image:
-                            if let url = contentURL {
+                            if let urls = galleryURLs, urls.count > 1 {
+                                ImageGalleryView(urls: urls, fromName: reward.fromName)
+                            } else if let url = contentURL {
                                 imageContent(url: url)
                             } else {
                                 contentUnavailable
@@ -114,6 +116,12 @@ struct RewardContentSheet: View {
     private var contentURL: URL? {
         guard let urlString = reward.contentUrl, !urlString.isEmpty else { return nil }
         return URL(string: urlString)
+    }
+    
+    /// Resolves contentUrls array to URLs for multi-image gallery
+    private var galleryURLs: [URL]? {
+        guard let urls = reward.contentUrls, !urls.isEmpty else { return nil }
+        return urls.compactMap { URL(string: $0) }
     }
 }
 
