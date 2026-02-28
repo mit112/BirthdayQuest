@@ -133,6 +133,10 @@ struct DataSeeder {
             ["title": "No Cap, Just Heart", "description": "Genuine heartfelt toast to each friend individually. Specific memories, why they matter. No jokes.", "illustrationAsset": "heart.fill",
              "pointValue": 100, "difficulty": "hard", "category": "sentimental",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
+            // PASSIVE — 50 pts
+            ["title": "No Stuti Weekend", "description": "Zero mentions, zero texts, zero stalking socials. The whole weekend is a Stuti-free zone. Friends are watching. Every slip-up gets called out. This is YOUR birthday — act like it.", "illustrationAsset": "hand.raised.slash.fill",
+             "pointValue": 50, "difficulty": "medium", "category": "social",
+             "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
         ]
         
         let batch = db.batch()
