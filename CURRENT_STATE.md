@@ -17,11 +17,11 @@
 - RewardContentSheet wired to real media players + gallery support via `contentUrls` array.
 - AVAudioSession.playback configured in app init.
 - Infinite looping rewards carousel with centered cards.
-- PIN override system: universal PIN `0228` for claimed characters.
+- PIN override system: universal PIN `1234` for claimed characters.
 - **Challenge system:** Universal 3-option submission (photo/text/completed). 4 challenges are 2-in-1 with optionBTitle/optionBDescription.
 - **Profile personalization:** All 5 characters have custom taglines, fun facts, and per-character emojis.
-- Bundle ID: `com.mitsheth.birthdayquest`
-- Team ID: `3P89U4WZAB`
+- Bundle ID: `com.example.birthdayquest`
+- Team ID: `XXXXXXXXXX`
 - Signing: Automatic
 - Deployment target: iOS 26.0
 
@@ -29,7 +29,7 @@
 
 #### Challenges (15 regular + 4 secret slots)
 - 3 easy @ 35 pts, 7 medium @ 50-60 pts, 2 hard @ 75 pts, 1 legendary @ 100 pts
-- + "Birthday Pushups" (25 pts, easy), "Arm Wrestling Champion" (50 pts, medium), "No Stuti Weekend" (50 pts, medium)
+- + "Birthday Pushups" (25 pts, easy), "Arm Wrestling Champion" (50 pts, medium), "Digital Detox Weekend" (50 pts, medium)
 - 4 of these are 2-in-1 challenges
 - Total regular challenge points: ~790 pts
 - + up to 4 secret challenges from friends (~200-300 pts)
@@ -38,22 +38,22 @@
 #### Rewards (9 total, 800 pts total cost)
 | # | From | Type | Cost | Status |
 |---|------|------|------|--------|
-| 1 | Mit | Audio | 50 | ✅ Real audio uploaded |
-| 2 | Kashish | Video | 100 | ✅ Real video uploaded |
-| 3 | Gaurav | Video | 100 | ❌ Placeholder — needs real video |
-| 4 | Milloni | Video | 100 | ❌ Placeholder — needs real video |
+| 1 | Sam | Audio | 50 | ✅ Real audio uploaded |
+| 2 | Jordan | Video | 100 | ✅ Real video uploaded |
+| 3 | Riley | Video | 100 | ❌ Placeholder — needs real video |
+| 4 | Morgan | Video | 100 | ❌ Placeholder — needs real video |
 | 5 | Family | Video | 100 | ✅ Real video uploaded |
-| 6 | Abhishek | Video | 100 | ✅ Real video uploaded |
-| 7 | Manan | Video | 100 | ✅ Real video uploaded |
-| 8 | Jay | Video | 100 | ✅ Real video uploaded |
-| 9 | RAJMA | Image gallery | 50 | ✅ 10 photos uploaded (swipeable) |
+| 6 | Chris | Video | 100 | ✅ Real video uploaded |
+| 7 | Taylor | Video | 100 | ✅ Real video uploaded |
+| 8 | Jamie | Video | 100 | ✅ Real video uploaded |
+| 9 | Group Photos | Image gallery | 50 | ✅ 10 photos uploaded (swipeable) |
 
 **Pricing tiers:** Audio = 50, Video = 100, Image gallery = 50
 **Points economy:** 800 cost vs ~1000+ earnable = ~200-290 surplus (healthy)
 
 ### ⚠️ Content Still Needed
-- **Gaurav's video** — currently has placeholder URL
-- **Milloni's video** — currently has empty URL
+- **Riley's video** — currently has placeholder URL
+- **Morgan's video** — currently has empty URL
 
 ### Architecture Notes
 - SessionManager.shared is central state hub — all views read points via @EnvironmentObject
@@ -68,8 +68,8 @@
 - ImageGalleryView: TabView-based swipeable gallery with custom page dots, used when contentUrls has >1 entry
 
 ### Key File Paths
-- Project root: `/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/`
-- Source code: `/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/BirthdayQuest/`
+- Project root: `BirthdayQuest/`
+- Source code: `BirthdayQuest/BirthdayQuest/`
 - Models: `Models/` (User.swift, Reward.swift, Challenge.swift, TimelineEvent.swift, GameState.swift)
 - Services: `Services/` (FirestoreService.swift, SessionManager.swift, DataSeeder.swift)
 - ViewModels: `ViewModels/` (one per major screen)
@@ -79,9 +79,9 @@
 
 ### Build Command
 ```
-cd /Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest
+cd BirthdayQuest
 xcodebuild -scheme BirthdayQuest -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
 ### Physical Device
-- "mit's iPhone" (arm64, id: 00008120-000875393644A01E)
+- Developer iPhone (arm64)

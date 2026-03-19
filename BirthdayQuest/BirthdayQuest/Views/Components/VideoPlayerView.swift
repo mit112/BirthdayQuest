@@ -1,26 +1,79 @@
 import SwiftUI
 import AVKit
+import Combine
+import OSLog
+
+/// Manages AVPlayer lifecycle and KVO observation for video playback.
+@MainActor
+final class VideoPlayerController: ObservableObject {
+
+    @Published var player: AVPlayer?
+    @Published var isBuffering = true
+    @Published var isFailed = false
+
+    private var statusObservation: NSKeyValueObservation?
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "VideoPlayer")
+
+    func loadVideo(url: URL) {
+        isFailed = false
+        isBuffering = true
+        statusObservation?.invalidate()
+
+        let item = AVPlayerItem(url: url)
+        let avPlayer = AVPlayer(playerItem: item)
+
+        statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.isBuffering = false
+                    try? await Task.sleep(for: .milliseconds(600))
+                    // Only play if the player is still active (not cleaned up during the sleep)
+                    guard self.player != nil else { return }
+                    avPlayer.play()
+                case .failed:
+                    self.isBuffering = false
+                    self.isFailed = true
+                    self.logger.error("Video failed to load")
+                default:
+                    break
+                }
+            }
+        }
+
+        self.player = avPlayer
+    }
+
+    func cleanup() {
+        player?.pause()
+        player = nil
+        statusObservation?.invalidate()
+        statusObservation = nil
+    }
+
+    deinit {
+        statusObservation?.invalidate()
+    }
+}
 
 /// Video player for reward content. Wraps AVKit's VideoPlayer.
 /// Auto-plays with a slight delay for dramatic reveal effect.
 struct VideoPlayerView: View {
-    
+
     let url: URL
-    
-    @State private var player: AVPlayer?
-    @State private var isBuffering = true
-    @State private var isFailed = false
+
+    @StateObject private var controller = VideoPlayerController()
     @State private var appeared = false
-    @State private var statusObservation: NSKeyValueObservation?
-    
+
     var body: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
             ZStack {
                 // Background
                 RoundedRectangle(cornerRadius: BQDesign.Radius.xl, style: .continuous)
                     .fill(BQDesign.Colors.cardBackground)
-                
-                if isFailed {
+
+                if controller.isFailed {
                     // Error state
                     VStack(spacing: BQDesign.Spacing.md) {
                         Image(systemName: "exclamationmark.triangle")
@@ -30,17 +83,17 @@ struct VideoPlayerView: View {
                             .font(BQDesign.Typography.caption)
                             .foregroundColor(BQDesign.Colors.textSecondary)
                         Button("Retry") {
-                            loadVideo()
+                            controller.loadVideo(url: url)
                         }
                         .font(BQDesign.Typography.bodyBold)
                         .foregroundColor(BQDesign.Colors.primaryPurple)
                     }
-                } else if let player {
+                } else if let player = controller.player {
                     VideoPlayer(player: player)
                         .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.xl, style: .continuous))
-                        .opacity(isBuffering ? 0 : 1)
-                    
-                    if isBuffering {
+                        .opacity(controller.isBuffering ? 0 : 1)
+
+                    if controller.isBuffering {
                         // Loading shimmer
                         VStack(spacing: BQDesign.Spacing.md) {
                             ProgressView()
@@ -61,43 +114,13 @@ struct VideoPlayerView: View {
         .scaleEffect(appeared ? 1 : 0.95)
         .opacity(appeared ? 1 : 0)
         .onAppear {
-            loadVideo()
+            controller.loadVideo(url: url)
             withAnimation(BQDesign.Animation.smooth.delay(0.3)) {
                 appeared = true
             }
         }
         .onDisappear {
-            player?.pause()
-            player = nil
-            statusObservation?.invalidate()
-            statusObservation = nil
+            controller.cleanup()
         }
-    }
-    
-    private func loadVideo() {
-        isFailed = false
-        isBuffering = true
-        
-        let item = AVPlayerItem(url: url)
-        let avPlayer = AVPlayer(playerItem: item)
-        
-        statusObservation = item.observe(\.status, options: [.new]) { item, _ in
-            Task { @MainActor in
-                switch item.status {
-                case .readyToPlay:
-                    isBuffering = false
-                    // Auto-play after a brief dramatic pause
-                    try? await Task.sleep(for: .milliseconds(600))
-                    avPlayer.play()
-                case .failed:
-                    isBuffering = false
-                    isFailed = true
-                default:
-                    break
-                }
-            }
-        }
-        
-        self.player = avPlayer
     }
 }

@@ -49,8 +49,8 @@ struct TimelineView: View {
         .onChange(of: session.scrollToLatestTimeline) { _, shouldScroll in
             if shouldScroll {
                 session.scrollToLatestTimeline = false
-                // Small delay ensures ScrollViewProxy and layout are ready after tab switch
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
                     if let lastId = viewModel.events.last?.id {
                         withAnimation(BQDesign.Animation.smooth) {
                             scrollProxy?.scrollTo(lastId, anchor: .center)
@@ -116,8 +116,10 @@ private extension TimelineView {
                     
                     FinalBadgeView(
                         isUnlocked: viewModel.finalBadgeUnlocked,
-                        progressText: viewModel.rewardProgress,
-                        progressFraction: viewModel.progressFraction
+                        progressText: "\(session.gameState.rewardsUnlocked)/\(session.gameState.totalRewards) gifts unlocked",
+                        progressFraction: session.gameState.totalRewards > 0
+                            ? Double(session.gameState.rewardsUnlocked) / Double(session.gameState.totalRewards)
+                            : 0
                     )
                     .id("finalBadge")
                     .padding(.top, 20)
@@ -293,11 +295,13 @@ struct BezierTrailConnector: View {
     
     private var sparkleDecoration: some View {
         let midX = (xPosition(for: fromAlignment) + xPosition(for: toAlignment)) / 2
-        return Image(systemName: ["sparkle", "star.fill", "sparkle"][index % 3])
-            .font(.system(size: [7, 6, 8][index % 3], weight: .bold))
-            .foregroundStyle(sparkleColor.opacity(0.5))
-            .position(x: midX * UIScreen.main.bounds.width, y: height * 0.5)
-            .opacity(drawn ? 1 : 0)
+        return GeometryReader { geo in
+            Image(systemName: ["sparkle", "star.fill", "sparkle"][index % 3])
+                .font(.system(size: [7, 6, 8][index % 3], weight: .bold))
+                .foregroundStyle(sparkleColor.opacity(0.5))
+                .position(x: midX * geo.size.width, y: height * 0.5)
+                .opacity(drawn ? 1 : 0)
+        }
     }
     
     private func xPosition(for alignment: HorizontalAlignment) -> CGFloat {

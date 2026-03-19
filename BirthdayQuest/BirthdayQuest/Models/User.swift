@@ -8,14 +8,6 @@ enum UserRole: String, Codable, CaseIterable {
     case friend = "friend"
     case organizer = "organizer"
     
-    var displayName: String {
-        switch self {
-        case .birthdayBoy: return "The Birthday King 👑"
-        case .friend: return "Secret Agent 🕵️"
-        case .organizer: return "Secret Agent 🕵️"
-        }
-    }
-    
     var isBirthdayBoy: Bool { self == .birthdayBoy }
     var isFriend: Bool { self == .friend || self == .organizer }
     var isOrganizer: Bool { self == .organizer }

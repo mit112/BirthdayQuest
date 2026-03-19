@@ -250,11 +250,11 @@ private extension ProfileView {
             VStack(spacing: 10) {
                 ForEach(Array((user?.funFacts ?? []).enumerated()), id: \.element) { index, fact in
                     let characterEmojis: [String: [String]] = [
-                        "aaryan": ["📉", "🤖", "⚽"],
-                        "mit": ["🍥", "🤷", "☕"],
-                        "kashish": ["🏴‍☠️", "🛒", "⚽"],
-                        "gaurav": ["📱", "💃", "🎃"],
-                        "milloni": ["🥂", "🌧️", "👩‍🍳"]
+                        "alex": ["📉", "🤖", "⚽"],
+                        "sam": ["🍥", "🤷", "☕"],
+                        "jordan": ["🏴‍☠️", "🛒", "⚽"],
+                        "riley": ["📱", "💃", "🎃"],
+                        "morgan": ["🥂", "🌧️", "👩‍🍳"]
                     ]
                     let fallback = ["💬", "🎯", "🦝"]
                     let emojis = characterEmojis[user?.id ?? ""] ?? fallback

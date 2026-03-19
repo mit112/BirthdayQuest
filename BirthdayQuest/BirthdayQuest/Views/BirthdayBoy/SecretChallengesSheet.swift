@@ -76,8 +76,9 @@ private struct SecretMissionCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
                 // From label
+                // Document IDs are human-readable names by design (e.g. "sam", "jordan")
                 if let fromId = challenge.createdByUserId {
-                    Text("FROM: \(fromId.capitalized)")
+                    Text("FROM: \(fromId.uppercased())")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(BQDesign.Colors.secretAccent.opacity(0.7))
                 }

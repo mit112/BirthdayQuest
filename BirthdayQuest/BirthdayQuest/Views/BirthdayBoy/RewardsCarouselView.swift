@@ -5,12 +5,14 @@ struct RewardsCarouselView: View {
     @EnvironmentObject private var session: SessionManager
     @StateObject private var viewModel = RewardsViewModel()
     @State private var scrolledID: Int?
-    
-    private let loopMultiplier = 100
+    @State private var scrollViewWidth: CGFloat = 0
+
+    private let loopMultiplier = 5
     private let cardWidth: CGFloat = 260
-    
+
     private var horizontalInset: CGFloat {
-        (UIScreen.main.bounds.width - cardWidth) / 2
+        let width = scrollViewWidth > 0 ? scrollViewWidth : 390
+        return (width - cardWidth) / 2
     }
     
     private var loopedRewards: [Reward] {
@@ -115,6 +117,9 @@ private extension RewardsCarouselView {
             .scrollPosition(id: $scrolledID)
             .contentMargins(.horizontal, horizontalInset, for: .scrollContent)
             .frame(height: 400)
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { scrollViewWidth = proxy.size.width }
+            })
             .onAppear {
                 jumpToCenter()
             }
@@ -132,7 +137,7 @@ private extension RewardsCarouselView {
                 if newID < lowerBound || newID > upperBound {
                     let currentIndex = newID % count
                     let midStart = loopMultiplier / 2 * count + currentIndex
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         scrolledID = midStart
                     }
                 }
@@ -149,8 +154,8 @@ private extension RewardsCarouselView {
             if viewModel.showTimelinePrompt {
                 Button {
                     viewModel.showTimelinePrompt = false
-                    // Small delay so tab switch completes before scroll
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
                         session.navigateToTimeline()
                     }
                 } label: {

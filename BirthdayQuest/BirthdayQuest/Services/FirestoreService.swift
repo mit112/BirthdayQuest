@@ -1,23 +1,22 @@
 import Foundation
 import FirebaseFirestore
 import FirebaseStorage
-import Combine
+import OSLog
 
 // MARK: - FirestoreService
 
-final class FirestoreService: ObservableObject {
-    
+/// Singleton Firestore gateway. All public methods are called from @MainActor contexts.
+/// Not marked @MainActor itself because Firestore listener callbacks fire on background threads.
+final class FirestoreService {
+
     static let shared = FirestoreService()
-    
+
     private let db = Firestore.firestore()
     private var listeners: [String: ListenerRegistration] = [:]
-    
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Firestore")
+
     private init() {
         // Settings configured in BirthdayQuestApp.init() before any Firestore access
-    }
-    
-    deinit {
-        removeAllListeners()
     }
     
     // MARK: - Listener Management
@@ -41,7 +40,7 @@ final class FirestoreService: ObservableObject {
         listeners[key] = db.collection(Collections.users)
             .addSnapshotListener { snapshot, error in
                 guard let docs = snapshot?.documents else {
-                    print("❌ Users listener error: \(error?.localizedDescription ?? "unknown")")
+                    self.logger.error("Users listener error: \(error?.localizedDescription ?? "unknown")")
                     return
                 }
                 let users = docs.compactMap { try? $0.data(as: BQUser.self) }
@@ -71,7 +70,7 @@ final class FirestoreService: ObservableObject {
             .order(by: "sortOrder")
             .addSnapshotListener { snapshot, error in
                 guard let docs = snapshot?.documents else {
-                    print("❌ Rewards listener error: \(error?.localizedDescription ?? "unknown")")
+                    self.logger.error("Rewards listener error: \(error?.localizedDescription ?? "unknown")")
                     return
                 }
                 let rewards = docs.compactMap { try? $0.data(as: Reward.self) }
@@ -91,7 +90,7 @@ final class FirestoreService: ObservableObject {
         let now = Timestamp(date: Date())
         
         // Transaction: read balance → verify → write everything atomically
-        try await db.runTransaction { [self] transaction, errorPointer in
+        _ = try await db.runTransaction { [self] transaction, errorPointer in
             // Read current game state
             let gsDoc: DocumentSnapshot
             do {
@@ -175,7 +174,7 @@ final class FirestoreService: ObservableObject {
             .order(by: "pointValue")
             .addSnapshotListener { snapshot, error in
                 guard let docs = snapshot?.documents else {
-                    print("❌ Challenges listener error: \(error?.localizedDescription ?? "unknown")")
+                    self.logger.error("Challenges listener error: \(error?.localizedDescription ?? "unknown")")
                     return
                 }
                 let challenges = docs.compactMap { try? $0.data(as: Challenge.self) }
@@ -183,8 +182,9 @@ final class FirestoreService: ObservableObject {
             }
     }
     
-    /// Atomic challenge completion: marks challenge done + awards points + creates timeline event in one batch.
-    /// Proof upload must happen BEFORE calling this (upload is not batchable).
+    /// Atomic challenge completion: reads challenge to verify not already completed,
+    /// then marks done + awards points + creates timeline event in one transaction.
+    /// Proof upload must happen BEFORE calling this (upload is not transactionable).
     func completeChallengeAtomically(
         challengeId: String,
         pointValue: Int,
@@ -194,38 +194,60 @@ final class FirestoreService: ObservableObject {
         proofText: String?,
         timelineEvent: TimelineEvent
     ) async throws {
-        let batch = db.batch()
-        let now = Timestamp(date: Date())
-        
-        // 1. Mark challenge completed
         let challengeRef = db.collection(Collections.challenges).document(challengeId)
-        var challengeData: [String: Any] = [
-            "isCompleted": true,
-            "completedAt": now
-        ]
-        if let proofUrl { challengeData["proofUrl"] = proofUrl }
-        if let proofType { challengeData["proofType"] = proofType }
-        if let proofText { challengeData["proofText"] = proofText }
-        batch.updateData(challengeData, forDocument: challengeRef)
-        
-        // 2. Award points + increment counters
         let gsRef = db.collection(Collections.gameState).document(Collections.gameStateDoc)
-        var gsData: [String: Any] = [
-            "totalPointsEarned": FieldValue.increment(Int64(pointValue)),
-            "currentPoints": FieldValue.increment(Int64(pointValue)),
-            "challengesCompleted": FieldValue.increment(Int64(1)),
-            "updatedAt": now
-        ]
-        if isSecret {
-            gsData["secretChallengesCompleted"] = FieldValue.increment(Int64(1))
+        let now = Timestamp(date: Date())
+
+        _ = try await db.runTransaction { [self] transaction, errorPointer in
+            // Read both documents to establish optimistic locks
+            let challengeDoc: DocumentSnapshot
+            do {
+                challengeDoc = try transaction.getDocument(challengeRef)
+                _ = try transaction.getDocument(gsRef)
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+
+            guard let existingData = challengeDoc.data(),
+                  existingData["isCompleted"] as? Bool != true else {
+                // Already completed — idempotent success
+                return nil
+            }
+
+            // 1. Mark challenge completed
+            var challengeData: [String: Any] = [
+                "isCompleted": true,
+                "completedAt": now
+            ]
+            if let proofUrl { challengeData["proofUrl"] = proofUrl }
+            if let proofType { challengeData["proofType"] = proofType }
+            if let proofText { challengeData["proofText"] = proofText }
+            transaction.updateData(challengeData, forDocument: challengeRef)
+
+            // 2. Award points + increment counters
+            var gsData: [String: Any] = [
+                "totalPointsEarned": FieldValue.increment(Int64(pointValue)),
+                "currentPoints": FieldValue.increment(Int64(pointValue)),
+                "challengesCompleted": FieldValue.increment(Int64(1)),
+                "updatedAt": now
+            ]
+            if isSecret {
+                gsData["secretChallengesCompleted"] = FieldValue.increment(Int64(1))
+            }
+            transaction.updateData(gsData, forDocument: gsRef)
+
+            // 3. Add timeline event
+            let timelineRef = self.db.collection(Collections.timelineEvents).document()
+            do {
+                try transaction.setData(from: timelineEvent, forDocument: timelineRef)
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+
+            return nil
         }
-        batch.updateData(gsData, forDocument: gsRef)
-        
-        // 3. Add timeline event
-        let timelineRef = db.collection(Collections.timelineEvents).document()
-        try batch.setData(from: timelineEvent, forDocument: timelineRef)
-        
-        try await batch.commit()
     }
     
     /// Legacy non-batched complete (kept for potential one-off admin use)
@@ -260,7 +282,7 @@ final class FirestoreService: ObservableObject {
             .order(by: "timestamp", descending: false)
             .addSnapshotListener { snapshot, error in
                 guard let docs = snapshot?.documents else {
-                    print("❌ Timeline listener error: \(error?.localizedDescription ?? "unknown")")
+                    self.logger.error("Timeline listener error: \(error?.localizedDescription ?? "unknown")")
                     return
                 }
                 let events = docs.compactMap { try? $0.data(as: TimelineEvent.self) }
@@ -281,7 +303,7 @@ final class FirestoreService: ObservableObject {
         let ref = db.collection(Collections.gameState).document(Collections.gameStateDoc)
         listeners[key] = ref.addSnapshotListener { snapshot, error in
             guard let snapshot, snapshot.exists, let data = snapshot.data() else {
-                print("❌ GameState listener error: \(error?.localizedDescription ?? "no doc")")
+                self.logger.error("GameState listener error: \(error?.localizedDescription ?? "no doc")")
                 completion(nil)
                 return
             }
@@ -305,7 +327,7 @@ final class FirestoreService: ObservableObject {
                 currentDay: (data["currentDay"] as? NSNumber)?.intValue ?? 1,
                 updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue()
             )
-            print("✅ GameState updated: \(state.currentPoints) pts, \(state.challengesCompleted) challenges, \(state.rewardsUnlocked) rewards")
+            self.logger.debug("GameState updated: \(state.currentPoints) pts, \(state.challengesCompleted) challenges, \(state.rewardsUnlocked) rewards")
             completion(state)
         }
     }
@@ -408,39 +430,67 @@ final class FirestoreService: ObservableObject {
     }
     
     /// Admin force-unlock: bypasses balance check. Optionally deducts points.
-    /// Uses a batch write (no transaction needed — admin is sole writer).
+    /// Uses a transaction to atomically check and trigger the final badge.
     func adminForceUnlockReward(
         rewardId: String,
         pointCost: Int,
         deductPoints: Bool,
         timelineEvent: TimelineEvent
     ) async throws {
-        let batch = db.batch()
-        let now = Timestamp(date: Date())
-        
-        // 1. Mark reward unlocked
         let rewardRef = db.collection(Collections.rewards).document(rewardId)
-        batch.updateData([
-            "isUnlocked": true,
-            "unlockedAt": now
-        ], forDocument: rewardRef)
-        
-        // 2. Update game state
         let gsRef = db.collection(Collections.gameState).document(Collections.gameStateDoc)
-        var gsUpdate: [String: Any] = [
-            "rewardsUnlocked": FieldValue.increment(Int64(1)),
-            "updatedAt": now
-        ]
-        if deductPoints {
-            gsUpdate["totalPointsSpent"] = FieldValue.increment(Int64(pointCost))
-            gsUpdate["currentPoints"] = FieldValue.increment(Int64(-pointCost))
+        let now = Timestamp(date: Date())
+
+        _ = try await db.runTransaction { [self] transaction, errorPointer in
+            // Read game state for final badge check
+            let gsDoc: DocumentSnapshot
+            do {
+                gsDoc = try transaction.getDocument(gsRef)
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+
+            let data = gsDoc.data() ?? [:]
+            let rewardsUnlocked = (data["rewardsUnlocked"] as? NSNumber)?.intValue ?? 0
+            let totalRewards = (data["totalRewards"] as? NSNumber)?.intValue ?? 0
+
+            // 1. Mark reward unlocked
+            transaction.updateData([
+                "isUnlocked": true,
+                "unlockedAt": now
+            ], forDocument: rewardRef)
+
+            // 2. Update game state
+            var gsUpdate: [String: Any] = [
+                "rewardsUnlocked": FieldValue.increment(Int64(1)),
+                "updatedAt": now
+            ]
+            if deductPoints {
+                gsUpdate["totalPointsSpent"] = FieldValue.increment(Int64(pointCost))
+                gsUpdate["currentPoints"] = FieldValue.increment(Int64(-pointCost))
+            }
+
+            // Check if this unlock triggers the final badge
+            let newUnlockedCount = rewardsUnlocked + 1
+            if newUnlockedCount >= totalRewards && totalRewards > 0 {
+                gsUpdate["allRewardsUnlocked"] = true
+                gsUpdate["finalBadgeUnlocked"] = true
+                gsUpdate["finalBadgeUnlockedAt"] = now
+            }
+
+            transaction.updateData(gsUpdate, forDocument: gsRef)
+
+            // 3. Add timeline event
+            let timelineRef = self.db.collection(Collections.timelineEvents).document()
+            do {
+                try transaction.setData(from: timelineEvent, forDocument: timelineRef)
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+
+            return nil
         }
-        batch.updateData(gsUpdate, forDocument: gsRef)
-        
-        // 3. Add timeline event
-        let timelineRef = db.collection(Collections.timelineEvents).document()
-        try batch.setData(from: timelineEvent, forDocument: timelineRef)
-        
-        try await batch.commit()
     }
 }

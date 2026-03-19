@@ -18,7 +18,7 @@ final class CharacterSelectViewModel: ObservableObject {
     @Published var pinInput = ""
     @Published var showPinError = false
     
-    private let overridePin = "0228" // Birthday date — friends won't guess randomly
+    private let overridePin = "1234"
     
     // MARK: - Computed
     
@@ -42,14 +42,13 @@ final class CharacterSelectViewModel: ObservableObject {
     
     func startListening() {
         FirestoreService.shared.listenToUsers { [weak self] users in
-            guard let self else { return }
             let sorted = users.sorted { a, b in
                 if a.role == .birthdayBoy { return true }
                 if b.role == .birthdayBoy { return false }
                 return a.name < b.name
             }
-            Task { @MainActor in
-                self.characters = sorted
+            Task { @MainActor [weak self] in
+                self?.characters = sorted
             }
         }
     }

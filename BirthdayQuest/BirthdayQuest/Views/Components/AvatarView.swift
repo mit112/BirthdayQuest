@@ -12,16 +12,16 @@ struct AvatarView: View {
     
     // MARK: - Per-Character Avatar Configuration
     // Open Peeps by Pablo Stanley — hand-drawn, expressive, great variety
-    // Milloni uses a custom Lorelei asset; others use DiceBear Open Peeps
-    
+    // Morgan uses a custom Lorelei asset; others use DiceBear Open Peeps
+
     // Local asset override — used when a custom illustration is provided
     private var localAssetName: String? {
         switch name.lowercased() {
-        case "aaryan": return "avatar-aaryan"
-        case "mit": return "avatar-mit"
-        case "kashish": return "avatar-kashish"
-        case "gaurav": return "avatar-gaurav"
-        case "milloni": return "avatar-milloni"
+        case "alex": return "avatar-alex"
+        case "sam": return "avatar-sam"
+        case "jordan": return "avatar-jordan"
+        case "riley": return "avatar-riley"
+        case "morgan": return "avatar-morgan"
         default: return nil
         }
     }
@@ -33,44 +33,44 @@ struct AvatarView: View {
         
         // Per-character customization
         switch name.lowercased() {
-        case "aaryan":
+        case "alex":
             // Birthday King: beard + warm skin
             urlString += "&skinColor=9e5622"
             urlString += "&facialHairProbability=100&facialHair=full"
             urlString += "&face=smile"
             urlString += "&accessoriesProbability=0"
-            
-        case "mit":
-            // The Mastermind: glasses
+
+        case "sam":
+            // The Organizer: glasses
             urlString += "&skinColor=ecad80"
             urlString += "&facialHairProbability=0"
             urlString += "&accessoriesProbability=100&accessories=glasses,glasses2,glasses3,glasses4,glasses5"
             urlString += "&face=smile"
-            
-        case "milloni":
-            // Blue-haired chaos
+
+        case "morgan":
+            // Stylish look
             urlString += "&skinColor=f2d3b1"
             urlString += "&facialHairProbability=0"
             urlString += "&accessoriesProbability=0"
             urlString += "&face=smile"
             urlString += "&clothingColor=fc909f"
-            
-        case "kashish":
-            // Clean masculine look — headphones guy
+
+        case "jordan":
+            // Clean look
             urlString += "&skinColor=ecad80"
             urlString += "&facialHairProbability=0"
             urlString += "&accessoriesProbability=0"
             urlString += "&face=smile"
             urlString += "&clothingColor=ffeba4"
-            
-        case "gaurav":
+
+        case "riley":
             // Clean & simple: warm skin, dark hair
             urlString += "&skinColor=9e5622"
             urlString += "&facialHairProbability=0"
             urlString += "&accessoriesProbability=0"
             urlString += "&face=smile"
             urlString += "&clothingColor=77311d"
-            
+
         default:
             break
         }
@@ -81,7 +81,7 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             if let assetName = localAssetName {
-                // Local custom avatar (e.g. Milloni's Lorelei illustration)
+                // Local custom avatar (e.g. Morgan's Lorelei illustration)
                 Image(assetName)
                     .resizable()
                     .scaledToFill()

@@ -80,7 +80,7 @@ for sx, sy, sr in [
 ]:
     draw.ellipse([sx - sr, sy - sr, sx + sr, sy + sr], fill=(255, 255, 255, 140))
 
-out = "/Users/mitsheth/Documents/BirthdayQuest/BirthdayQuest/BirthdayQuest/Assets.xcassets/AppIcon.appiconset"
+out = "BirthdayQuest/BirthdayQuest/Assets.xcassets/AppIcon.appiconset"
 img.save(f"{out}/AppIcon.png", 'PNG')
 print("Light icon saved!")
 

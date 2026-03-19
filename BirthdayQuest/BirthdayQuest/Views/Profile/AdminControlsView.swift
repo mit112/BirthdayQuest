@@ -1,7 +1,7 @@
 import SwiftUI
 import FirebaseFirestore
 
-/// Enhanced admin controls for the organizer (Mit).
+/// Enhanced admin controls for the organizer.
 /// Access from Profile tab. Full game management for live birthday weekend.
 struct AdminControlsView: View {
     

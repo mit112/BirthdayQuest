@@ -1,79 +1,81 @@
 import Foundation
 import FirebaseFirestore
+import OSLog
 
 // MARK: - Data Seeder
 // Populates Firestore with initial data.
 // Checks each collection independently so new content can be added.
 
 struct DataSeeder {
-    
+
     private static let db = Firestore.firestore()
-    
+    private static let logger = Logger(subsystem: "com.example.birthdayquest", category: "DataSeeder")
+
     // MARK: - Seed All
-    
+
     static func seedIfNeeded() async {
         do {
             // Users + game state (original seed)
             let gsDoc = try await db.collection(Collections.gameState)
                 .document(Collections.gameStateDoc).getDocument()
             if !gsDoc.exists {
-                print("🌱 Seeding users + game state...")
+                logger.debug("Seeding users + game state...")
                 try await seedUsers()
                 try await seedGameState()
             }
-            
+
             // Challenges — check for regular (non-secret) challenges specifically
             let challengeSnap = try await db.collection(Collections.challenges)
                 .whereField("isSecret", isEqualTo: false).limit(to: 1).getDocuments()
             if challengeSnap.documents.isEmpty {
-                print("🌱 Seeding challenges...")
+                logger.debug("Seeding challenges...")
                 try await seedChallenges()
             }
-            
+
             // Rewards
             let rewardSnap = try await db.collection(Collections.rewards).limit(to: 1).getDocuments()
             if rewardSnap.documents.isEmpty {
-                print("🌱 Seeding rewards...")
+                logger.debug("Seeding rewards...")
                 try await seedRewards()
             }
-            
-            print("✅ Firestore ready")
+
+            logger.info("Firestore ready")
         } catch {
-            print("❌ Seed error: \(error.localizedDescription)")
+            logger.error("Seed error: \(error.localizedDescription)")
         }
-    }    
+    }
     // MARK: - Seed Users
-    
+
     private static func seedUsers() async throws {
         let users: [(id: String, data: [String: Any])] = [
-            (CharacterID.aaryan, [
-                "name": "Aaryan", "role": UserRole.birthdayBoy.rawValue,
-                "avatarId": "king_avatar", "tagline": "Main character energy. Side character track record.",
-                "funFacts": ["Least likely to: Meet expectations", "Secret weapon at work: Claude Code", "Real Madrid till death"],
+            (CharacterID.alex, [
+                "name": "Alex", "role": UserRole.birthdayBoy.rawValue,
+                "avatarId": "king_avatar", "tagline": "Life of the party with zero party-planning skills.",
+                "funFacts": ["Thinks being late is a personality trait", "Will debate anything for sport", "Peak performance unlocked after midnight"],
                 "roleBadge": "The Birthday King 👑", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
-            (CharacterID.mit, [
-                "name": "Mit", "role": UserRole.organizer.rawValue,
-                "avatarId": "agent_mit", "tagline": "Will call you at 3am. Will also build you an app.",
-                "funFacts": ["Has an anime rec for any mood", "Explained football 100 times. Gets none of it.", "Wannabe coffee enthusiast"],
+            (CharacterID.sam, [
+                "name": "Sam", "role": UserRole.organizer.rawValue,
+                "avatarId": "agent_sam", "tagline": "Over-plans everything. Under-sleeps always.",
+                "funFacts": ["Has a playlist for every occasion", "Explains things nobody asked about", "Caffeine-dependent life form"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
-            (CharacterID.kashish, [
-                "name": "Kashish", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_kashish", "tagline": "Runs on chai, copium, and vape clouds.",
-                "funFacts": ["One Piece is not an anime, it's a lifestyle", "Claims he doesn't cook. Trader Joe's loyalty member.", "Arsenal supporter (pain is familiar)"],
+            (CharacterID.jordan, [
+                "name": "Jordan", "role": UserRole.friend.rawValue,
+                "avatarId": "agent_jordan", "tagline": "Speaks fluent sarcasm and occasional truth.",
+                "funFacts": ["Streaming backlog longer than a CVS receipt", "Kitchen experiments: 50% genius, 50% smoke alarm", "Loyalty runs deeper than fantasy league rivalries"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
-            (CharacterID.gaurav, [
-                "name": "Gaurav", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_gaurav", "tagline": "Dodges group trips like it's cardio.",
-                "funFacts": ["His phone only receives texts, apparently", "Always down for garba", "Abs by Halloween (always the next one)"],
+            (CharacterID.riley, [
+                "name": "Riley", "role": UserRole.friend.rawValue,
+                "avatarId": "agent_riley", "tagline": "Commits to plans like a free trial — tentatively.",
+                "funFacts": ["Replies to texts on a geological timescale", "Spontaneous only on someone else's plan", "Fitness goal: always next month"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ]),
-            (CharacterID.milloni, [
-                "name": "Milloni", "role": UserRole.friend.rawValue,
-                "avatarId": "agent_milloni", "tagline": "Her gifts have lore AND perfect wrapping?!",
-                "funFacts": ["Went from 'no thanks' to 'what are we drinking?'", "Thinks Seattle is a personality trait", "Will cook you the best meals"],
+            (CharacterID.morgan, [
+                "name": "Morgan", "role": UserRole.friend.rawValue,
+                "avatarId": "agent_morgan", "tagline": "Gift wrapping is an extreme sport, apparently.",
+                "funFacts": ["Social battery: fully charged to empty in one hour", "Thinks every city is a personality trait", "Will feed you whether you asked or not"],
                 "roleBadge": "Secret Agent 🕵️", "claimed": false, "createdAt": Timestamp(date: Date())
             ])
         ]
@@ -82,10 +84,10 @@ struct DataSeeder {
             batch.setData(user.data, forDocument: db.collection(Collections.users).document(user.id))
         }
         try await batch.commit()
-        print("  → 5 characters seeded")
-    }    
+        logger.debug("5 characters seeded")
+    }
     // MARK: - Seed Challenges
-    
+
     private static func seedChallenges() async throws {
         let now = Timestamp(date: Date())
         let challenges: [[String: Any]] = [
@@ -104,13 +106,13 @@ struct DataSeeder {
             ["title": "Phone Roulette", "description": "Your friends scroll through your recent texts and pick a contact. You call them on speaker for 60 seconds — no hanging up, no explaining. This is your come-up arc, right? Time to reconnect with people you've been ghosting.", "illustrationAsset": "phone.fill",
              "pointValue": 50, "difficulty": "medium", "category": "social",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
-            ["title": "The Aaryan Cinematic Universe", "description": "Do an impression of every friend at the table. Each one rates you 1-10.", "illustrationAsset": "person.2.fill",
+            ["title": "The Impression Gauntlet", "description": "Do an impression of every friend at the table. Each one rates you 1-10.", "illustrationAsset": "person.2.fill",
              "pointValue": 50, "difficulty": "medium", "category": "creative",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
-            ["title": "Déjà Vu, But Make It NYC", "description": "Pick a memorable photo from the group's history and recreate it right here. Side-by-side comparison is the proof. Bonus respect if you pick an embarrassing one.", "illustrationAsset": "camera.fill",
+            ["title": "Déjà Vu, But Make It Fun", "description": "Pick a memorable photo from the group's history and recreate it right here. Side-by-side comparison is the proof. Bonus respect if you pick an embarrassing one.", "illustrationAsset": "camera.fill",
              "pointValue": 50, "difficulty": "medium", "category": "creative",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
-            ["title": "Stranger Photo", "description": "Convince a complete stranger in NYC to take a photo with you. No context, no explanation. Just vibes and confidence.", "illustrationAsset": "person.crop.rectangle.stack.fill",
+            ["title": "Stranger Photo", "description": "Convince a complete stranger to take a photo with you. No context, no explanation. Just vibes and confidence.", "illustrationAsset": "person.crop.rectangle.stack.fill",
              "pointValue": 50, "difficulty": "medium", "category": "adventure",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now,
              "optionBTitle": "Make a New Friend", "optionBDescription": "Introduce yourself to a stranger. Have a real conversation — 5 minutes minimum, learn their name, what they do, something real. Then get the photo."],
@@ -134,81 +136,81 @@ struct DataSeeder {
              "pointValue": 100, "difficulty": "hard", "category": "sentimental",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
             // PASSIVE — 50 pts
-            ["title": "No Stuti Weekend", "description": "Zero mentions, zero texts, zero stalking socials. The whole weekend is a Stuti-free zone. Friends are watching. Every slip-up gets called out. This is YOUR birthday — act like it.", "illustrationAsset": "hand.raised.slash.fill",
+            ["title": "Digital Detox Weekend", "description": "No social media, no doomscrolling, no distractions. The whole weekend is about being present. Friends are watching. Every slip-up gets called out. This is YOUR birthday — be in the moment.", "illustrationAsset": "hand.raised.slash.fill",
              "pointValue": 50, "difficulty": "medium", "category": "social",
              "isSecret": false, "isDelivered": false, "isCompleted": false, "createdAt": now],
         ]
-        
+
         let batch = db.batch()
         for challenge in challenges {
             let ref = db.collection(Collections.challenges).document()
             batch.setData(challenge, forDocument: ref)
         }
         try await batch.commit()
-        
+
         // Update game_state totals
         try await db.collection(Collections.gameState).document(Collections.gameStateDoc).updateData([
             "totalChallenges": challenges.count, "updatedAt": Timestamp(date: Date())
         ])
-        print("  → \(challenges.count) challenges seeded")
-    }    
+        logger.debug("\(challenges.count) challenges seeded")
+    }
     // MARK: - Seed Rewards
-    
+
     private static func seedRewards() async throws {
         let now = Timestamp(date: Date())
-        
+
         let rewards: [[String: Any]] = [
             // Audio tier: 50 pts
-            ["fromUserId": CharacterID.mit, "fromName": "Mit", "title": "A message from Mit",
-             "teaser": "The mastermind has something to say", "pointCost": 50,
+            ["fromUserId": CharacterID.sam, "fromName": "Sam", "title": "A message from Sam",
+             "teaser": "The organizer has something to say", "pointCost": 50,
              "contentType": "audio",
              "isUnlocked": false, "sortOrder": 1, "badgeIllustration": "heart_badge", "createdAt": now],
             // Video tier: 100 pts each
-            ["fromUserId": CharacterID.kashish, "fromName": "Kashish", "title": "A message from Kashish",
-             "teaser": "He actually wrote something nice", "pointCost": 100,
+            ["fromUserId": CharacterID.jordan, "fromName": "Jordan", "title": "A message from Jordan",
+             "teaser": "They actually wrote something nice", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 2, "badgeIllustration": "heart_badge", "createdAt": now],
-            ["fromUserId": CharacterID.gaurav, "fromName": "Gaurav", "title": "A message from Gaurav",
-             "teaser": "He actually sat down and recorded this", "pointCost": 100,
+            ["fromUserId": CharacterID.riley, "fromName": "Riley", "title": "A message from Riley",
+             "teaser": "They actually sat down and recorded this", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 3, "badgeIllustration": "heart_badge", "createdAt": now],
-            ["fromUserId": CharacterID.milloni, "fromName": "Milloni", "title": "A message from Milloni",
-             "teaser": "Chaos coordinator gets sentimental", "pointCost": 100,
+            ["fromUserId": CharacterID.morgan, "fromName": "Morgan", "title": "A message from Morgan",
+             "teaser": "The planner gets sentimental", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 4, "badgeIllustration": "heart_badge", "createdAt": now],
             ["fromName": "Family", "title": "A surprise from the family",
              "teaser": "The whole family got together for this", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 5, "badgeIllustration": "star_badge", "createdAt": now],
-            ["fromName": "Abhishek", "title": "A message from Abhishek",
-             "teaser": "He's got something to say", "pointCost": 100,
+            ["fromName": "Chris", "title": "A message from Chris",
+             "teaser": "They've got something to say", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 6, "badgeIllustration": "heart_badge", "createdAt": now],
-            ["fromName": "Manan", "title": "A message from Manan",
-             "teaser": "He's got something to say", "pointCost": 100,
+            ["fromName": "Taylor", "title": "A message from Taylor",
+             "teaser": "They've got something to say", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 7, "badgeIllustration": "heart_badge", "createdAt": now],
-            ["fromName": "Jay", "title": "A message from Jay",
-             "teaser": "He's got something to say", "pointCost": 100,
+            ["fromName": "Jamie", "title": "A message from Jamie",
+             "teaser": "They've got something to say", "pointCost": 100,
              "contentType": "video",
              "isUnlocked": false, "sortOrder": 8, "badgeIllustration": "heart_badge", "createdAt": now],
         ]
-        
+
         let batch = db.batch()
         for reward in rewards {
             let ref = db.collection(Collections.rewards).document()
             batch.setData(reward, forDocument: ref)
         }
         try await batch.commit()
-        
+
         // Update game_state totals
         try await db.collection(Collections.gameState).document(Collections.gameStateDoc).updateData([
             "totalRewards": rewards.count, "updatedAt": Timestamp(date: Date())
         ])
-        print("  → \(rewards.count) rewards seeded")
-    }    
+        logger.debug("\(rewards.count) rewards seeded")
+    }
     // MARK: - Seed Game State
-    
+
     private static func seedGameState() async throws {
         let data: [String: Any] = [
             "birthdayBoyId": CharacterID.birthdayBoy,
@@ -222,6 +224,6 @@ struct DataSeeder {
         ]
         try await db.collection(Collections.gameState)
             .document(Collections.gameStateDoc).setData(data)
-        print("  → game_state/main seeded")
+        logger.debug("game_state/main seeded")
     }
 }

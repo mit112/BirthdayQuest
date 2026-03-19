@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
 
 @MainActor
 final class RewardsViewModel: ObservableObject {
@@ -15,7 +16,9 @@ final class RewardsViewModel: ObservableObject {
     @Published var isUnlocking = false
     @Published var justUnlockedReward: Reward?
     @Published var showTimelinePrompt = false
-    
+
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Rewards")
+
     // MARK: - Computed
     
     // NOTE: Points are read from @EnvironmentObject session in views, NOT here.
@@ -98,7 +101,7 @@ final class RewardsViewModel: ObservableObject {
             showUnlockedContent = true
             
         } catch {
-            print("❌ Unlock error: \(error.localizedDescription)")
+            logger.error("Unlock error: \(error.localizedDescription)")
             BQDesign.Haptics.heavy()
         }
         

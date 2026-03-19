@@ -70,8 +70,8 @@ final class ChallengesViewModel: ObservableObject {
         secretsDiscovered = true
         showSecretPortal = true
         BQDesign.Haptics.heavy()
-        
-        // Update game state
+
+        // Update game state — absolute set from current listener snapshot
         Task {
             try? await FirestoreService.shared.updateGameState([
                 "secretChallengesFound": deliveredSecrets.count

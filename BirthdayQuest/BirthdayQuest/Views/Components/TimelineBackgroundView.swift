@@ -48,21 +48,11 @@ struct TimelineBackgroundView: View {
 // MARK: - Bokeh Field (large soft blurred circles)
 
 private struct BokehFieldView: View {
-    
+
     private let bokehCount = 8
-    
+
     var body: some View {
         GeometryReader { geo in
-            Canvas { context, size in
-                // Static bokeh — drawn once, no per-frame cost
-            } symbols: {
-                ForEach(0..<bokehCount, id: \.self) { i in
-                    BokehDot(index: i, bounds: geo.size)
-                        .tag(i)
-                }
-            }
-            
-            // Use real views for animation (lightweight at 8 count)
             ForEach(0..<bokehCount, id: \.self) { i in
                 BokehDot(index: i, bounds: geo.size)
             }
@@ -116,15 +106,16 @@ private struct BokehDot: View {
                 withAnimation(.easeIn(duration: 1.5).delay(delay)) {
                     opacity = 1
                 }
+                // Deterministic drift from index — no flickering on tab re-entry
+                let seed = Double(index)
+                let driftX = CGFloat((seed * 17.3).truncatingRemainder(dividingBy: 40)) - 20
+                let driftY = CGFloat((seed * 23.7).truncatingRemainder(dividingBy: 30)) - 15
                 withAnimation(
                     .easeInOut(duration: config.duration)
                     .repeatForever(autoreverses: true)
                     .delay(delay)
                 ) {
-                    driftOffset = CGSize(
-                        width: CGFloat.random(in: -20...20),
-                        height: CGFloat.random(in: -15...15)
-                    )
+                    driftOffset = CGSize(width: driftX, height: driftY)
                 }
             }
     }
@@ -190,7 +181,8 @@ private struct SparkleParticle: View {
             .scaleEffect(twinkle ? 1.2 : 0.7)
             .onAppear {
                 let delay = Double(index) * 0.2
-                let duration = Double.random(in: 1.8...3.5)
+                // Deterministic duration from index — stable across re-renders
+                let duration = 1.8 + (Double(index) * 0.37).truncatingRemainder(dividingBy: 1.7)
                 withAnimation(
                     .easeInOut(duration: duration)
                     .repeatForever(autoreverses: true)

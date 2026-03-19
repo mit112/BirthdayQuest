@@ -14,15 +14,15 @@ enum Collections {
 // MARK: - Character IDs (stable, used everywhere)
 
 enum CharacterID {
-    static let aaryan = "aaryan"
-    static let mit = "mit"
-    static let kashish = "kashish"
-    static let gaurav = "gaurav"
-    static let milloni = "milloni"
-    
-    static let birthdayBoy = aaryan
-    static let organizer = mit
-    static let birthdayBoyName = "Aaryan"
-    
-    static let all: [String] = [aaryan, mit, kashish, gaurav, milloni]
+    static let alex = "alex"
+    static let sam = "sam"
+    static let jordan = "jordan"
+    static let riley = "riley"
+    static let morgan = "morgan"
+
+    static let birthdayBoy = alex
+    static let organizer = sam
+    static let birthdayBoyName = "Alex"
+
+    static let all: [String] = [alex, sam, jordan, riley, morgan]
 }

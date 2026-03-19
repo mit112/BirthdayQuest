@@ -252,14 +252,15 @@ private extension SecretChallengeHomeView {
     
     // MARK: Scan Lines Overlay
     var scanLines: some View {
-        GeometryReader { geo in
-            VStack(spacing: 4) {
-                ForEach(0..<Int(geo.size.height / 4), id: \.self) { _ in
-                    Rectangle()
-                        .fill(Color.white.opacity(0.015))
-                        .frame(height: 1)
-                    Spacer().frame(height: 3)
-                }
+        Canvas { context, size in
+            let spacing: CGFloat = 4
+            var y: CGFloat = 0
+            while y < size.height {
+                context.fill(
+                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                    with: .color(.white.opacity(0.015))
+                )
+                y += spacing
             }
         }
         .allowsHitTesting(false)

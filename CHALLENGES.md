@@ -5,7 +5,7 @@
 All challenges visible from day one. Order in list suggests arc (fun → social → emotional) but player picks freely.
 
 ### Challenge 1: Order in Character
-- Friends pick a persona/accent, Aaryan maintains it through entire restaurant order
+- Friends pick a persona/accent, the birthday person maintains it through entire restaurant order
 - Category: social | Difficulty: easy | Points: 25-50
 
 ### Challenge 2: Blind Menu Roulette / Waiter's Choice ⚡ 2-in-1
@@ -61,7 +61,7 @@ All challenges visible from day one. Order in list suggests arc (fun → social 
 - Category: adventure | Difficulty: hard | Points: 75-100
 
 ### Secret Challenges (4 total — one from each friend)
-- Created by Mit, Kashish, Gaurav, Milloni via the app's Secret Challenge screen
+- Created by Sam, Jordan, Riley, Morgan via the app's Secret Challenge screen
 - All use the same universal submission (photo/text/completed)
 
 ---
@@ -104,10 +104,10 @@ This is a **UI-only** feature — one challenge doc in Firestore, the detail vie
 ## Personalization Phase
 **Profiles: ✅ DONE (Feb 26)**
 All 5 character profiles personalized with custom taglines, fun facts, and per-character emojis in ProfileView.
-Personalized content drafted in `/mnt/user-data/outputs/AARYAN_PERSONALIZED.md`.
+Personalization phase complete.
 
 **Challenges: TODO**
-These 12 challenges are the structure. Next step: personalize them with Aaryan-specific details:
+These 12 challenges are the structure. Next step: personalize them with birthday-person-specific details:
 - Inside jokes in challenge descriptions
 - Specific photos to recreate
 - Specific people to call in Phone Roulette categories

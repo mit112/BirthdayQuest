@@ -1,9 +1,8 @@
 // AVATAR CHECKPOINT — Feb 25, 2026
 // Save of AvatarView.swift after avatar customization pass.
-// Characters: Aaryan=beard+crown, Mit=glasses, Milloni=blue pixie hair, Kashish=headphones overlay+masculine, Gaurav=clean
-// Kashish is a GUY. No feminine features.
-// Milloni hair fix: forced hair=pixie because seed "Milloni" generates mrClean (bald)
-// Backup screenshots in /mnt/user-data/outputs/avatar-backup/
+// Characters: Alex=beard+crown, Sam=glasses, Morgan=blue pixie hair, Jordan=headphones overlay+masculine, Riley=clean
+// Jordan is a GUY. No feminine features.
+// Morgan hair fix: forced hair=pixie because seed "Morgan" generates mrClean (bald)
 
 import SwiftUI
 
@@ -19,7 +18,7 @@ struct AvatarView: View {
     
     // MARK: - Per-Character Avatar Configuration
     // Each character gets specific DiceBear Micah parameters for a unique look.
-    // Features: Aaryan=beard, Mit=glasses, Milloni=blue hair, Kashish=headphones overlay, Gaurav=clean
+    // Features: Alex=beard, Sam=glasses, Morgan=blue hair, Jordan=headphones overlay, Riley=clean
     
     private var avatarURL: URL? {
         let seed = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
@@ -28,7 +27,7 @@ struct AvatarView: View {
         
         // Per-character customization
         switch name.lowercased() {
-        case "aaryan":
+        case "alex":
             // Birthday King: beard + confident smirk + warm skin
             urlString += "&mouth=smirk"
             urlString += "&facialHair=beard&facialHairProbability=100&facialHairColor=000000"
@@ -37,7 +36,7 @@ struct AvatarView: View {
             urlString += "&baseColor=ac6651"
             urlString += "&shirtColor=6bd9e9"
             
-        case "mit":
+        case "sam":
             // The Mastermind: glasses + scheming look
             urlString += "&mouth=smile"
             urlString += "&glasses=round&glassesProbability=100&glassesColor=000000"
@@ -47,9 +46,9 @@ struct AvatarView: View {
             urlString += "&shirtColor=9287ff"
             urlString += "&hairColor=000000"
             
-        case "milloni":
+        case "morgan":
             // Blue-haired chaos: blue hair + earrings + playful
-            // Force pixie hair — seed "Milloni" generates mrClean (bald)
+            // Force pixie hair — seed "Morgan" generates mrClean (bald)
             urlString += "&mouth=laughing"
             urlString += "&hair=pixie&hairColor=4A90D9&hairProbability=100"
             urlString += "&earringsProbability=100&earrings=stud&earringColor=f4d150"
@@ -61,7 +60,7 @@ struct AvatarView: View {
             urlString += "&shirtColor=fc909f"
             urlString += "&eyeShadowColor=d2eff3"
             
-        case "kashish":
+        case "jordan":
             // Always has headphones — clean masculine look
             urlString += "&mouth=smile"
             urlString += "&glassesProbability=0"
@@ -73,7 +72,7 @@ struct AvatarView: View {
             urlString += "&shirtColor=ffeba4"
             urlString += "&eyes=eyes"
             
-        case "gaurav":
+        case "riley":
             // Clean & simple: fresh, minimal, gym bro energy
             urlString += "&mouth=laughing"
             urlString += "&glassesProbability=0"
@@ -95,7 +94,7 @@ struct AvatarView: View {
     
     // Whether this character gets the headphone overlay
     private var showHeadphones: Bool {
-        name.lowercased() == "kashish"
+        name.lowercased() == "jordan"
     }
     
     var body: some View {
@@ -125,7 +124,7 @@ struct AvatarView: View {
                     .offset(y: -(size * 0.42))
             }
             
-            // Headphone overlay for Kashish
+            // Headphone overlay for Jordan
             if showHeadphones {
                 Text("🎧")
                     .font(.system(size: size * 0.45))

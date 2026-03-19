@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
 
 // MARK: - App State
 
@@ -69,8 +70,11 @@ final class SessionManager: ObservableObject {
         gameState.currentPoints
     }
     
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Session")
+    private var listenersStarted = false
+
     // MARK: - Initialization
-    
+
     private init() {}
     
     // MARK: - Bootstrap
@@ -96,7 +100,7 @@ final class SessionManager: ObservableObject {
                 clearSession()
             }
         } catch {
-            print("❌ Bootstrap error: \(error.localizedDescription)")
+            logger.error("Bootstrap error: \(error.localizedDescription)")
             clearSession()
         }
     }
@@ -141,6 +145,9 @@ final class SessionManager: ObservableObject {
     // MARK: - Real-time Listeners
     
     private func startListeners() {
+        guard !listenersStarted else { return }
+        listenersStarted = true
+
         // Game state — everyone needs this
         FirestoreService.shared.listenToGameState { [weak self] state in
             guard let state else { return }
@@ -155,6 +162,7 @@ final class SessionManager: ObservableObject {
     func clearSession() {
         UserDefaults.standard.removeObject(forKey: Keys.selectedCharacterId)
         currentUser = nil
+        listenersStarted = false
         FirestoreService.shared.removeAllListeners()
         appState = .characterSelect
     }

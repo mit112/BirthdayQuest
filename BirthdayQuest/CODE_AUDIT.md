@@ -77,10 +77,10 @@ The codebase is well-organized with clean MVVM separation, a thoughtful design s
 Blueprint specifies photo/video/text/button. Enum only has photo/text/button. If a video challenge is added to Firestore, Codable decoding silently drops it.
 
 ### 8. No Image Compression Before Upload (ChallengeSubmissionViewModel.swift)
-Raw iPhone photos (3-8MB each) uploaded as-is. 17 challenges × 5MB = 85MB over cellular in NYC. Compress to JPEG ~500KB before upload.
+Raw iPhone photos (3-8MB each) uploaded as-is. 17 challenges × 5MB = 85MB over cellular. Compress to JPEG ~500KB before upload.
 
 ### 9. Avatars From External DiceBear API — No Caching/Offline Fallback (AvatarView.swift)
-Every AvatarView makes a network request. Dozens per screen. If API is down or slow (NYC subway), all avatars break. Pre-generate or cache to disk.
+Every AvatarView makes a network request. Dozens per screen. If API is down or slow, all avatars break. Pre-generate or cache to disk.
 
 ### 10. FloatingParticlesView Random Values Change on Redraw (FloatingParticlesView.swift)
 `size` and `color` use `.random()` in computed properties. Particles flicker randomly on every SwiftUI redraw. Derive from index instead.
@@ -88,11 +88,11 @@ Every AvatarView makes a network request. Dozens per screen. If API is down or s
 ### 11. Tab Bar Appearance Set Globally via UIAppearance
 `UITabBar.appearance()` in `onAppear` runs repeatedly and affects all tab bars globally. Move to app init or use SwiftUI modifiers.
 
-### 12. SecretChallengeHomeView Hardcodes "Aaryan" (line 83)
+### 12. SecretChallengeHomeView Hardcodes Birthday Name (line 83)
 Should come from AppConstants or game state, not be a magic string buried in a view.
 
 ### 13. SecretMissionCard Shows Raw User ID Instead of Name (SecretChallengesSheet.swift:89)
-Displays `fromId.uppercased()` showing "MIT" instead of "Mit". Use `.capitalized` or look up the display name.
+Displays `fromId.uppercased()` showing raw ID. Use `.capitalized` or look up the display name.
 
 ### 14. No Error Recovery for Failed Seed (DataSeeder.swift)
 If seeding partially fails, subsequent launches may skip re-seeding due to partial data existing. Needs a version/completion marker.
@@ -148,7 +148,7 @@ No `.order(by:)` on challenges listener. List order is random/unstable.
 - [x] **#3:** Transaction-based points spending with balance check
 - [x] **#4:** Unique listener keys per ViewModel
 - [x] **#5:** Store and properly remove NotificationCenter observer
-- [x] **#6:** Remove or secure the override PIN ("1234") → changed to "0228"
+- [x] **#6:** Remove or secure the override PIN
 - [x] **#7:** Added missing `video` submission type + UI + handler
 - [x] **#8:** Add JPEG compression before proof upload (~500KB target)
 - [x] **#10:** Fix particle randomness to be deterministic

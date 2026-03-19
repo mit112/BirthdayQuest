@@ -18,20 +18,6 @@ final class TimelineViewModel: ObservableObject {
     
     var isEmpty: Bool { events.isEmpty }
     
-    var gameState: GameState {
-        SessionManager.shared.gameState
-    }
-    
-    var rewardProgress: String {
-        "\(gameState.rewardsUnlocked)/\(gameState.totalRewards) gifts unlocked"
-    }
-    
-    /// 0...1 fraction of rewards unlocked (drives Final Badge progressive glow)
-    var progressFraction: Double {
-        guard gameState.totalRewards > 0 else { return 0 }
-        return Double(gameState.rewardsUnlocked) / Double(gameState.totalRewards)
-    }
-    
     // MARK: - Listeners
     
     func startListening() {

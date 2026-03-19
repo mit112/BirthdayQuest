@@ -14,7 +14,7 @@ Models + Firebase Service + Session Manager + Seed Data
 - FirestoreService — all CRUD + real-time listeners
 - SessionManager — persists selected character, exposes role checks
 - AppConstants — character IDs, collection names
-- Seed Firestore: 5 users (Aaryan, Mit, Kashish, Gaurav, Milloni)
+- Seed Firestore: 5 users (Alex, Sam, Jordan, Riley, Morgan)
 - Collections: `users`, `rewards`, `challenges`, `timeline_events`, `game_state/main`
 - Roles: `birthday_boy`, `friend`, `organizer`
 - NO voting. Challenges: `isCompleted`, `proofUrl`, `proofType`
@@ -22,7 +22,7 @@ Models + Firebase Service + Session Manager + Seed Data
 ## Chunk 1: Character Select (Screen 0)
 - Full-screen immersive gradient background
 - Horizontal swipe carousel of 5 characters on a "platform"
-- Aaryan: golden crown glow. Friends: Secret Agent vibe
+- Alex: golden crown glow. Friends: Secret Agent vibe
 - "This is me" button — scale + haptic + transition
 - Claiming: `claimed: true` in Firestore, greyed for others
 - Routes to correct tab layout by role
@@ -77,7 +77,7 @@ Models + Firebase Service + Session Manager + Seed Data
 - game_state/main listener for global sync
 - Points sync across screens real-time
 - "Check timeline →" button: switches tab, scrolls, animates
-- Organizer admin controls (hidden, for Mit)
+- Organizer admin controls (hidden, for organizer)
 - Edge cases
 
 ## Chunk 9: Final Polish + TestFlight

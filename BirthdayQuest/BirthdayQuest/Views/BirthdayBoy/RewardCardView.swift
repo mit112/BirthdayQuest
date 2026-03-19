@@ -171,13 +171,4 @@ private extension RewardCardView {
         }
     }
     
-    var avatarEmoji: String {
-        // Map content type to emoji as placeholder for real avatars
-        switch reward.contentType {
-        case .video: return "🎬"
-        case .audio: return "🎵"
-        case .text: return "💌"
-        case .image: return "🖼️"
-        }
-    }
 }

@@ -251,10 +251,13 @@ private extension TimelineNodeView {
     }
     
     var cleanTitle: String {
-        var t = event.title
-        if t.hasPrefix("Completed: ") { t = String(t.dropFirst(11)) }
-        else if t.hasPrefix("Unlocked: ") { t = String(t.dropFirst(10)) }
-        return t
+        let prefixes = ["Completed: ", "Unlocked: "]
+        for prefix in prefixes {
+            if event.title.hasPrefix(prefix) {
+                return String(event.title.dropFirst(prefix.count))
+            }
+        }
+        return event.title
     }
     
     var pointsText: String {
