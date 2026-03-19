@@ -17,11 +17,11 @@ struct AvatarView: View {
     // Local asset override — used when a custom illustration is provided
     private var localAssetName: String? {
         switch name.lowercased() {
-        case "alex": return "avatar-alex"
-        case "sam": return "avatar-sam"
-        case "jordan": return "avatar-jordan"
-        case "riley": return "avatar-riley"
-        case "morgan": return "avatar-morgan"
+        case "alex", "aaryan": return "avatar-alex"
+        case "sam", "mit": return "avatar-sam"
+        case "jordan", "kashish": return "avatar-jordan"
+        case "riley", "gaurav": return "avatar-riley"
+        case "morgan", "milloni": return "avatar-morgan"
         default: return nil
         }
     }

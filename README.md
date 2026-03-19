@@ -10,6 +10,23 @@ A living timeline captures every moment — growing node by node with animated b
 
 **The app is the gift.**
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/character-select.jpg" width="200" />
+  <img src="screenshots/rewards.jpg" width="200" />
+  <img src="screenshots/challenges.jpg" width="200" />
+</p>
+<p align="center">
+  <img src="screenshots/timeline.jpg" width="200" />
+  <img src="screenshots/secret-dare.jpg" width="200" />
+  <img src="screenshots/profile.jpg" width="200" />
+</p>
+
+<p align="center">
+  <em>Character Select &nbsp;·&nbsp; Rewards Carousel &nbsp;·&nbsp; Challenge Board &nbsp;·&nbsp; Living Timeline &nbsp;·&nbsp; Secret Dare &nbsp;·&nbsp; Profile</em>
+</p>
+
 ## Features
 
 ### Rewards Carousel

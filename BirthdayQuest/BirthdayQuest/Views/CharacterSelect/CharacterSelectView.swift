@@ -17,12 +17,12 @@ struct CharacterSelectView: View {
             
             // MARK: - Content
             VStack(spacing: 0) {
-                Spacer().frame(height: 60)
-                
+                Spacer().frame(height: 80)
+
                 // Title
                 titleSection
                     .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : -20)
+                    .offset(y: appeared ? 0 : -15)
                 
                 Spacer()
                 
@@ -98,7 +98,9 @@ private extension CharacterSelectView {
     var titleSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
             Text("Choose Your Character")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.system(size: 32, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.white, .white.opacity(0.85)],
@@ -106,11 +108,12 @@ private extension CharacterSelectView {
                         endPoint: .bottom
                     )
                 )
-            
+
             Text("Swipe to find yourself")
                 .font(BQDesign.Typography.body)
                 .foregroundColor(.white.opacity(titleGlow ? 0.55 : 0.35))
         }
+        .padding(.horizontal, BQDesign.Spacing.lg)
     }
     
     // MARK: Character Carousel
