@@ -196,6 +196,81 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = false
     }
     
+    // MARK: - Adjust Points
+
+    /// Grants points and credits them to the earned total.
+    func addPoints(_ amount: Int) async {
+        isPerformingAction = true
+
+        do {
+            try await service.updateGameState([
+                "currentPoints": FieldValue.increment(Int64(amount)),
+                "totalPointsEarned": FieldValue.increment(Int64(amount))
+            ])
+            actionResult = AdminActionResult(
+                message: "✦ Added \(amount) points.",
+                isError: false
+            )
+            BQDesign.Haptics.success()
+        } catch {
+            actionResult = AdminActionResult(
+                message: "❌ Failed to add points: \(error.localizedDescription)",
+                isError: true
+            )
+            BQDesign.Haptics.error()
+        }
+
+        isPerformingAction = false
+    }
+
+    /// Removes points from the current balance. Does not touch the earned total,
+    /// so the running history of what was earned stays accurate.
+    func removePoints(_ amount: Int) async {
+        isPerformingAction = true
+
+        do {
+            try await service.updateGameState([
+                "currentPoints": FieldValue.increment(Int64(-amount))
+            ])
+            actionResult = AdminActionResult(
+                message: "✦ Removed \(amount) points.",
+                isError: false
+            )
+            BQDesign.Haptics.success()
+        } catch {
+            actionResult = AdminActionResult(
+                message: "❌ Failed to remove points: \(error.localizedDescription)",
+                isError: true
+            )
+            BQDesign.Haptics.error()
+        }
+
+        isPerformingAction = false
+    }
+
+    // MARK: - Advance Day
+
+    func advanceDay(from currentDay: Int) async {
+        isPerformingAction = true
+
+        do {
+            try await service.updateGameState(["currentDay": currentDay + 1])
+            actionResult = AdminActionResult(
+                message: "📅 Now on day \(currentDay + 1).",
+                isError: false
+            )
+            BQDesign.Haptics.success()
+        } catch {
+            actionResult = AdminActionResult(
+                message: "❌ Failed to advance the day: \(error.localizedDescription)",
+                isError: true
+            )
+            BQDesign.Haptics.error()
+        }
+
+        isPerformingAction = false
+    }
+
     // MARK: - Unclaim Character
     
     func unclaimCharacter(_ user: BQUser) async {

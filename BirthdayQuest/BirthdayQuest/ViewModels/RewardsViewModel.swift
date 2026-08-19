@@ -16,6 +16,8 @@ final class RewardsViewModel: ObservableObject {
     @Published var isUnlocking = false
     @Published var justUnlockedReward: Reward?
     @Published var showTimelinePrompt = false
+    @Published var errorMessage: String?
+    @Published var showError = false
 
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Rewards")
 
@@ -102,7 +104,9 @@ final class RewardsViewModel: ObservableObject {
             
         } catch {
             logger.error("Unlock error: \(error.localizedDescription)")
-            BQDesign.Haptics.heavy()
+            errorMessage = "Couldn't unlock that gift. Your points are safe — try again."
+            showError = true
+            BQDesign.Haptics.error()
         }
         
         isUnlocking = false

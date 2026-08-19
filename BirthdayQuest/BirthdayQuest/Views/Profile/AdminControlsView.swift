@@ -1,5 +1,4 @@
 import SwiftUI
-import FirebaseFirestore
 
 /// Enhanced admin controls for the organizer.
 /// Access from Profile tab. Full game management for live birthday weekend.
@@ -193,23 +192,16 @@ private extension AdminControlsView {
                 adminActionButton("Add", color: BQDesign.Colors.success) {
                     guard let amount = Int(pointsToAdd), amount > 0 else { return }
                     Task {
-                        try? await FirestoreService.shared.updateGameState([
-                            "currentPoints": FieldValue.increment(Int64(amount)),
-                            "totalPointsEarned": FieldValue.increment(Int64(amount))
-                        ])
+                        await viewModel.addPoints(amount)
                         pointsToAdd = ""
-                        BQDesign.Haptics.success()
                     }
                 }
                 
                 adminActionButton("Remove", color: BQDesign.Colors.secretAccent) {
                     guard let amount = Int(pointsToAdd), amount > 0 else { return }
                     Task {
-                        try? await FirestoreService.shared.updateGameState([
-                            "currentPoints": FieldValue.increment(Int64(-amount))
-                        ])
+                        await viewModel.removePoints(amount)
                         pointsToAdd = ""
-                        BQDesign.Haptics.success()
                     }
                 }
             }
@@ -414,10 +406,7 @@ private extension AdminControlsView {
                 
                 adminActionButton("+ Day", color: BQDesign.Colors.primaryPurple) {
                     Task {
-                        try? await FirestoreService.shared.updateGameState([
-                            "currentDay": gameState.currentDay + 1
-                        ])
-                        BQDesign.Haptics.success()
+                        await viewModel.advanceDay(from: gameState.currentDay)
                     }
                 }
             }

@@ -59,6 +59,11 @@ struct RewardsCarouselView: View {
                 }
             }
         }
+        .alert("Oops", isPresented: $viewModel.showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "Something went wrong")
+        }
     }
 }
 
