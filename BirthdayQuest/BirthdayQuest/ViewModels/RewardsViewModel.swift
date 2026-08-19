@@ -5,6 +5,12 @@ import OSLog
 
 @MainActor
 final class RewardsViewModel: ObservableObject {
+
+    private let service: GameBackend
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Published
     
@@ -46,7 +52,7 @@ final class RewardsViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        FirestoreService.shared.listenToRewards { [weak self] rewards in
+        service.listenToRewards { [weak self] rewards in
             Task { @MainActor in
                 guard let self else { return }
                 self.rewards = rewards
@@ -56,7 +62,7 @@ final class RewardsViewModel: ObservableObject {
     }
     
     func stopListening() {
-        FirestoreService.shared.removeListener(forKey: "rewards")
+        service.removeListener(forKey: "rewards")
     }
     
     // MARK: - Unlock Flow
@@ -88,7 +94,7 @@ final class RewardsViewModel: ObservableObject {
                 timestamp: Date()
             )
             
-            try await FirestoreService.shared.unlockRewardAtomically(
+            try await service.unlockRewardAtomically(
                 rewardId: rewardId,
                 pointCost: reward.pointCost,
                 timelineEvent: event

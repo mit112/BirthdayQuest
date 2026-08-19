@@ -75,7 +75,11 @@ final class SessionManager: ObservableObject {
 
     // MARK: - Initialization
 
-    private init() {}
+    private let service: GameBackend
+
+    private init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Bootstrap
     
@@ -91,7 +95,7 @@ final class SessionManager: ObservableObject {
         
         // Verify the character is still claimed by this device
         do {
-            if let user = try await FirestoreService.shared.fetchUser(characterId: characterId),
+            if let user = try await service.fetchUser(characterId: characterId),
                user.claimed && user.deviceId == deviceId {
                 currentUser = user
                 routeToHome(for: user.role)
@@ -111,7 +115,7 @@ final class SessionManager: ObservableObject {
         guard let characterId = user.id else { return }
         
         // Claim in Firestore
-        try await FirestoreService.shared.claimCharacter(
+        try await service.claimCharacter(
             characterId: characterId,
             deviceId: deviceId
         )
@@ -149,7 +153,7 @@ final class SessionManager: ObservableObject {
         listenersStarted = true
 
         // Game state — everyone needs this
-        FirestoreService.shared.listenToGameState { [weak self] state in
+        service.listenToGameState { [weak self] state in
             guard let state else { return }
             Task { @MainActor in
                 self?.gameState = state
@@ -163,7 +167,7 @@ final class SessionManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Keys.selectedCharacterId)
         currentUser = nil
         listenersStarted = false
-        FirestoreService.shared.removeAllListeners()
+        service.removeAllListeners()
         appState = .characterSelect
     }
     

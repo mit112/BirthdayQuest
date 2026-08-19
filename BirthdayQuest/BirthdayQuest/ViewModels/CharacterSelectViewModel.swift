@@ -4,6 +4,12 @@ import Combine
 
 @MainActor
 final class CharacterSelectViewModel: ObservableObject {
+
+    private let service: GameBackend
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Published State
     
@@ -41,7 +47,7 @@ final class CharacterSelectViewModel: ObservableObject {
     // MARK: - Load Characters
     
     func startListening() {
-        FirestoreService.shared.listenToUsers { [weak self] users in
+        service.listenToUsers { [weak self] users in
             let sorted = users.sorted { a, b in
                 if a.role == .birthdayBoy { return true }
                 if b.role == .birthdayBoy { return false }
@@ -54,7 +60,7 @@ final class CharacterSelectViewModel: ObservableObject {
     }
     
     func stopListening() {
-        FirestoreService.shared.removeListener(forKey: "users")
+        service.removeListener(forKey: "users")
     }
     
     // MARK: - Claim Actions

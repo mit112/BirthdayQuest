@@ -6,7 +6,7 @@ struct ProfileView: View {
     @State private var appeared = false
     @State private var avatarGlow = false
     @State private var crownBounce = false
-    @State private var secretChallengeStatus: String = "—"
+    @StateObject private var viewModel = ProfileViewModel()
     
     private var user: BQUser? { session.currentUser }
     private var gameState: GameState { session.gameState }
@@ -66,7 +66,7 @@ struct ProfileView: View {
         }
         .onDisappear {
             if !isBirthdayBoy {
-                FirestoreService.shared.removeListener(forKey: "profile_secret_status")
+                viewModel.stopListening()
             }
         }
     }
@@ -231,7 +231,7 @@ private extension ProfileView {
     var friendStats: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                StatCard(icon: "🕵️", value: secretChallengeStatus, label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
+                StatCard(icon: "🕵️", value: viewModel.secretChallengeStatus.rawValue, label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
                 StatCard(icon: "🎁", value: "\(gameState.rewardsUnlocked)/\(gameState.totalRewards)", label: "Gifts Unlocked", color: BQDesign.Colors.primaryPink, index: 1)
             }
         }
@@ -308,25 +308,7 @@ private extension ProfileView {
     
     private func loadSecretChallengeStatus() {
         guard let userId = session.currentUser?.id else { return }
-        
-        FirestoreService.shared.listenToChallenges(listenerKey: "profile_secret_status") { [userId] challenges in
-            let mine = challenges.first {
-                $0.isSecret && $0.createdByUserId == userId
-            }
-            Task { @MainActor in
-                if let mine {
-                    if mine.isCompleted {
-                        secretChallengeStatus = "✅ Done"
-                    } else if mine.isDelivered {
-                        secretChallengeStatus = "📨 Sent"
-                    } else {
-                        secretChallengeStatus = "📝 Draft"
-                    }
-                } else {
-                    secretChallengeStatus = "None"
-                }
-            }
-        }
+        viewModel.startListening(userId: userId)
     }
     
     // MARK: Admin Section (Organizer Only)

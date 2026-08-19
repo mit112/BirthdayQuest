@@ -4,6 +4,12 @@ import Combine
 
 @MainActor
 final class SecretChallengeViewModel: ObservableObject {
+
+    private let service: GameBackend
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Published
     
@@ -48,7 +54,7 @@ final class SecretChallengeViewModel: ObservableObject {
             return
         }
         
-        FirestoreService.shared.listenToChallenges(listenerKey: "challenges_secret") { [weak self] challenges in
+        service.listenToChallenges(listenerKey: "challenges_secret") { [weak self] challenges in
             Task { @MainActor in
                 guard let self else { return }
                 // Find this friend's secret challenge
@@ -68,7 +74,7 @@ final class SecretChallengeViewModel: ObservableObject {
     }
     
     func stopListening() {
-        FirestoreService.shared.removeListener(forKey: "challenges_secret")
+        service.removeListener(forKey: "challenges_secret")
     }
     
     // MARK: - Save / Create
@@ -82,7 +88,7 @@ final class SecretChallengeViewModel: ObservableObject {
         do {
             if let existing = existingChallenge, let id = existing.id {
                 // Update existing
-                try await FirestoreService.shared.updateSecretChallenge(
+                try await service.updateSecretChallenge(
                     challengeId: id,
                     data: [
                         "title": title.trimmingCharacters(in: .whitespaces),
@@ -109,7 +115,7 @@ final class SecretChallengeViewModel: ObservableObject {
                     proofText: nil,
                     createdAt: Date()
                 )
-                _ = try await FirestoreService.shared.createSecretChallenge(challenge)
+                _ = try await service.createSecretChallenge(challenge)
             }
             
             saveSuccess = true
@@ -134,7 +140,7 @@ final class SecretChallengeViewModel: ObservableObject {
         guard let id = existingChallenge?.id else { return }
         
         do {
-            try await FirestoreService.shared.updateSecretChallenge(
+            try await service.updateSecretChallenge(
                 challengeId: id,
                 data: ["isDelivered": true]
             )

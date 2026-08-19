@@ -27,7 +27,10 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     
     // MARK: - Init
     
-    init(challenge: Challenge) {
+    private let service: GameBackend
+
+    init(challenge: Challenge, service: GameBackend = FirestoreService.shared) {
+        self.service = service
         self.challenge = challenge
     }
     
@@ -99,7 +102,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
                 timestamp: Date()
             )
             
-            try await FirestoreService.shared.completeChallengeAtomically(
+            try await service.completeChallengeAtomically(
                 challengeId: challengeId,
                 pointValue: challenge.pointValue,
                 isSecret: challenge.isSecret,
@@ -130,7 +133,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     private func uploadProof(data: Data, ext: String, challengeId: String) async throws -> String {
         let filename = "\(UUID().uuidString).\(ext)"
         let path = "proofs/\(challengeId)/\(filename)"
-        return try await FirestoreService.shared.uploadProofData(data, path: path)
+        return try await service.uploadProofData(data, path: path)
     }
     
     // MARK: - Image Compression (#8)

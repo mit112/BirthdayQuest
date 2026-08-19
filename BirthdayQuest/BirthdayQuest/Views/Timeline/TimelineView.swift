@@ -83,16 +83,14 @@ struct TimelineView: View {
         
         Task {
             defer { isLoadingDetail = false }
-            
-            switch event.type {
-            case .challengeCompleted:
-                if let challenge = try? await FirestoreService.shared.fetchChallenge(byId: event.referenceId) {
-                    selectedChallenge = challenge
-                }
-            case .rewardUnlocked:
-                if let reward = try? await FirestoreService.shared.fetchReward(byId: event.referenceId) {
-                    selectedReward = reward
-                }
+
+            switch await viewModel.detail(for: event) {
+            case .challenge(let challenge):
+                selectedChallenge = challenge
+            case .reward(let reward):
+                selectedReward = reward
+            case nil:
+                break
             }
         }
     }

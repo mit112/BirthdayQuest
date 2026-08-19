@@ -7,7 +7,7 @@ import OSLog
 
 /// Singleton Firestore gateway. All public methods are called from @MainActor contexts.
 /// Not marked @MainActor itself because Firestore listener callbacks fire on background threads.
-final class FirestoreService {
+final class FirestoreService: GameBackend {
 
     static let shared = FirestoreService()
 

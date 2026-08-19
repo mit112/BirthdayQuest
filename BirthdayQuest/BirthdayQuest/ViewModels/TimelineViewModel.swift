@@ -1,9 +1,23 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
+
+/// What a timeline node resolves to when tapped.
+enum TimelineNodeDetail {
+    case challenge(Challenge)
+    case reward(Reward)
+}
 
 @MainActor
 final class TimelineViewModel: ObservableObject {
+
+    private let service: GameBackend
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Timeline")
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Published
     
@@ -21,7 +35,7 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        FirestoreService.shared.listenToTimeline { [weak self] events in
+        service.listenToTimeline { [weak self] events in
             Task { @MainActor in
                 guard let self else { return }
                 
@@ -45,7 +59,7 @@ final class TimelineViewModel: ObservableObject {
     }
     
     func stopListening() {
-        FirestoreService.shared.removeListener(forKey: "timeline")
+        service.removeListener(forKey: "timeline")
     }
     
     /// Called by the view when session.gameState changes (via @EnvironmentObject)
@@ -59,6 +73,29 @@ final class TimelineViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Node Detail
+
+    /// Resolves the challenge or reward a timeline node points at.
+    /// Returns nil if the referenced document is gone or the fetch fails.
+    func detail(for event: TimelineEvent) async -> TimelineNodeDetail? {
+        do {
+            switch event.type {
+            case .challengeCompleted:
+                if let challenge = try await service.fetchChallenge(byId: event.referenceId) {
+                    return .challenge(challenge)
+                }
+            case .rewardUnlocked:
+                if let reward = try await service.fetchReward(byId: event.referenceId) {
+                    return .reward(reward)
+                }
+            }
+            return nil
+        } catch {
+            logger.error("Timeline detail fetch failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     func isNewEvent(_ event: TimelineEvent) -> Bool {
         guard let id = event.id else { return false }
         return newEventIds.contains(id)

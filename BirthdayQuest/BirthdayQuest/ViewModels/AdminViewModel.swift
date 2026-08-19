@@ -32,7 +32,11 @@ final class AdminViewModel: ObservableObject {
     @Published var userToUnclaim: BQUser?
     @Published var showFinalBadgeConfirm = false
     
-    private let service = FirestoreService.shared
+    private let service: GameBackend
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Computed Filters
     

@@ -4,6 +4,12 @@ import Combine
 
 @MainActor
 final class ChallengesViewModel: ObservableObject {
+
+    private let service: GameBackend
+
+    init(service: GameBackend = FirestoreService.shared) {
+        self.service = service
+    }
     
     // MARK: - Published
     
@@ -43,7 +49,7 @@ final class ChallengesViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        FirestoreService.shared.listenToChallenges { [weak self] challenges in
+        service.listenToChallenges { [weak self] challenges in
             Task { @MainActor in
                 guard let self else { return }
                 self.challenges = challenges
@@ -54,7 +60,7 @@ final class ChallengesViewModel: ObservableObject {
     }
     
     func stopListening() {
-        FirestoreService.shared.removeListener(forKey: "challenges")
+        service.removeListener(forKey: "challenges")
     }
     
     // MARK: - Actions
@@ -73,7 +79,7 @@ final class ChallengesViewModel: ObservableObject {
 
         // Update game state — absolute set from current listener snapshot
         Task {
-            try? await FirestoreService.shared.updateGameState([
+            try? await service.updateGameState([
                 "secretChallengesFound": deliveredSecrets.count
             ])
         }
