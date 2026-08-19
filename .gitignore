@@ -1,0 +1,62 @@
+# Xcode
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/**/*.xcscheme
+
+# Build
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+
+# CocoaPods (if used)
+Pods/
+
+# Firebase
+GoogleService-Info.plist
+
+# macOS
+.DS_Store
+*.swp
+*~.nib
+
+# Firebase CLI / emulator artifacts
+firebase-debug.log
+firestore-debug.log
+database-debug.log
+pubsub-debug.log
+ui-debug.log
+*-debug.log
+*.log
+.firebase/
+firebase-export-*/
+GoogleService-Info-*.plist
+
+# Agent / editor tooling
+.claude/settings.local.json
+.vscode/
+.idea/
+
+# Xcode misc
+*.xcresult/
+*.hmap
+*.pbxuser
+*.perspectivev3
+**/DerivedData/
+
+# macOS
+._*
+.Spotlight-V100
+.Trashes

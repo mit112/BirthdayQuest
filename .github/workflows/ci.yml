@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # NOTE: the deployment target is iOS 26.0, which requires Xcode 26 or newer.
+      # GitHub-hosted runner images may not carry Xcode 26 yet; until they do, the build
+      # step below will fail. Check https://github.com/actions/runner-images for current
+      # Xcode availability, then pin it explicitly (e.g. /Applications/Xcode_26.app).
+      - name: Select newest available Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      # The project uses Xcode folder-synced groups, so GoogleService-Info.plist is not a
+      # build input — it is bundled purely by living in the source folder. A placeholder is
+      # needed only so FirebaseApp.configure() survives if a test launches the app.
+      - name: Stage placeholder Firebase config
+        run: cp GoogleService-Info.plist.example BirthdayQuest/BirthdayQuest/GoogleService-Info.plist
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ hashFiles('**/Package.resolved') }}
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BirthdayQuest/BirthdayQuest.xcodeproj \
+            -scheme BirthdayQuest \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BirthdayQuest/BirthdayQuest.xcodeproj \
+            -scheme BirthdayQuest \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -derivedDataPath build \
+            -skip-testing:BirthdayQuestUITests \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install swiftlint
+      - run: swiftlint lint --strict
+
+  hygiene:
+    name: Secret and PII guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No secrets or logs tracked
+        run: |
+          if git ls-files | grep -E 'GoogleService-Info\.plist$|firebase-debug|\.log$'; then
+            echo "::error::a secret or log file is tracked"
+            exit 1
+          fi
+      - name: No AI attribution in commits
+        run: |
+          if git log --format='%B' -20 | grep -iE 'co-authored-by:.*(claude|anthropic|openai|copilot)|generated with'; then
+            echo "::error::AI attribution trailer found in recent commits"
+            exit 1
+          fi

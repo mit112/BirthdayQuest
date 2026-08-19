@@ -1,0 +1,32 @@
+included:
+  - BirthdayQuest/BirthdayQuest
+
+excluded:
+  - BirthdayQuest/BirthdayQuestTests
+  - BirthdayQuest/BirthdayQuestUITests
+  - build
+  - .build
+
+# SwiftUI view bodies legitimately trip these; enabling them would produce
+# hundreds of findings that don't indicate real problems.
+disabled_rules:
+  - type_body_length
+  - function_body_length
+  - line_length
+  - todo
+  - trailing_whitespace
+
+opt_in_rules:
+  - empty_count
+  - force_unwrapping
+  - redundant_nil_coalescing
+  - closure_spacing
+  - first_where
+  - unused_import
+
+force_cast: error
+force_try: error
+
+identifier_name:
+  min_length: 2
+  excluded: [id, x, y, w, h, t, r, g, b, xs, sm, md, lg, xl]

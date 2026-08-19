@@ -1,0 +1,60 @@
+name: Bug report
+description: Something doesn't work
+labels: [bug]
+body:
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Setup checklist
+      description: Most reports come down to one of these. Please confirm before filing.
+      options:
+        - label: I created my own Firebase project and added my own `GoogleService-Info.plist`
+          required: true
+        - label: I enabled Cloud Firestore and Firebase Storage
+          required: true
+        - label: I deployed the security rules (`firebase deploy --only firestore:rules,storage`) or set Firestore to test mode
+          required: true
+        - label: I'm on Xcode 26 or newer
+          required: true
+  - type: input
+    id: xcode
+    attributes:
+      label: Xcode version
+      placeholder: "26.1"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device or simulator, and iOS version
+      placeholder: "iPhone 17 Pro simulator, iOS 26.0"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output
+      description: Filter by subsystem `com.example.birthdayquest` in Console.app. Redact anything personal.
+      render: text

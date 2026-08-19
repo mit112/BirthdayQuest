@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// BirthdayQuest Storage rules.
+//
+// As with firestore.rules, this app does not authenticate users, so these rules cannot
+// distinguish a legitimate client from any other caller holding your Firebase config.
+//
+// Reward media download URLs are long-lived and unauthenticated once generated. If you
+// upload private family photos or videos, treat those URLs as public links. See SECURITY.md.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Reward media: uploaded out-of-band by the organizer, read by the app.
+    match /rewards/{rewardId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Challenge proof photos uploaded from the app. Capped at 10 MB, images only.
+    match /proofs/{challengeId}/{fileName} {
+      allow read: if true;
+      allow write: if request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

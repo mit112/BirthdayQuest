@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// BirthdayQuest Firestore rules.
+//
+// IMPORTANT: this app performs NO user authentication. Identity is a device-locked
+// character claim stored in UserDefaults + a `deviceId` field on the user doc. There is
+// therefore no `request.auth` to key rules on, and no way to make these rules genuinely
+// airtight while keeping the app working as written.
+//
+// What these rules DO give you over Firestore's "test mode":
+//   * a hard expiry date is not silently attached (test mode locks you out after 30 days)
+//   * documents cannot be deleted by clients
+//   * new collections cannot be invented by clients
+//   * the game_state singleton cannot be replaced wholesale, only updated
+//
+// If you are putting private media behind this, read SECURITY.md first. The genuinely
+// safe fix is to add Firebase Anonymous Auth and gate writes on `request.auth != null`.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Character profiles. Clients need to read all 5 and claim one.
+    match /users/{userId} {
+      allow read: if true;
+      allow update: if true;
+      allow create, delete: if false;
+    }
+
+    // Challenges: seeded set is read-only; friends may author secret challenges.
+    match /challenges/{challengeId} {
+      allow read: if true;
+      allow update: if true;
+      allow create: if request.resource.data.isSecret == true;
+      allow delete: if false;
+    }
+
+    // Rewards: seeded server-side, unlocked via transaction.
+    match /rewards/{rewardId} {
+      allow read: if true;
+      allow update: if true;
+      allow create, delete: if false;
+    }
+
+    // Timeline is append-only by design.
+    match /timeline_events/{eventId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    // Single 'main' doc holds all progress.
+    match /game_state/{stateId} {
+      allow read: if true;
+      allow update: if true;
+      allow create: if stateId == 'main';
+      allow delete: if false;
+    }
+
+    // Deny anything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
