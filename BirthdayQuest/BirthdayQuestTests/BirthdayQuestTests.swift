@@ -7,9 +7,8 @@ import Testing
 import Foundation
 @testable import BirthdayQuest
 
-// Pure-logic tests only. The Firestore layer is a singleton with no protocol seam
-// (FirestoreService.shared), so anything touching the backend cannot be tested
-// without a live Firebase project. See "Known Limitations" in the README.
+// Pure model logic — no backend involved, so nothing to inject here.
+// View-model behaviour lives in ViewModelTests.swift, which drives MockGameBackend.
 
 @Suite("GameState progress math")
 struct GameStateTests {

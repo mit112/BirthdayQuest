@@ -98,8 +98,8 @@ Reward costs are tiered by content type (audio = 50, video = 100). The 8 seeded 
 ```
 BirthdayQuest/
 ├── Models/              5 Codable structs (User, Challenge, Reward, GameState, TimelineEvent)
-├── Services/            FirestoreService, SessionManager, DataSeeder
-├── ViewModels/          7 @MainActor ObservableObject classes
+├── Services/            GameBackend (protocol), FirestoreService, SessionManager, DataSeeder
+├── ViewModels/          8 @MainActor ObservableObject classes, each injected with a GameBackend
 ├── Views/
 │   ├── CharacterSelect/ Swipeable character cards with claim flow
 │   ├── BirthdayBoy/     Rewards carousel, challenge board, submission flow
@@ -236,9 +236,11 @@ Being upfront, because these will bite you if you deploy it:
   Change it before you deploy.
 - **Single game instance.** One `game_state/main` document, five hardcoded character IDs. It hosts
   exactly one celebration at a time.
-- **No meaningful test coverage.** The test targets exist but contain only Xcode's template stubs.
-  `FirestoreService` is a singleton with no protocol seam, so nothing is mockable yet — that's the
-  blocker, and fixing it is the top item on my list.
+- **The atomic transaction logic is untested.** View models are covered (31 tests, via a
+  `GameBackend` protocol and a mock backend), but `unlockRewardAtomically` and
+  `completeChallengeAtomically` live inside `FirestoreService` — a mock replaces that logic rather
+  than verifying it. Proving the balance re-check and idempotency guards needs the Firebase emulator
+  suite, which isn't wired up yet.
 - **No accessibility support yet.** No VoiceOver labels on the custom controls, no Dynamic Type, no
   reduce-motion handling — and this app animates a lot. Light mode only.
 - **iOS 26.0 minimum.** Set during development to use the newest SwiftUI APIs; it does limit who
