@@ -25,9 +25,14 @@ Or use Cmd+R / Cmd+U in Xcode. The XcodeBuildMCP tools are also available.
 
 **MVVM + Services** — Models → Services → ViewModels → Views
 
+### Dependency Injection
+Every ViewModel and `SessionManager` takes `service: GameBackend = FirestoreService.shared`.
+Never reference `FirestoreService.shared` anywhere else — inject `GameBackend` instead, so tests
+can pass `MockGameBackend` (in `BirthdayQuestTests/`). Views must not touch the backend at all.
+
 ### Services (singletons)
 - **SessionManager** — App state hub (`@EnvironmentObject`), manages navigation, character selection, and real-time GameState sync
-- **FirestoreService** — All Firestore CRUD. Uses **transactions** for both reward unlocks (server-side balance re-check) and challenge completions (idempotency guard: bails if already completed). Batches are used only for seeding. Named listener keys prevent collisions.
+- **FirestoreService** — All Firestore CRUD, behind the `GameBackend` protocol. Uses **transactions** for both reward unlocks (server-side balance re-check) and challenge completions (idempotency guard: bails if already completed). Batches are used only for seeding. Named listener keys prevent collisions.
 - **DataSeeder** — Seeds Firestore collections on first launch; skips if data exists
 
 ### Key Firestore Patterns
@@ -69,7 +74,10 @@ All UI tokens live in `DesignSystem.swift` under the `BQDesign` namespace (color
 - Security rules live in `firestore.rules` / `storage.rules`, deployed via `firebase deploy --only firestore:rules,storage`.
 
 ## Known Gaps (do not "discover" these as new)
-- Test targets contain only Xcode template stubs. `FirestoreService.shared` has no protocol seam, so nothing is mockable.
+- The atomic transaction logic (`unlockRewardAtomically`, `completeChallengeAtomically`,
+  `adminForceUnlockReward`) is NOT covered by tests. `MockGameBackend` replaces that logic rather
+  than verifying it — proving the balance re-check and idempotency guards needs the Firebase
+  emulator suite, which is not wired up.
 - Zero accessibility support: no `accessibilityLabel` anywhere, no Dynamic Type, no reduce-motion handling.
 - Hardcoded `overridePin = "1234"` in `CharacterSelectViewModel` is the only access control.
 - Points economy: 13 challenges award 715 pts, 8 rewards cost 750. The gap is intentional — secret challenges (50 pts each) close it.
