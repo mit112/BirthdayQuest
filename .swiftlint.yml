@@ -7,14 +7,19 @@ excluded:
   - build
   - .build
 
-# SwiftUI view bodies legitimately trip these; enabling them would produce
-# hundreds of findings that don't indicate real problems.
+# Rules disabled deliberately, not aspirationally. SwiftUI view bodies and
+# Firestore payload dictionaries legitimately trip all of these; enabling them
+# would mean restyling working code to satisfy a linter default.
 disabled_rules:
-  - type_body_length
+  - type_body_length          # SwiftUI views and FirestoreService are long by nature
   - function_body_length
+  - file_length
   - line_length
-  - todo
   - trailing_whitespace
+  - trailing_comma            # trailing commas in multi-line literals are intentional here
+  - large_tuple               # a few 3-tuples used for layout math
+  - function_parameter_count  # FirestoreService.completeChallengeAtomically takes 7
+  - todo
 
 opt_in_rules:
   - empty_count
@@ -22,6 +27,9 @@ opt_in_rules:
   - redundant_nil_coalescing
   - closure_spacing
   - first_where
+  - redundant_discardable_let
+
+analyzer_rules:
   - unused_import
 
 force_cast: error
@@ -29,4 +37,4 @@ force_try: error
 
 identifier_name:
   min_length: 2
-  excluded: [id, x, y, w, h, t, r, g, b, xs, sm, md, lg, xl]
+  excluded: [id, a, b, c, x, y, w, h, t, r, g, b, i, j, k, n, dx, dy, xs, sm, md, lg, xl]

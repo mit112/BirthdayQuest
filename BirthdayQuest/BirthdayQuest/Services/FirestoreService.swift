@@ -411,7 +411,7 @@ final class FirestoreService {
     
     func uploadProofData(_ data: Data, path: String) async throws -> String {
         let ref = Storage.storage().reference().child(path)
-        let _ = try await ref.putDataAsync(data)
+        _ = try await ref.putDataAsync(data)
         let url = try await ref.downloadURL()
         return url.absoluteString
     }

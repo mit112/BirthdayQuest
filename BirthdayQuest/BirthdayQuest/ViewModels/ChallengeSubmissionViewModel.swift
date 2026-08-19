@@ -68,9 +68,9 @@ final class ChallengeSubmissionViewModel: ObservableObject {
         BQDesign.Haptics.medium()
         
         do {
-            var proofUrl: String? = nil
-            var proofType: String? = nil
-            var proofText: String? = nil
+            var proofUrl: String?
+            var proofType: String?
+            var proofText: String?
             
             switch selectedSubmissionType {
             case .photo:

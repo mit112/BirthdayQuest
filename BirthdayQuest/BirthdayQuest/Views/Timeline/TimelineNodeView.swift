@@ -10,7 +10,7 @@ struct TimelineNodeView: View {
     let isNew: Bool
     let index: Int
     let totalCount: Int
-    var onTap: (() -> Void)? = nil
+    var onTap: (() -> Void)?
     
     @State private var appeared = false
     @State private var badgePop = false
@@ -252,10 +252,8 @@ private extension TimelineNodeView {
     
     var cleanTitle: String {
         let prefixes = ["Completed: ", "Unlocked: "]
-        for prefix in prefixes {
-            if event.title.hasPrefix(prefix) {
-                return String(event.title.dropFirst(prefix.count))
-            }
+        for prefix in prefixes where event.title.hasPrefix(prefix) {
+            return String(event.title.dropFirst(prefix.count))
         }
         return event.title
     }
@@ -284,8 +282,11 @@ struct StarShape: Shape {
                 x: center.x + cos(angle) * radius,
                 y: center.y + sin(angle) * radius
             )
-            if i == 0 { path.move(to: point) }
-            else { path.addLine(to: point) }
+            if i == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
         }
         path.closeSubpath()
         return path

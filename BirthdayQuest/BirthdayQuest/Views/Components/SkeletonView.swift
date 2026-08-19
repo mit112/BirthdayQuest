@@ -44,7 +44,7 @@ extension View {
 // MARK: - Skeleton Primitives
 
 struct SkeletonRect: View {
-    var width: CGFloat? = nil
+    var width: CGFloat?
     var height: CGFloat = 16
     var radius: CGFloat = 8
     

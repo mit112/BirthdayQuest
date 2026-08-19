@@ -11,10 +11,10 @@ struct ChallengeCardView: View {
     private var isCompleted: Bool { challenge.isCompleted }
     
     var body: some View {
-        Button(action: {
+        Button {
             BQDesign.Haptics.light()
             onTap()
-        }) {
+        } label: {
             HStack(spacing: 14) {
                 // Left: Illustration badge
                 illustrationBadge

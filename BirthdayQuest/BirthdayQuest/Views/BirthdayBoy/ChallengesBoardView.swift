@@ -152,7 +152,6 @@ struct ChallengesBackgroundView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            
 
         }
         .ignoresSafeArea()

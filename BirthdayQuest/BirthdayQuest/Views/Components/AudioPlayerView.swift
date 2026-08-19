@@ -202,7 +202,6 @@ private extension AudioPlayerView {
     }
 }
 
-
 // MARK: - Audio Player Controller
 
 @MainActor
