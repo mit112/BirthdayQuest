@@ -1,28 +1,44 @@
 import Foundation
 
-// MARK: - Firestore Collection Names
+// MARK: - Firestore Paths
 
+/// Collection and document names. All event content is a subcollection of
+/// `events/{eventId}`, which is what makes cross-occasion access impossible to express.
 enum Collections {
-    static let users = "users"
-    static let rewards = "rewards"
+    static let events = "events"
+    static let memberships = "memberships"
+    static let inviteCodes = "inviteCodes"
+
+    // Subcollections of an event document
+    static let participants = "participants"
     static let challenges = "challenges"
-    static let timelineEvents = "timeline_events"
-    static let gameState = "game_state"
-    static let gameStateDoc = "main"
+    static let rewards = "rewards"
+    static let timeline = "timeline"
+    static let state = "state"
+    static let stateDoc = "main"
 }
 
-// MARK: - Character IDs (stable, used everywhere)
+// MARK: - Invite Codes
 
-enum CharacterID {
-    static let alex = "alex"
-    static let sam = "sam"
-    static let jordan = "jordan"
-    static let riley = "riley"
-    static let morgan = "morgan"
+enum InviteCode {
+    /// 32 symbols, excluding I, O, 0 and 1 because codes get read aloud and typed by hand.
+    /// 32^8 is roughly 2^40 combinations, and each guess costs a denied write.
+    static let alphabet: [Character] = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+    static let length = 8
 
-    static let birthdayBoy = alex
-    static let organizer = sam
-    static let birthdayBoyName = "Alex"
+    static func generate() -> String {
+        String((0..<length).compactMap { _ in alphabet.randomElement() })
+    }
+}
 
-    static let all: [String] = [alex, sam, jordan, riley, morgan]
+// MARK: - Storage Paths
+
+enum StoragePaths {
+    static func rewardMedia(eventId: String, rewardId: String, fileName: String) -> String {
+        "\(Collections.events)/\(eventId)/\(Collections.rewards)/\(rewardId)/\(fileName)"
+    }
+
+    static func proof(eventId: String, challengeId: String, fileName: String) -> String {
+        "\(Collections.events)/\(eventId)/proofs/\(challengeId)/\(fileName)"
+    }
 }
