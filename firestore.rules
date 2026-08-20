@@ -8,6 +8,11 @@ rules_version = '2';
 // Isolation is by path: all event content lives under events/{eventId}, and membership is
 // a document at events/{eventId}/participants/{uid}. A client cannot express a query that
 // reaches another occasion's data, because the path does not exist for them.
+//
+// Joins are authorised against the EVENT document, never against inviteCodes. Only the host
+// can write the event document, so only the host can set the codes. inviteCodes is a
+// uniqueness registry plus a code -> eventId lookup; anyone may mint an entry there, and a
+// forged one buys nothing.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -28,25 +33,22 @@ service cloud.firestore {
       return isMember(eventId) && get(participantPath(eventId)).data.isHost == true;
     }
 
-    function eventHostUid(eventId) {
-      return get(/databases/$(database)/documents/events/$(eventId)).data.hostUid;
+    function eventData(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)).data;
     }
 
-    // Invite codes are opaque. Clients never read this collection, so codes cannot be
-    // enumerated; rules-internal get() still resolves them during a join.
+    // Code uniqueness registry and code -> eventId lookup. `get` so a typed code can be
+    // resolved to an occasion; `list` never, so codes cannot be enumerated. Nothing here
+    // authorises anything — see the participants create rule.
     match /inviteCodes/{code} {
-      allow read: if false;
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if signedIn()
                     && request.resource.data.keys().hasOnly(['eventId', 'kind'])
                     && request.resource.data.eventId is string
                     && request.resource.data.kind in ['contributor', 'celebrant'];
       allow update: if false;
-
-      // The host may revoke any code. A celebrant code is additionally single-use: the
-      // person who claimed it consumes it, so a leaked link cannot be replayed.
-      allow delete: if isHost(resource.data.eventId)
-                    || (signedIn() && resource.data.kind == 'celebrant'
-                        && get(/databases/$(database)/documents/events/$(resource.data.eventId)/participants/$(request.auth.uid)).data.mode == 'celebrant');
+      allow delete: if isHost(resource.data.eventId);
     }
 
     // A user's own index of the occasions they belong to.
@@ -57,7 +59,7 @@ service cloud.firestore {
     match /memberships/{uid}/events/{eventId} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create: if signedIn() && request.auth.uid == uid
-                    && (isMember(eventId) || eventHostUid(eventId) == request.auth.uid);
+                    && (isMember(eventId) || eventData(eventId).hostUid == request.auth.uid);
       allow update: if false;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
@@ -65,12 +67,31 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isMember(eventId);
       allow create: if signedIn() && request.resource.data.hostUid == request.auth.uid;
-      allow update: if isHost(eventId);
       allow delete: if false;
+
+      // hostUid is the root of authority — participant, state and membership creation all
+      // resolve it — so it is immutable. Host transfer is not a feature.
+      //
+      // The host may otherwise edit freely. The one write a non-host may make is the
+      // celebrant consuming their own invite code by clearing it, which is what makes that
+      // code single-use: the field lives on the document only the host can write.
+      allow update: if request.resource.data.hostUid == resource.data.hostUid
+                    && (
+                      isHost(eventId)
+                      || (
+                        signedIn()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['celebrantCode'])
+                        && request.resource.data.celebrantCode == ''
+                        && get(participantPath(eventId)).data.mode == 'celebrant'
+                      )
+                    );
 
       // Self-registration. Two legitimate paths, and nothing else:
       //   1. the host bootstrapping their own participant doc right after creating the event
-      //   2. an invited joiner presenting a code that resolves to THIS event
+      //   2. an invited joiner presenting a code that matches the one on THIS event document
+      // The code is checked against the event, not against inviteCodes, because inviteCodes
+      // is client-writable. An empty code never matches, so a consumed code cannot be
+      // replayed by presenting ''.
       // Rules for batched writes evaluate against committed state, which is why occasion
       // creation is two-phase — see the plan's "Deviations from the spec".
       match /participants/{uid} {
@@ -79,11 +100,21 @@ service cloud.firestore {
         allow create: if signedIn() && request.auth.uid == uid && (
           (
             request.resource.data.isHost == true
-            && get(/databases/$(database)/documents/events/$(eventId)).data.hostUid == request.auth.uid
+            && eventData(eventId).hostUid == request.auth.uid
           ) || (
             request.resource.data.isHost == false
-            && get(/databases/$(database)/documents/inviteCodes/$(request.resource.data.usedCode)).data.eventId == eventId
-            && get(/databases/$(database)/documents/inviteCodes/$(request.resource.data.usedCode)).data.kind == request.resource.data.mode
+            && request.resource.data.usedCode is string
+            && request.resource.data.usedCode != ''
+            && eventData(eventId).isOpen == true
+            && (
+              (
+                request.resource.data.mode == 'contributor'
+                && eventData(eventId).contributorCode == request.resource.data.usedCode
+              ) || (
+                request.resource.data.mode == 'celebrant'
+                && eventData(eventId).celebrantCode == request.resource.data.usedCode
+              )
+            )
           )
         );
 
@@ -122,7 +153,7 @@ service cloud.firestore {
       match /state/{stateId} {
         allow read: if isMember(eventId);
         allow create: if signedIn() && stateId == 'main'
-                      && eventHostUid(eventId) == request.auth.uid;
+                      && eventData(eventId).hostUid == request.auth.uid;
         allow update: if isMember(eventId);
         allow delete: if false;
       }
