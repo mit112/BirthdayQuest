@@ -2,61 +2,132 @@ rules_version = '2';
 
 // BirthdayQuest Firestore rules.
 //
-// IMPORTANT: this app performs NO user authentication. Identity is a device-locked
-// character claim stored in UserDefaults + a `deviceId` field on the user doc. There is
-// therefore no `request.auth` to key rules on, and no way to make these rules genuinely
-// airtight while keeping the app working as written.
+// There are no Cloud Functions. These rules are the entire enforcement layer, so every
+// change here needs a corresponding case in firebase-tests/firestore.rules.test.js.
 //
-// What these rules DO give you over Firestore's "test mode":
-//   * a hard expiry date is not silently attached (test mode locks you out after 30 days)
-//   * documents cannot be deleted by clients
-//   * new collections cannot be invented by clients
-//   * the game_state singleton cannot be replaced wholesale, only updated
-//
-// If you are putting private media behind this, read SECURITY.md first. The genuinely
-// safe fix is to add Firebase Anonymous Auth and gate writes on `request.auth != null`.
+// Isolation is by path: all event content lives under events/{eventId}, and membership is
+// a document at events/{eventId}/participants/{uid}. A client cannot express a query that
+// reaches another occasion's data, because the path does not exist for them.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Character profiles. Clients need to read all 5 and claim one.
-    match /users/{userId} {
-      allow read: if true;
-      allow update: if true;
-      allow create, delete: if false;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Challenges: seeded set is read-only; friends may author secret challenges.
-    match /challenges/{challengeId} {
-      allow read: if true;
-      allow update: if true;
-      allow create: if request.resource.data.isSecret == true;
+    function participantPath(eventId) {
+      return /databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid);
+    }
+
+    function isMember(eventId) {
+      return signedIn() && exists(participantPath(eventId));
+    }
+
+    function isHost(eventId) {
+      return isMember(eventId) && get(participantPath(eventId)).data.isHost == true;
+    }
+
+    function eventHostUid(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)).data.hostUid;
+    }
+
+    // Invite codes are opaque. Clients never read this collection, so codes cannot be
+    // enumerated; rules-internal get() still resolves them during a join.
+    match /inviteCodes/{code} {
+      allow read: if false;
+      allow create: if signedIn()
+                    && request.resource.data.keys().hasOnly(['eventId', 'kind'])
+                    && request.resource.data.eventId is string
+                    && request.resource.data.kind in ['contributor', 'celebrant'];
+      allow update: if false;
+
+      // The host may revoke any code. A celebrant code is additionally single-use: the
+      // person who claimed it consumes it, so a leaked link cannot be replayed.
+      allow delete: if isHost(resource.data.eventId)
+                    || (signedIn() && resource.data.kind == 'celebrant'
+                        && get(/databases/$(database)/documents/events/$(resource.data.eventId)/participants/$(request.auth.uid)).data.mode == 'celebrant');
+    }
+
+    // A user's own index of the occasions they belong to.
+    //
+    // Create also accepts the event's hostUid, not just membership: occasion creation
+    // commits the participant doc and this doc in the same batch, and batched writes are
+    // evaluated against committed state, so isMember() is still false at that point.
+    match /memberships/{uid}/events/{eventId} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+                    && (isMember(eventId) || eventHostUid(eventId) == request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /events/{eventId} {
+      allow read: if isMember(eventId);
+      allow create: if signedIn() && request.resource.data.hostUid == request.auth.uid;
+      allow update: if isHost(eventId);
       allow delete: if false;
+
+      // Self-registration. Two legitimate paths, and nothing else:
+      //   1. the host bootstrapping their own participant doc right after creating the event
+      //   2. an invited joiner presenting a code that resolves to THIS event
+      // Rules for batched writes evaluate against committed state, which is why occasion
+      // creation is two-phase — see the plan's "Deviations from the spec".
+      match /participants/{uid} {
+        allow read: if isMember(eventId);
+
+        allow create: if signedIn() && request.auth.uid == uid && (
+          (
+            request.resource.data.isHost == true
+            && get(/databases/$(database)/documents/events/$(eventId)).data.hostUid == request.auth.uid
+          ) || (
+            request.resource.data.isHost == false
+            && get(/databases/$(database)/documents/inviteCodes/$(request.resource.data.usedCode)).data.eventId == eventId
+            && get(/databases/$(database)/documents/inviteCodes/$(request.resource.data.usedCode)).data.kind == request.resource.data.mode
+          )
+        );
+
+        // You may rename yourself or change your avatar. You may not grant yourself host,
+        // nor switch play mode.
+        allow update: if signedIn() && request.auth.uid == uid
+                      && request.resource.data.isHost == resource.data.isHost
+                      && request.resource.data.mode == resource.data.mode;
+
+        allow delete: if isHost(eventId);
+      }
+
+      match /challenges/{challengeId} {
+        allow read: if isMember(eventId);
+        allow create: if isMember(eventId);
+        allow update: if isMember(eventId);
+        allow delete: if isHost(eventId);
+      }
+
+      match /rewards/{rewardId} {
+        allow read: if isMember(eventId);
+        allow create: if isHost(eventId);
+        allow update: if isMember(eventId);
+        allow delete: if isHost(eventId);
+      }
+
+      // Append-only by design.
+      match /timeline/{timelineId} {
+        allow read: if isMember(eventId);
+        allow create: if isMember(eventId);
+        allow update, delete: if false;
+      }
+
+      // Created in the same batch as the host's participant doc, so this cannot depend on
+      // membership — it is gated on the event's hostUid instead.
+      match /state/{stateId} {
+        allow read: if isMember(eventId);
+        allow create: if signedIn() && stateId == 'main'
+                      && eventHostUid(eventId) == request.auth.uid;
+        allow update: if isMember(eventId);
+        allow delete: if false;
+      }
     }
 
-    // Rewards: seeded server-side, unlocked via transaction.
-    match /rewards/{rewardId} {
-      allow read: if true;
-      allow update: if true;
-      allow create, delete: if false;
-    }
-
-    // Timeline is append-only by design.
-    match /timeline_events/{eventId} {
-      allow read: if true;
-      allow create: if true;
-      allow update, delete: if false;
-    }
-
-    // Single 'main' doc holds all progress.
-    match /game_state/{stateId} {
-      allow read: if true;
-      allow update: if true;
-      allow create: if stateId == 'main';
-      allow delete: if false;
-    }
-
-    // Deny anything not explicitly matched above.
     match /{document=**} {
       allow read, write: if false;
     }
