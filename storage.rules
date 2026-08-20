@@ -2,26 +2,53 @@ rules_version = '2';
 
 // BirthdayQuest Storage rules.
 //
-// As with firestore.rules, this app does not authenticate users, so these rules cannot
-// distinguish a legitimate client from any other caller holding your Firebase config.
+// Media is gated on Firestore membership via cross-service rules. Cross-service evaluation
+// allows two unique Firestore document lookups per request; repeat lookups of the same
+// document are cached and free, so isMember and isCelebrant together cost one read.
 //
-// Reward media download URLs are long-lived and unauthenticated once generated. If you
-// upload private family photos or videos, treat those URLs as public links. See SECURITY.md.
+// eventId is part of the object path specifically so these rules can extract it.
 
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Reward media: uploaded out-of-band by the organizer, read by the app.
-    match /rewards/{rewardId}/{fileName} {
-      allow read: if true;
-      allow write: if false;
+    function participantPath(eventId) {
+      return /databases/(default)/documents/events/$(eventId)/participants/$(request.auth.uid);
     }
 
-    // Challenge proof photos uploaded from the app. Capped at 10 MB, images only.
-    match /proofs/{challengeId}/{fileName} {
-      allow read: if true;
-      allow write: if request.resource.size < 10 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+    function isMember(eventId) {
+      return request.auth != null && firestore.exists(participantPath(eventId));
+    }
+
+    function isCelebrant(eventId) {
+      return isMember(eventId)
+             && firestore.get(participantPath(eventId)).data.mode == 'celebrant';
+    }
+
+    function isPlayableMedia() {
+      return request.resource.contentType.matches('video/.*')
+             || request.resource.contentType.matches('audio/.*')
+             || request.resource.contentType.matches('image/.*');
+    }
+
+    // Reward media. Written by contributors, read by members, deleted by the celebrant
+    // once downloaded — that client-side delete is what keeps storage bounded.
+    match /events/{eventId}/rewards/{rewardId}/{fileName} {
+      allow read: if isMember(eventId);
+      allow write: if request.resource == null
+                     ? isCelebrant(eventId)
+                     : isMember(eventId)
+                       && request.resource.size < 200 * 1024 * 1024
+                       && isPlayableMedia();
+    }
+
+    // Challenge proof photos. Images only, 10 MB cap.
+    match /events/{eventId}/proofs/{challengeId}/{fileName} {
+      allow read: if isMember(eventId);
+      allow write: if request.resource == null
+                     ? isCelebrant(eventId)
+                     : isMember(eventId)
+                       && request.resource.size < 10 * 1024 * 1024
+                       && request.resource.contentType.matches('image/.*');
     }
 
     match /{allPaths=**} {
