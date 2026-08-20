@@ -17,16 +17,6 @@ enum RewardContentType: String, Codable, CaseIterable {
         case .image: return "photo.fill"
         }
     }
-    
-    /// Auto-assigned point cost per content tier
-    var defaultPointCost: Int {
-        switch self {
-        case .text:  return 50   // Tier 1
-        case .audio: return 75   // Tier 2
-        case .video: return 100  // Tier 3
-        case .image: return 50   // Same as text
-        }
-    }
 }
 
 // MARK: - Reward Model
@@ -47,10 +37,13 @@ struct Reward: Identifiable, Codable {
     let sortOrder: Int
     let badgeIllustration: String
     let createdAt: Date
-    
+    /// uids that have downloaded and locally persisted this reward's media. When every
+    /// recipient appears here, the Storage object is deleted by the celebrant's device.
+    var fetchedBy: [String]? = nil
+
     enum CodingKeys: String, CodingKey {
         case id, fromUserId, fromName, title, teaser
         case pointCost, contentType, contentUrl, contentUrls, contentText
-        case isUnlocked, unlockedAt, sortOrder, badgeIllustration, createdAt
+        case isUnlocked, unlockedAt, sortOrder, badgeIllustration, createdAt, fetchedBy
     }
 }
