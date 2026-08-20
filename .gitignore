@@ -60,3 +60,6 @@ GoogleService-Info-*.plist
 ._*
 .Spotlight-V100
 .Trashes
+
+# Node / Firebase rules tests
+firebase-tests/node_modules/
