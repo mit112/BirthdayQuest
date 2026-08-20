@@ -52,11 +52,17 @@ final class RewardsViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToRewards { [weak self] rewards in
+        service.listenToRewards { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
-                self.rewards = rewards
                 self.isLoading = false
+                switch result {
+                case .success(let rewards):
+                    self.rewards = rewards
+                case .failure(let error):
+                    self.errorMessage = "Couldn't load gifts. Pull to retry."
+                    self.logger.error("Rewards listener: \(error.localizedDescription)")
+                }
             }
         }
     }

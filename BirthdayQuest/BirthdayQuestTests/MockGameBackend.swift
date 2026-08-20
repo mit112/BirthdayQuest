@@ -43,6 +43,10 @@ final class MockGameBackend: GameBackend {
     /// When set, every `async throws` method throws this instead of succeeding.
     var errorToThrow: Error?
 
+    /// When set, every listener reports this failure instead of data. Lets tests exercise
+    /// the permission-denied path that the real backend produces when membership is revoked.
+    var listenerFailure: Error?
+
     private func throwIfNeeded() throws {
         if let errorToThrow { throw errorToThrow }
     }
@@ -52,17 +56,17 @@ final class MockGameBackend: GameBackend {
     // Held so a test can drive a listener manually: call startListening(), then invoke
     // emitRewards(...) to simulate a Firestore snapshot arriving.
 
-    private var usersHandler: (([BQUser]) -> Void)?
-    private var rewardsHandler: (([Reward]) -> Void)?
-    private var challengesHandler: (([Challenge]) -> Void)?
-    private var timelineHandler: (([TimelineEvent]) -> Void)?
-    private var gameStateHandler: ((GameState?) -> Void)?
+    private var usersHandler: ((Result<[BQUser], Error>) -> Void)?
+    private var rewardsHandler: ((Result<[Reward], Error>) -> Void)?
+    private var challengesHandler: ((Result<[Challenge], Error>) -> Void)?
+    private var timelineHandler: ((Result<[TimelineEvent], Error>) -> Void)?
+    private var gameStateHandler: ((Result<GameState, Error>) -> Void)?
 
-    func emitUsers(_ value: [BQUser]) { usersHandler?(value) }
-    func emitRewards(_ value: [Reward]) { rewardsHandler?(value) }
-    func emitChallenges(_ value: [Challenge]) { challengesHandler?(value) }
-    func emitTimeline(_ value: [TimelineEvent]) { timelineHandler?(value) }
-    func emitGameState(_ value: GameState?) { gameStateHandler?(value) }
+    func emitUsers(_ value: [BQUser]) { usersHandler?(.success(value)) }
+    func emitRewards(_ value: [Reward]) { rewardsHandler?(.success(value)) }
+    func emitChallenges(_ value: [Challenge]) { challengesHandler?(.success(value)) }
+    func emitTimeline(_ value: [TimelineEvent]) { timelineHandler?(.success(value)) }
+    func emitGameState(_ value: GameState) { gameStateHandler?(.success(value)) }
 
     // MARK: - GameBackend: Listener Management
 
@@ -77,10 +81,14 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Users
 
-    func listenToUsers(completion: @escaping ([BQUser]) -> Void) {
+    func listenToUsers(completion: @escaping (Result<[BQUser], Error>) -> Void) {
         calls.append("listenToUsers")
         usersHandler = completion
-        completion(users)
+        if let listenerFailure {
+            completion(.failure(listenerFailure))
+            return
+        }
+        completion(.success(users))
     }
 
     func claimCharacter(characterId: String, deviceId: String) async throws {
@@ -101,10 +109,14 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Rewards
 
-    func listenToRewards(completion: @escaping ([Reward]) -> Void) {
+    func listenToRewards(completion: @escaping (Result<[Reward], Error>) -> Void) {
         calls.append("listenToRewards")
         rewardsHandler = completion
-        completion(rewards)
+        if let listenerFailure {
+            completion(.failure(listenerFailure))
+            return
+        }
+        completion(.success(rewards))
     }
 
     func fetchReward(byId id: String) async throws -> Reward? {
@@ -131,10 +143,17 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Challenges
 
-    func listenToChallenges(listenerKey: String, completion: @escaping ([Challenge]) -> Void) {
+    func listenToChallenges(
+        listenerKey: String,
+        completion: @escaping (Result<[Challenge], Error>) -> Void
+    ) {
         calls.append("listenToChallenges")
         challengesHandler = completion
-        completion(challenges)
+        if let listenerFailure {
+            completion(.failure(listenerFailure))
+            return
+        }
+        completion(.success(challenges))
     }
 
     func fetchChallenge(byId id: String) async throws -> Challenge? {
@@ -181,10 +200,14 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Timeline
 
-    func listenToTimeline(completion: @escaping ([TimelineEvent]) -> Void) {
+    func listenToTimeline(completion: @escaping (Result<[TimelineEvent], Error>) -> Void) {
         calls.append("listenToTimeline")
         timelineHandler = completion
-        completion(timeline)
+        if let listenerFailure {
+            completion(.failure(listenerFailure))
+            return
+        }
+        completion(.success(timeline))
     }
 
     func addTimelineEvent(_ event: TimelineEvent) async throws {
@@ -194,10 +217,14 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Game State
 
-    func listenToGameState(completion: @escaping (GameState?) -> Void) {
+    func listenToGameState(completion: @escaping (Result<GameState, Error>) -> Void) {
         calls.append("listenToGameState")
         gameStateHandler = completion
-        completion(gameState)
+        if let listenerFailure {
+            completion(.failure(listenerFailure))
+            return
+        }
+        completion(.success(gameState ?? .empty))
     }
 
     func updateGameState(_ fields: [String: Any]) async throws {

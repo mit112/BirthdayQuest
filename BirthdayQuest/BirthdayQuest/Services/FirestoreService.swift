@@ -33,18 +33,23 @@ final class FirestoreService: GameBackend {
     
     // MARK: - Users
     
-    func listenToUsers(completion: @escaping ([BQUser]) -> Void) {
+    func listenToUsers(completion: @escaping (Result<[BQUser], Error>) -> Void) {
         let key = "users"
         removeListener(forKey: key)
-        
+
         listeners[key] = db.collection(Collections.users)
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    self.logger.error("Users listener error: \(error.localizedDescription)")
+                    completion(.failure(error))
+                    return
+                }
                 guard let docs = snapshot?.documents else {
-                    self.logger.error("Users listener error: \(error?.localizedDescription ?? "unknown")")
+                    completion(.success([]))
                     return
                 }
                 let users = docs.compactMap { try? $0.data(as: BQUser.self) }
-                completion(users)
+                completion(.success(users))
             }
     }
     
@@ -62,19 +67,24 @@ final class FirestoreService: GameBackend {
     
     // MARK: - Rewards
     
-    func listenToRewards(completion: @escaping ([Reward]) -> Void) {
+    func listenToRewards(completion: @escaping (Result<[Reward], Error>) -> Void) {
         let key = "rewards"
         removeListener(forKey: key)
-        
+
         listeners[key] = db.collection(Collections.rewards)
             .order(by: "sortOrder")
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    self.logger.error("Rewards listener error: \(error.localizedDescription)")
+                    completion(.failure(error))
+                    return
+                }
                 guard let docs = snapshot?.documents else {
-                    self.logger.error("Rewards listener error: \(error?.localizedDescription ?? "unknown")")
+                    completion(.success([]))
                     return
                 }
                 let rewards = docs.compactMap { try? $0.data(as: Reward.self) }
-                completion(rewards)
+                completion(.success(rewards))
             }
     }
     
@@ -166,19 +176,27 @@ final class FirestoreService: GameBackend {
     
     /// Listen to challenges with a unique key per consumer to avoid listener collisions.
     /// - Parameter listenerKey: Unique key for this listener (default: "challenges")
-    func listenToChallenges(listenerKey: String = "challenges", completion: @escaping ([Challenge]) -> Void) {
+    func listenToChallenges(
+        listenerKey: String = "challenges",
+        completion: @escaping (Result<[Challenge], Error>) -> Void
+    ) {
         let key = listenerKey
         removeListener(forKey: key)
-        
+
         listeners[key] = db.collection(Collections.challenges)
             .order(by: "pointValue")
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    self.logger.error("Challenges listener error: \(error.localizedDescription)")
+                    completion(.failure(error))
+                    return
+                }
                 guard let docs = snapshot?.documents else {
-                    self.logger.error("Challenges listener error: \(error?.localizedDescription ?? "unknown")")
+                    completion(.success([]))
                     return
                 }
                 let challenges = docs.compactMap { try? $0.data(as: Challenge.self) }
-                completion(challenges)
+                completion(.success(challenges))
             }
     }
     
@@ -274,19 +292,24 @@ final class FirestoreService: GameBackend {
     
     // MARK: - Timeline Events
     
-    func listenToTimeline(completion: @escaping ([TimelineEvent]) -> Void) {
+    func listenToTimeline(completion: @escaping (Result<[TimelineEvent], Error>) -> Void) {
         let key = "timeline"
         removeListener(forKey: key)
-        
+
         listeners[key] = db.collection(Collections.timelineEvents)
             .order(by: "timestamp", descending: false)
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    self.logger.error("Timeline listener error: \(error.localizedDescription)")
+                    completion(.failure(error))
+                    return
+                }
                 guard let docs = snapshot?.documents else {
-                    self.logger.error("Timeline listener error: \(error?.localizedDescription ?? "unknown")")
+                    completion(.success([]))
                     return
                 }
                 let events = docs.compactMap { try? $0.data(as: TimelineEvent.self) }
-                completion(events)
+                completion(.success(events))
             }
     }
     
@@ -296,18 +319,22 @@ final class FirestoreService: GameBackend {
     
     // MARK: - Game State
     
-    func listenToGameState(completion: @escaping (GameState?) -> Void) {
+    func listenToGameState(completion: @escaping (Result<GameState, Error>) -> Void) {
         let key = "gameState"
         removeListener(forKey: key)
-        
+
         let ref = db.collection(Collections.gameState).document(Collections.gameStateDoc)
         listeners[key] = ref.addSnapshotListener { snapshot, error in
-            guard let snapshot, snapshot.exists, let data = snapshot.data() else {
-                self.logger.error("GameState listener error: \(error?.localizedDescription ?? "no doc")")
-                completion(nil)
+            if let error {
+                self.logger.error("GameState listener error: \(error.localizedDescription)")
+                completion(.failure(error))
                 return
             }
-            
+            guard let snapshot, snapshot.exists, let data = snapshot.data() else {
+                completion(.success(.empty))
+                return
+            }
+
             // Manual parsing — avoids Codable decode failures from Firestore type mismatches
             let state = GameState(
                 birthdayBoyId: data["birthdayBoyId"] as? String ?? "",
@@ -328,7 +355,7 @@ final class FirestoreService: GameBackend {
                 updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue()
             )
             self.logger.debug("GameState updated: \(state.currentPoints) pts, \(state.challengesCompleted) challenges, \(state.rewardsUnlocked) rewards")
-            completion(state)
+            completion(.success(state))
         }
     }
     

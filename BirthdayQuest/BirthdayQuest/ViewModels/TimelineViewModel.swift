@@ -27,6 +27,7 @@ final class TimelineViewModel: ObservableObject {
     @Published var newEventIds: Set<String> = []
     @Published var finalBadgeUnlocked = false
     @Published var showFinalCelebration = false
+    @Published var errorMessage: String?
     
     // MARK: - Computed
     
@@ -35,22 +36,27 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToTimeline { [weak self] events in
+        service.listenToTimeline { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
-                
-                // Track new events for animation
-                let oldIds = Set(self.events.compactMap(\.id))
-                let incomingIds = Set(events.compactMap(\.id))
-                let brandNew = incomingIds.subtracting(oldIds)
-                
-                if !oldIds.isEmpty && !brandNew.isEmpty {
-                    self.newEventIds = brandNew
-                }
-                
-                self.previousEventCount = self.events.count
-                self.events = events
                 self.isLoading = false
+                switch result {
+                case .success(let events):
+                    // Track new events for animation
+                    let oldIds = Set(self.events.compactMap(\.id))
+                    let incomingIds = Set(events.compactMap(\.id))
+                    let brandNew = incomingIds.subtracting(oldIds)
+
+                    if !oldIds.isEmpty && !brandNew.isEmpty {
+                        self.newEventIds = brandNew
+                    }
+
+                    self.previousEventCount = self.events.count
+                    self.events = events
+                case .failure(let error):
+                    self.errorMessage = "Couldn't load the timeline."
+                    self.logger.error("Timeline listener: \(error.localizedDescription)")
+                }
             }
         }
         // NOTE: Do NOT call listenToGameState here — it hijacks SessionManager's

@@ -1,11 +1,13 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
 
 @MainActor
 final class SecretChallengeViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "SecretChallenge")
 
     init(service: GameBackend = FirestoreService.shared) {
         self.service = service
@@ -54,21 +56,27 @@ final class SecretChallengeViewModel: ObservableObject {
             return
         }
         
-        service.listenToChallenges(listenerKey: "challenges_secret") { [weak self] challenges in
+        service.listenToChallenges(listenerKey: "challenges_secret") { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
-                // Find this friend's secret challenge
-                let mine = challenges.first {
-                    $0.isSecret && $0.createdByUserId == userId
-                }
-                
-                if let mine {
-                    self.existingChallenge = mine
-                    self.title = mine.title
-                    self.description = mine.description
-                    self.pointValue = mine.pointValue
-                }
                 self.isLoading = false
+                switch result {
+                case .success(let challenges):
+                    // Find this friend's secret challenge
+                    let mine = challenges.first {
+                        $0.isSecret && $0.createdByUserId == userId
+                    }
+
+                    if let mine {
+                        self.existingChallenge = mine
+                        self.title = mine.title
+                        self.description = mine.description
+                        self.pointValue = mine.pointValue
+                    }
+                case .failure(let error):
+                    self.errorMessage = "Couldn't load your dare."
+                    self.logger.error("Secret challenge listener: \(error.localizedDescription)")
+                }
             }
         }
     }

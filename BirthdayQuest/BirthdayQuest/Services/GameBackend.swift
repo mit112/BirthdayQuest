@@ -26,14 +26,14 @@ protocol GameBackend: AnyObject {
 
     // MARK: Users
 
-    func listenToUsers(completion: @escaping ([BQUser]) -> Void)
+    func listenToUsers(completion: @escaping (Result<[BQUser], Error>) -> Void)
     func claimCharacter(characterId: String, deviceId: String) async throws
     func fetchUser(characterId: String) async throws -> BQUser?
     func unclaimCharacter(characterId: String) async throws
 
     // MARK: Rewards
 
-    func listenToRewards(completion: @escaping ([Reward]) -> Void)
+    func listenToRewards(completion: @escaping (Result<[Reward], Error>) -> Void)
     func fetchReward(byId id: String) async throws -> Reward?
     func unlockReward(rewardId: String) async throws
     func unlockRewardAtomically(
@@ -44,7 +44,10 @@ protocol GameBackend: AnyObject {
 
     // MARK: Challenges
 
-    func listenToChallenges(listenerKey: String, completion: @escaping ([Challenge]) -> Void)
+    func listenToChallenges(
+        listenerKey: String,
+        completion: @escaping (Result<[Challenge], Error>) -> Void
+    )
     func fetchChallenge(byId id: String) async throws -> Challenge?
     func completeChallenge(
         challengeId: String,
@@ -66,12 +69,12 @@ protocol GameBackend: AnyObject {
 
     // MARK: Timeline
 
-    func listenToTimeline(completion: @escaping ([TimelineEvent]) -> Void)
+    func listenToTimeline(completion: @escaping (Result<[TimelineEvent], Error>) -> Void)
     func addTimelineEvent(_ event: TimelineEvent) async throws
 
     // MARK: Game State
 
-    func listenToGameState(completion: @escaping (GameState?) -> Void)
+    func listenToGameState(completion: @escaping (Result<GameState, Error>) -> Void)
     func updateGameState(_ fields: [String: Any]) async throws
     func earnPoints(amount: Int) async throws
     func spendPoints(amount: Int) async throws
@@ -98,7 +101,7 @@ protocol GameBackend: AnyObject {
 /// requirements cannot declare default arguments, so it is restated here to keep the
 /// existing call sites that omit the key compiling unchanged.
 extension GameBackend {
-    func listenToChallenges(completion: @escaping ([Challenge]) -> Void) {
+    func listenToChallenges(completion: @escaping (Result<[Challenge], Error>) -> Void) {
         listenToChallenges(listenerKey: "challenges", completion: completion)
     }
 }

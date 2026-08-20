@@ -69,6 +69,22 @@ struct RewardsViewModelTests {
         await vm.confirmUnlock()
         #expect(vm.showUnlockConfirm == false)
     }
+
+    @Test("a rewards listener failure clears loading and surfaces an error")
+    func rewardsListenerFailureStopsLoading() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = NSError(
+            domain: "FIRFirestoreErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+        )
+        let vm = RewardsViewModel(service: mock)
+
+        vm.startListening()
+        await Task.yield()
+
+        #expect(vm.isLoading == false)
+        #expect(vm.errorMessage != nil)
+    }
 }
 
 @MainActor

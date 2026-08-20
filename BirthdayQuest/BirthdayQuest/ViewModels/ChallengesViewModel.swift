@@ -1,18 +1,20 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
 
 @MainActor
 final class ChallengesViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Challenges")
 
     init(service: GameBackend = FirestoreService.shared) {
         self.service = service
     }
-    
+
     // MARK: - Published
-    
+
     @Published var challenges: [Challenge] = []
     @Published var secretChallenges: [Challenge] = []
     @Published var isLoading = true
@@ -20,6 +22,7 @@ final class ChallengesViewModel: ObservableObject {
     @Published var showDetail = false
     @Published var showSecretPortal = false
     @Published var secretsDiscovered = false
+    @Published var errorMessage: String?
     
     // MARK: - Computed
     
@@ -49,12 +52,18 @@ final class ChallengesViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToChallenges { [weak self] challenges in
+        service.listenToChallenges { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
-                self.challenges = challenges
-                self.secretChallenges = challenges.filter { $0.isSecret && $0.isDelivered }
                 self.isLoading = false
+                switch result {
+                case .success(let challenges):
+                    self.challenges = challenges
+                    self.secretChallenges = challenges.filter { $0.isSecret && $0.isDelivered }
+                case .failure(let error):
+                    self.errorMessage = "Couldn't load challenges."
+                    self.logger.error("Challenges listener: \(error.localizedDescription)")
+                }
             }
         }
     }
