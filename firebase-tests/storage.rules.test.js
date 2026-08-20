@@ -108,6 +108,102 @@ describe('storage membership gate', () => {
     );
   });
 
+  it('denies an SVG upload even though it matches image/.*', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.svg`), IMG, { contentType: 'image/svg+xml' })
+    );
+  });
+
+  // Positive coverage: every proofs assertion above is assertFails. A typo in the proofs match
+  // block (wrong segment name, wrong depth) would route all of them to the catch-all deny and
+  // leave the suite green while proof uploads 403 in production. Assert the happy paths too.
+  it('lets a member upload a valid proof image', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(
+      uploadBytes(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`), IMG, { contentType: 'image/jpeg' })
+    );
+  });
+
+  it('lets the celebrant delete a proof object', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(CELEBRANT).storage();
+    await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`)));
+  });
+
+  it('lets a member read a proof object', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(getBytes(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`)));
+  });
+
+  it('lets a member read a reward object', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/rewards/r1/gift.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(getBytes(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
+  });
+
+  // Overwrite-as-delete: on an overwrite request.resource != null (so the delete branch of the
+  // ternary is skipped) and, before this fix, the create branch only checked isMember — meaning
+  // ANY member could destroy a gift/proof in place, no delete call needed, before the celebrant
+  // ever fetched it. resource is the EXISTING object and is null only on a genuine create.
+  describe('overwrite is not delete', () => {
+    it('denies a member overwriting an existing reward object', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await uploadBytes(ref(ctx.storage(), `events/${EVENT}/rewards/r1/gift.jpg`), IMG, {
+          contentType: 'image/jpeg',
+        });
+      });
+      const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+      await assertFails(
+        uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`), new Uint8Array([9]), {
+          contentType: 'image/png',
+        })
+      );
+    });
+
+    it('denies a member overwriting an existing proof object', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {
+          contentType: 'image/jpeg',
+        });
+      });
+      const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+      await assertFails(
+        uploadBytes(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`), new Uint8Array([9]), {
+          contentType: 'image/png',
+        })
+      );
+    });
+
+    it('denies the celebrant overwriting an existing reward object, but still allows delete', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await uploadBytes(ref(ctx.storage(), `events/${EVENT}/rewards/r1/gift.jpg`), IMG, {
+          contentType: 'image/jpeg',
+        });
+      });
+      const s = testEnv.authenticatedContext(CELEBRANT).storage();
+      await assertFails(
+        uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`), new Uint8Array([9]), {
+          contentType: 'image/png',
+        })
+      );
+      await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
+    });
+  });
+
   // Cross-event isolation: the whole point of cross-service rules is that membership in one
   // event buys nothing in another. A non-member (tested above) is the easy case; a legitimate
   // member of a DIFFERENT event is the case the architecture actually rests on.

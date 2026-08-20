@@ -24,31 +24,41 @@ service firebase.storage {
              && firestore.get(participantPath(eventId)).data.mode == 'celebrant';
     }
 
+    // SVG excluded even though it matches image/.*: it is script-bearing, not just pixels.
     function isPlayableMedia() {
       return request.resource.contentType.matches('video/.*')
              || request.resource.contentType.matches('audio/.*')
-             || request.resource.contentType.matches('image/.*');
+             || (request.resource.contentType.matches('image/.*')
+                 && request.resource.contentType != 'image/svg+xml');
     }
 
     // Reward media. Written by contributors, read by members, deleted by the celebrant
     // once downloaded — that client-side delete is what keeps storage bounded.
+    //
+    // Overwrite (request.resource != null && resource != null) is denied outright, including
+    // to the celebrant: without it, any member could destroy a gift/proof before the celebrant
+    // ever fetches it just by uploading over the same path, with no delete call needed. Uploads
+    // use UUID filenames, so nothing legitimate ever needs to overwrite — delete then re-upload.
     match /events/{eventId}/rewards/{rewardId}/{fileName} {
       allow read: if isMember(eventId);
       allow write: if request.resource == null
                      ? isCelebrant(eventId)
-                     : isMember(eventId)
+                     : resource == null
+                       && isMember(eventId)
                        && request.resource.size < 200 * 1024 * 1024
                        && isPlayableMedia();
     }
 
-    // Challenge proof photos. Images only, 10 MB cap.
+    // Challenge proof photos. Images only, 10 MB cap. Same overwrite-denial rationale as above.
     match /events/{eventId}/proofs/{challengeId}/{fileName} {
       allow read: if isMember(eventId);
       allow write: if request.resource == null
                      ? isCelebrant(eventId)
-                     : isMember(eventId)
+                     : resource == null
+                       && isMember(eventId)
                        && request.resource.size < 10 * 1024 * 1024
-                       && request.resource.contentType.matches('image/.*');
+                       && request.resource.contentType.matches('image/.*')
+                       && request.resource.contentType != 'image/svg+xml';
     }
 
     match /{allPaths=**} {
