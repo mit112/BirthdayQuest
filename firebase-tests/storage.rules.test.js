@@ -115,6 +115,44 @@ describe('storage membership gate', () => {
     );
   });
 
+  it('denies an SVG upload with a charset parameter (bare equality would miss this)', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift2.svg`), IMG, {
+        contentType: 'image/svg+xml; charset=utf-8',
+      })
+    );
+  });
+
+  it('denies an unsuffixed image/svg upload (bare equality would miss this)', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift3.svg`), IMG, { contentType: 'image/svg' })
+    );
+  });
+
+  // Sanity: the svg exclusion pattern must not over-match legitimate image/video/audio types.
+  it('still lets a member upload a PNG reward', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.png`), IMG, { contentType: 'image/png' })
+    );
+  });
+
+  it('still lets a member upload an MP4 reward', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.mp4`), IMG, { contentType: 'video/mp4' })
+    );
+  });
+
+  it('still lets a member upload an MP3 reward', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(
+      uploadBytes(ref(s, `events/${EVENT}/rewards/r1/gift.mp3`), IMG, { contentType: 'audio/mpeg' })
+    );
+  });
+
   // Positive coverage: every proofs assertion above is assertFails. A typo in the proofs match
   // block (wrong segment name, wrong depth) would route all of them to the catch-all deny and
   // leave the suite green while proof uploads 403 in production. Assert the happy paths too.

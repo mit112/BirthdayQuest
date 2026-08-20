@@ -25,11 +25,13 @@ service firebase.storage {
     }
 
     // SVG excluded even though it matches image/.*: it is script-bearing, not just pixels.
+    // Anchored pattern, not equality: bare equality misses parameterised variants like
+    // "image/svg+xml; charset=utf-8" and unsuffixed "image/svg".
     function isPlayableMedia() {
       return request.resource.contentType.matches('video/.*')
              || request.resource.contentType.matches('audio/.*')
              || (request.resource.contentType.matches('image/.*')
-                 && request.resource.contentType != 'image/svg+xml');
+                 && !request.resource.contentType.matches('image/svg.*'));
     }
 
     // Reward media. Written by contributors, read by members, deleted by the celebrant
@@ -58,7 +60,7 @@ service firebase.storage {
                        && isMember(eventId)
                        && request.resource.size < 10 * 1024 * 1024
                        && request.resource.contentType.matches('image/.*')
-                       && request.resource.contentType != 'image/svg+xml';
+                       && !request.resource.contentType.matches('image/svg.*');
     }
 
     match /{allPaths=**} {
