@@ -266,22 +266,27 @@ the final whole-branch review and its remediation — and merged into `main`** (
 history stays linear and every commit survives). **`main` is not pushed**; `origin/main` is well
 behind, and the three manual steps below are why publishing was left as a deliberate decision
 rather than a formality.
-Build green, **166 Swift test cases + 113 emulator rules tests** passing, SwiftLint clean across 58
-files. (Note `xcodebuild`'s "passed on" line count runs higher than the number of distinct tests —
-182 here — because parameterized cases report once per argument; count unique test names if you
-need to compare.)
+At the merge point, `main` was green with **166 Swift test cases + 113 emulator rules tests** and
+SwiftLint clean across 58 files. Those are `main`'s numbers, not the current branch's — see the
+session-5 note below. (Note `xcodebuild`'s "passed on" line count runs higher than the number of
+distinct tests — 182 against `main` — because parameterized cases report once per argument; count
+unique test names if you need to compare.)
 
 **Follow-up work sits on `fix/risk-1-cluster-and-followups`, branched from `main` at `b05a22b` and
-not merged.** Seven commits closing the host-panel risk-#1 cluster and ranked follow-ups 2–6 and 8
-from `progress.md`. Both tiers and SwiftLint were verified green on the branch tip. Two corrections
+not merged.** **Eight** commits (not seven, as this file previously said) closing the host-panel
+risk-#1 cluster and ranked follow-ups 2–6 and 8 from `progress.md`. Both tiers and SwiftLint were verified green on the branch tip. Two corrections
 to the earlier handoff, both confirmed against the tree rather than assumed: the celebrant
 `ShareLink` was **already** fixed by `debeaa7` (`celebrantLink` is nil for a consumed code), and
 `main` at `b05a22b` had **1** SwiftLint violation, not 0 — `orphaned_doc_comment` in
 `RewardContentSheet.swift`, now fixed.
 
-**Session 5 added two more commits and closed the last two ranked follow-ups.** `ba0cd1a` is the
+**Session 5 closed the last two ranked follow-ups.** Use `git rev-list --count main..HEAD` for the
+commit total rather than trusting a number written here — the last two attempts to state it were
+both stale within the same session, because the documentation commits keep changing their own count.
+`ba0cd1a` is the
 accessibility pass — Dynamic Type across all 214 font call sites, Reduce Motion gating for all 17
-perpetual animations, and AA contrast — and `9fb040f` is the CI housekeeping. Both tiers were
+perpetual animations, and AA contrast — `9fb040f` is the CI housekeeping, and `45440ce` is this
+guide's own reconciliation. Both tiers were
 verified on the tip: **173 Swift test cases** (up from 166) with `** TEST SUCCEEDED **`, and
 SwiftLint clean at `--strict` across 58 files. The rules suite was **not** re-run, deliberately: no
 rules file was touched, and this project gates that suite on rules changes. So the ranked list from
