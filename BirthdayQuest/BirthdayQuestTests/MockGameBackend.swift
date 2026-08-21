@@ -23,22 +23,31 @@ final class MockGameBackend: GameBackend {
     private(set) var removedListenerKeys: [String] = []
     private(set) var unlockedRewardIds: [String] = []
     private(set) var completedChallengeIds: [String] = []
+    /// Every `eventId` the backend was asked for, in order. Lets a test prove a view model
+    /// scoped its calls to the occasion it was given rather than to some ambient default.
+    private(set) var requestedEventIds: [String] = []
+    private(set) var createdOccasions: [(name: String, type: OccasionType, hostMode: ParticipantMode)] = []
+    private(set) var joinedOccasions: [(eventId: String, code: String, mode: ParticipantMode)] = []
+    private(set) var openStateChanges: [(eventId: String, isOpen: Bool)] = []
 
     func called(_ name: String) -> Bool { calls.contains(name) }
     func callCount(_ name: String) -> Int { calls.filter { $0 == name }.count }
 
     // MARK: Stubs
 
-    var users: [BQUser] = []
     var rewards: [Reward] = []
     var challenges: [Challenge] = []
     var timeline: [TimelineEvent] = []
     var gameState: GameState?
-    var stubbedUser: BQUser?
+    var stubOccasions: [Occasion] = []
+    var stubParticipants: [Participant] = []
+    var stubbedOccasion: Occasion?
+    var stubbedParticipant: Participant?
     var stubbedChallenge: Challenge?
     var stubbedReward: Reward?
     var stubbedUploadUrl = "https://example.com/upload.jpg"
     var stubbedSecretChallengeId = "secret-1"
+    var stubbedCreatedEventId = "evt_mock"
 
     /// When set, every `async throws` method throws this instead of succeeding.
     var errorToThrow: Error?
@@ -51,18 +60,21 @@ final class MockGameBackend: GameBackend {
         if let errorToThrow { throw errorToThrow }
     }
 
+    private func record(_ name: String, eventId: String) {
+        calls.append(name)
+        requestedEventIds.append(eventId)
+    }
+
     // MARK: Captured listener callbacks
     //
     // Held so a test can drive a listener manually: call startListening(), then invoke
     // emitRewards(...) to simulate a Firestore snapshot arriving.
 
-    private var usersHandler: ((Result<[BQUser], Error>) -> Void)?
     private var rewardsHandler: ((Result<[Reward], Error>) -> Void)?
     private var challengesHandler: ((Result<[Challenge], Error>) -> Void)?
     private var timelineHandler: ((Result<[TimelineEvent], Error>) -> Void)?
     private var gameStateHandler: ((Result<GameState, Error>) -> Void)?
 
-    func emitUsers(_ value: [BQUser]) { usersHandler?(.success(value)) }
     func emitRewards(_ value: [Reward]) { rewardsHandler?(.success(value)) }
     func emitChallenges(_ value: [Challenge]) { challengesHandler?(.success(value)) }
     func emitTimeline(_ value: [TimelineEvent]) { timelineHandler?(.success(value)) }
@@ -79,38 +91,69 @@ final class MockGameBackend: GameBackend {
         calls.append("removeAllListeners")
     }
 
-    // MARK: - GameBackend: Users
+    // MARK: - GameBackend: Occasions
 
-    func listenToUsers(completion: @escaping (Result<[BQUser], Error>) -> Void) {
-        calls.append("listenToUsers")
-        usersHandler = completion
-        if let listenerFailure {
-            completion(.failure(listenerFailure))
-            return
-        }
-        completion(.success(users))
+    func createOccasion(
+        name: String,
+        occasionType: OccasionType,
+        celebrantName: String,
+        occasionDate: Date,
+        hostName: String,
+        hostAvatarId: String,
+        hostMode: ParticipantMode
+    ) async throws -> String {
+        calls.append("createOccasion")
+        try throwIfNeeded()
+        createdOccasions.append((name, occasionType, hostMode))
+        return stubbedCreatedEventId
     }
 
-    func claimCharacter(characterId: String, deviceId: String) async throws {
-        calls.append("claimCharacter")
+    func joinOccasion(
+        eventId: String,
+        code: String,
+        name: String,
+        avatarId: String,
+        mode: ParticipantMode
+    ) async throws {
+        record("joinOccasion", eventId: eventId)
         try throwIfNeeded()
+        joinedOccasions.append((eventId, code, mode))
     }
 
-    func fetchUser(characterId: String) async throws -> BQUser? {
-        calls.append("fetchUser")
+    func fetchMyOccasions() async throws -> [Occasion] {
+        calls.append("fetchMyOccasions")
         try throwIfNeeded()
-        return stubbedUser
+        return stubOccasions
     }
 
-    func unclaimCharacter(characterId: String) async throws {
-        calls.append("unclaimCharacter")
+    func fetchOccasion(eventId: String) async throws -> Occasion? {
+        record("fetchOccasion", eventId: eventId)
         try throwIfNeeded()
+        return stubbedOccasion ?? stubOccasions.first { $0.id == eventId }
+    }
+
+    func fetchParticipants(eventId: String) async throws -> [Participant] {
+        record("fetchParticipants", eventId: eventId)
+        try throwIfNeeded()
+        return stubParticipants
+    }
+
+    func fetchMyParticipant(eventId: String) async throws -> Participant? {
+        record("fetchMyParticipant", eventId: eventId)
+        try throwIfNeeded()
+        return stubbedParticipant
+    }
+
+    func setOccasionOpen(eventId: String, isOpen: Bool) async throws {
+        record("setOccasionOpen", eventId: eventId)
+        try throwIfNeeded()
+        openStateChanges.append((eventId, isOpen))
     }
 
     // MARK: - GameBackend: Rewards
 
-    func listenToRewards(completion: @escaping (Result<[Reward], Error>) -> Void) {
-        calls.append("listenToRewards")
+    func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void) {
+        record("listenToRewards", eventId: eventId)
         rewardsHandler = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
@@ -119,24 +162,19 @@ final class MockGameBackend: GameBackend {
         completion(.success(rewards))
     }
 
-    func fetchReward(byId id: String) async throws -> Reward? {
-        calls.append("fetchReward")
+    func fetchReward(eventId: String, rewardId: String) async throws -> Reward? {
+        record("fetchReward", eventId: eventId)
         try throwIfNeeded()
         return stubbedReward
     }
 
-    func unlockReward(rewardId: String) async throws {
-        calls.append("unlockReward")
-        try throwIfNeeded()
-        unlockedRewardIds.append(rewardId)
-    }
-
     func unlockRewardAtomically(
+        eventId: String,
         rewardId: String,
         pointCost: Int,
         timelineEvent: TimelineEvent
     ) async throws {
-        calls.append("unlockRewardAtomically")
+        record("unlockRewardAtomically", eventId: eventId)
         try throwIfNeeded()
         unlockedRewardIds.append(rewardId)
     }
@@ -144,10 +182,11 @@ final class MockGameBackend: GameBackend {
     // MARK: - GameBackend: Challenges
 
     func listenToChallenges(
+        eventId: String,
         listenerKey: String,
         completion: @escaping (Result<[Challenge], Error>) -> Void
     ) {
-        calls.append("listenToChallenges")
+        record("listenToChallenges", eventId: eventId)
         challengesHandler = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
@@ -156,24 +195,14 @@ final class MockGameBackend: GameBackend {
         completion(.success(challenges))
     }
 
-    func fetchChallenge(byId id: String) async throws -> Challenge? {
-        calls.append("fetchChallenge")
+    func fetchChallenge(eventId: String, challengeId: String) async throws -> Challenge? {
+        record("fetchChallenge", eventId: eventId)
         try throwIfNeeded()
         return stubbedChallenge
     }
 
-    func completeChallenge(
-        challengeId: String,
-        proofUrl: String?,
-        proofType: String?,
-        proofText: String?
-    ) async throws {
-        calls.append("completeChallenge")
-        try throwIfNeeded()
-        completedChallengeIds.append(challengeId)
-    }
-
     func completeChallengeAtomically(
+        eventId: String,
         challengeId: String,
         pointValue: Int,
         isSecret: Bool,
@@ -182,26 +211,33 @@ final class MockGameBackend: GameBackend {
         proofText: String?,
         timelineEvent: TimelineEvent
     ) async throws {
-        calls.append("completeChallengeAtomically")
+        record("completeChallengeAtomically", eventId: eventId)
         try throwIfNeeded()
         completedChallengeIds.append(challengeId)
     }
 
-    func createSecretChallenge(_ challenge: Challenge) async throws -> String {
-        calls.append("createSecretChallenge")
+    func createSecretChallenge(eventId: String, challenge: Challenge) async throws -> String {
+        record("createSecretChallenge", eventId: eventId)
         try throwIfNeeded()
         return stubbedSecretChallengeId
     }
 
-    func updateSecretChallenge(challengeId: String, data: [String: Any]) async throws {
-        calls.append("updateSecretChallenge")
+    func updateSecretChallenge(
+        eventId: String,
+        challengeId: String,
+        data: [String: Any]
+    ) async throws {
+        record("updateSecretChallenge", eventId: eventId)
         try throwIfNeeded()
     }
 
     // MARK: - GameBackend: Timeline
 
-    func listenToTimeline(completion: @escaping (Result<[TimelineEvent], Error>) -> Void) {
-        calls.append("listenToTimeline")
+    func listenToTimeline(
+        eventId: String,
+        completion: @escaping (Result<[TimelineEvent], Error>) -> Void
+    ) {
+        record("listenToTimeline", eventId: eventId)
         timelineHandler = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
@@ -210,15 +246,18 @@ final class MockGameBackend: GameBackend {
         completion(.success(timeline))
     }
 
-    func addTimelineEvent(_ event: TimelineEvent) async throws {
-        calls.append("addTimelineEvent")
+    func addTimelineEvent(eventId: String, event: TimelineEvent) async throws {
+        record("addTimelineEvent", eventId: eventId)
         try throwIfNeeded()
     }
 
     // MARK: - GameBackend: Game State
 
-    func listenToGameState(completion: @escaping (Result<GameState, Error>) -> Void) {
-        calls.append("listenToGameState")
+    func listenToGameState(
+        eventId: String,
+        completion: @escaping (Result<GameState, Error>) -> Void
+    ) {
+        record("listenToGameState", eventId: eventId)
         gameStateHandler = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
@@ -227,49 +266,60 @@ final class MockGameBackend: GameBackend {
         completion(.success(gameState ?? .empty))
     }
 
-    func updateGameState(_ fields: [String: Any]) async throws {
-        calls.append("updateGameState")
+    func updateGameState(eventId: String, fields: [String: Any]) async throws {
+        record("updateGameState", eventId: eventId)
         try throwIfNeeded()
         updatedGameStateFields.append(fields)
     }
 
-    func earnPoints(amount: Int) async throws {
-        calls.append("earnPoints")
+    func earnPoints(eventId: String, amount: Int) async throws {
+        record("earnPoints", eventId: eventId)
         try throwIfNeeded()
     }
 
-    func spendPoints(amount: Int) async throws {
-        calls.append("spendPoints")
+    func spendPoints(eventId: String, amount: Int) async throws {
+        record("spendPoints", eventId: eventId)
         try throwIfNeeded()
     }
 
-    func checkFinalBadge() async throws {
-        calls.append("checkFinalBadge")
+    func checkFinalBadge(eventId: String) async throws {
+        record("checkFinalBadge", eventId: eventId)
         try throwIfNeeded()
     }
 
-    func incrementSecretChallengesCompleted() async throws {
-        calls.append("incrementSecretChallengesCompleted")
+    func incrementSecretChallengesCompleted(eventId: String) async throws {
+        record("incrementSecretChallengesCompleted", eventId: eventId)
         try throwIfNeeded()
     }
 
     // MARK: - GameBackend: Storage
 
-    func uploadProofData(_ data: Data, path: String) async throws -> String {
-        calls.append("uploadProofData")
+    func uploadProofData(
+        eventId: String,
+        challengeId: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String {
+        record("uploadProofData", eventId: eventId)
+        uploadedContentTypes.append(contentType)
         try throwIfNeeded()
         return stubbedUploadUrl
     }
 
+    /// Recorded so a test can prove the caller sent a real image type rather than letting
+    /// the SDK default to application/octet-stream, which the Storage rules reject.
+    private(set) var uploadedContentTypes: [String] = []
+
     // MARK: - GameBackend: Admin
 
     func adminForceUnlockReward(
+        eventId: String,
         rewardId: String,
         pointCost: Int,
         deductPoints: Bool,
         timelineEvent: TimelineEvent
     ) async throws {
-        calls.append("adminForceUnlockReward")
+        record("adminForceUnlockReward", eventId: eventId)
         try throwIfNeeded()
         unlockedRewardIds.append(rewardId)
     }

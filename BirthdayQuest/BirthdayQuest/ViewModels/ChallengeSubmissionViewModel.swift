@@ -28,8 +28,14 @@ final class ChallengeSubmissionViewModel: ObservableObject {
     // MARK: - Init
     
     private let service: GameBackend
+    private let eventId: String
 
-    init(challenge: Challenge, service: GameBackend = FirestoreService.shared) {
+    init(
+        eventId: String,
+        challenge: Challenge,
+        service: GameBackend = FirestoreService.shared
+    ) {
+        self.eventId = eventId
         self.service = service
         self.challenge = challenge
     }
@@ -79,7 +85,15 @@ final class ChallengeSubmissionViewModel: ObservableObject {
             case .photo:
                 if let data = selectedImageData {
                     let compressed = compressImage(data)
-                    proofUrl = try await uploadProof(data: compressed, ext: "jpg", challengeId: challengeId)
+                    // compressImage always hands back JPEG data, and the Storage rules only
+                    // accept image/*. Letting the SDK default to application/octet-stream is
+                    // what made every proof upload 403.
+                    proofUrl = try await service.uploadProofData(
+                        eventId: eventId,
+                        challengeId: challengeId,
+                        data: compressed,
+                        contentType: "image/jpeg"
+                    )
                     proofType = "photo"
                 }
             case .text:
@@ -103,6 +117,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
             )
             
             try await service.completeChallengeAtomically(
+                eventId: eventId,
                 challengeId: challengeId,
                 pointValue: challenge.pointValue,
                 isSecret: challenge.isSecret,
@@ -120,20 +135,15 @@ final class ChallengeSubmissionViewModel: ObservableObject {
             showTimelinePrompt = true
             
         } catch {
+            // Logged because the user-facing copy is deliberately vague: without this line a
+            // Storage 403 and a dropped connection look identical from the console.
+            logger.error("Challenge submission failed: \(error.localizedDescription)")
             errorMessage = "Submission failed. Try again!"
             showError = true
             BQDesign.Haptics.heavy()
         }
         
         isSubmitting = false
-    }
-    
-    // MARK: - Upload Helper
-    
-    private func uploadProof(data: Data, ext: String, challengeId: String) async throws -> String {
-        let filename = "\(UUID().uuidString).\(ext)"
-        let path = "proofs/\(challengeId)/\(filename)"
-        return try await service.uploadProofData(data, path: path)
     }
     
     // MARK: - Image Compression (#8)
