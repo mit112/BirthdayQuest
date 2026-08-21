@@ -46,7 +46,7 @@ struct TimelineNodeView: View {
             .scaleEffect(badgePop ? 1.0 : 0.01)
             
             // Title
-            Text(cleanTitle)
+            Text(event.title)
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundColor(BQDesign.Colors.textPrimary)
                 .lineLimit(1)
@@ -248,14 +248,6 @@ private extension TimelineNodeView {
         let asset = event.badgeAsset
         if UIImage(systemName: asset) != nil { return asset }
         return "bolt.fill"
-    }
-    
-    var cleanTitle: String {
-        let prefixes = ["Completed: ", "Unlocked: "]
-        for prefix in prefixes where event.title.hasPrefix(prefix) {
-            return String(event.title.dropFirst(prefix.count))
-        }
-        return event.title
     }
     
     var pointsText: String {

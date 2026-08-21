@@ -134,7 +134,7 @@ final class AdminViewModel: ObservableObject {
         let timelineEvent = TimelineEvent(
             type: .challengeCompleted,
             referenceId: challengeId,
-            title: "Completed: \(challenge.title)",
+            title: challenge.title,
             subtitle: "+\(challenge.pointValue) ✦",
             badgeType: .challenge,
             badgeAsset: challenge.illustrationAsset,

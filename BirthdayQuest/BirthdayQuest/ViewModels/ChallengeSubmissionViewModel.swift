@@ -107,7 +107,7 @@ final class ChallengeSubmissionViewModel: ObservableObject {
             let event = TimelineEvent(
                 type: .challengeCompleted,
                 referenceId: challengeId,
-                title: "Completed: \(challenge.title)",
+                title: challenge.title,
                 subtitle: "+\(challenge.pointValue) ✦",
                 badgeType: .challenge,
                 badgeAsset: challenge.illustrationAsset,

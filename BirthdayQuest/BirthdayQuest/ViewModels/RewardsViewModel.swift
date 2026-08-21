@@ -84,7 +84,7 @@ final class RewardsViewModel: ObservableObject {
             let event = TimelineEvent(
                 type: .rewardUnlocked,
                 referenceId: rewardId,
-                title: "Unlocked: \(reward.title)",
+                title: reward.title,
                 subtitle: "-\(reward.pointCost) ✦",
                 badgeType: .reward,
                 badgeAsset: reward.badgeIllustration,
