@@ -222,18 +222,26 @@ assumption they needed the media pipeline. They did not:
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
-## Direction (as of 2026-08-20)
+## Direction (as of 2026-08-21)
 
 The app is multi-tenant. Subsystem #1 (event scoping + identity) is **complete — all 16 tasks, plus
-the final whole-branch review and its remediation** — on `feat/event-scoping-and-identity`.
-30 commits, build green, **148 Swift tests + 113 emulator rules tests** passing, SwiftLint clean.
+the final whole-branch review and its remediation — and merged into `main`** (fast-forward, so
+history stays linear and every commit survives). **`main` is not pushed**; `origin/main` is well
+behind, and the three manual steps below are why publishing was left as a deliberate decision
+rather than a formality.
+Build green, **142 Swift test cases + 113 emulator rules tests** passing, SwiftLint clean across 58
+files. (Both counts were verified on the merged `main`. Note `xcodebuild`'s "passed on" line count
+runs higher than the number of distinct tests, because parameterized cases report once per
+argument — count unique test names if you need to compare.)
 
 - Design: `docs/superpowers/specs/2026-08-20-multi-tenant-occasions-design.md`
 - Plan: `docs/superpowers/plans/2026-08-20-event-scoping-and-identity.md`
 - **Execution record: `.superpowers/sdd/2026-08-20-event-scoping-and-identity/`** (git-ignored)
-  holds `rulings.md` — 61 decisions taken against the plan, each with what it costs if wrong — and
-  `progress.md`. **Read `rulings.md` before touching this subsystem**; the plan alone is misleading
-  in ~15 places where a ruling overrode it.
+  holds `rulings.md` — 68 decisions taken against the plan, each with what it costs if wrong — and
+  `progress.md`, which carries the full session record and a ranked follow-up list. **Read
+  `rulings.md` before touching this subsystem**; the plan alone is misleading in ~15 places where a
+  ruling overrode it. Note R62–R68 came from the final review and *supersede* earlier rulings —
+  R62 in particular overturns R35's mechanism.
 
 **The final review found four Criticals, all fixed.** Every one spanned a boundary no single task
 owned, which is why 21 clean per-task reviews missed them — worth remembering before trusting
