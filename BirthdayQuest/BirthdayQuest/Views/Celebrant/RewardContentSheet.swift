@@ -2,17 +2,21 @@ import SwiftUI
 import OSLog
 import ConfettiSwiftUI
 
+// `nonisolated` because the target builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which
+// would otherwise make this pure value type — and therefore its `Equatable` conformance —
+// MainActor-isolated. The tests assert on it from a nonisolated context, which is a warning today
+// and an error in the Swift 6 language mode. Nothing here touches UI, so opting out is correct
+// rather than merely convenient.
+//
+// Kept above the doc comment, not between it and the declaration: SwiftLint's
+// `orphaned_doc_comment` fires on a `///` block separated from what it documents.
+
 /// What `RewardContentSheet` should actually render for a reward.
 ///
 /// Extracted from the view body because every defect this replaced was a branch-selection
 /// mistake — a one-element `contentUrls` gallery falling through to the *different*
 /// `contentUrl` field, and an empty-string `contentText` rendering as a real but blank
 /// letter — and none of them was reachable by a test while the decision lived in `body`.
-// `nonisolated` because the target builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which
-// would otherwise make this pure value type — and therefore its `Equatable` conformance —
-// MainActor-isolated. The tests assert on it from a nonisolated context, which is a warning today
-// and an error in the Swift 6 language mode. Nothing here touches UI, so opting out is correct
-// rather than merely convenient.
 nonisolated enum RewardContentPresentation: Equatable {
     case text(String)
     case video(URL)
@@ -167,16 +171,24 @@ struct RewardContentSheet: View {
             )
         }
         .onAppear {
-            confettiCounter += 1
-            BQDesign.Haptics.success()
             withAnimation(BQDesign.Animation.bouncy.delay(0.1)) {
                 appeared = true
             }
+
             if presentation == .unavailable {
-                // The reveal is the payoff of the whole product, so a gift with nothing in
-                // it is a data defect worth a trail. Nothing else would ever surface it.
+                // No confetti and no success haptic for a gift with nothing in it. Both fired
+                // unconditionally, so the single worst moment in the product — the celebrant
+                // opens a gift a friend recorded for them and finds it empty — was dressed up
+                // as the biggest win. Celebrating a failure also teaches the celebrant that
+                // the celebration means nothing.
+                //
+                // The reveal is the payoff of the whole product, so this is a data defect
+                // worth a trail. Nothing else would ever surface it.
                 let rewardId = reward.id ?? "<no id>"
                 logger.warning("Reward \(rewardId, privacy: .public) (\(reward.contentType.rawValue, privacy: .public)) has no content to show")
+            } else {
+                confettiCounter += 1
+                BQDesign.Haptics.success()
             }
         }
     }
