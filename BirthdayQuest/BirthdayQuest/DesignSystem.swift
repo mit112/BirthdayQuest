@@ -30,7 +30,10 @@ enum BQDesign {
         static let challengeBlue = Color(hex: "5B9FE6")
         static let secretDark = Color(hex: "1A1A2E")
         static let secretAccent = Color(hex: "E94560")
-        
+
+        // Semantic
+        static let error = Color(hex: "E94560")
+
         // Points
         static let pointsGold = Color(hex: "F5A623")
         
