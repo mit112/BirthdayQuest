@@ -12,15 +12,18 @@ struct JoinOccasionView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if viewModel.eventId.isEmpty {
-                    codeEntrySection
-                } else {
+                // `isResolved`, not `eventId.isEmpty`. A deep link fills in `eventId` before
+                // anything is resolved, so keying off it showed the details form — and a
+                // role of "A friend" — to a celebrant whose lookup had just failed.
+                if viewModel.isResolved {
                     detailsSection
+                } else {
+                    codeEntrySection
                 }
 
                 if let errorMessage = viewModel.errorMessage {
                     Section {
-                        Text(errorMessage).foregroundStyle(BQDesign.Colors.error)
+                        formError(errorMessage)
                     }
                 }
             }
@@ -51,9 +54,10 @@ struct JoinOccasionView: View {
         }
     }
 
-    /// Shown when there is no event id yet: either nothing has been entered, or the code
-    /// has not resolved. `incomingLink` prefills this via `.task` above, so a link that
-    /// resolves cleanly skips straight to `detailsSection` (R14).
+    /// Shown until a code has actually resolved. `incomingLink` prefills the field via
+    /// `.task` above, so a link that resolves cleanly skips straight to `detailsSection`
+    /// (R14) — and a link that *fails* to resolve lands here with the code already filled
+    /// in, which is what turns the retry into a single tap rather than a dead end.
     private var codeEntrySection: some View {
         Section("Invite code") {
             Text("Ask your host for their invite link, or type the code they shared.")
@@ -61,15 +65,36 @@ struct JoinOccasionView: View {
             TextField("e.g. ABCD2345", text: $viewModel.code)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
-            Button("Continue") {
-                Task { await viewModel.resolveCode() }
-            }
-            .disabled(viewModel.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      || viewModel.isResolvingCode)
             if viewModel.isResolvingCode {
-                ProgressView()
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    ProgressView()
+                    Text("Checking that code…")
+                        .foregroundStyle(BQDesign.Colors.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                Button("Continue") {
+                    Task { await viewModel.resolveCode() }
+                }
+                .disabled(viewModel.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+
+    /// The icon carries the severity in colour so the sentence can stay readable:
+    /// `Colors.error` measures 3.83:1 on white, under the 4.5:1 floor for body text, and
+    /// colour must not be the only signal regardless. Same split as `OccasionListView`.
+    private func formError(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(BQDesign.Colors.error)
+                .accessibilityHidden(true)
+            Text(message)
+                .foregroundStyle(BQDesign.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Error: \(message)")
     }
 
     private var detailsSection: some View {

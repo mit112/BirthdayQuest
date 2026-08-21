@@ -16,6 +16,21 @@ final class JoinOccasionViewModel: ObservableObject {
     @Published var isSubmitting = false
     @Published var errorMessage: String?
 
+    /// Whether `resolveCode()` has actually succeeded for the code currently held.
+    ///
+    /// This exists because `eventId` is not evidence of it. `parse(link:)` sets `eventId` and
+    /// `code` straight off the URL, before anything has been resolved — so a deep link whose
+    /// `resolveCode()` then failed left a non-empty `eventId` with `mode` still at its
+    /// `.contributor` default. The view read `eventId.isEmpty` to decide which form to show,
+    /// so it skipped to the details form and told a celebrant their role was "A friend", with
+    /// the code field gone and no way to re-resolve.
+    ///
+    /// Joining on that state is the failure R53 was written about: the rules authorise
+    /// celebrant claims against the celebrant code, so a celebrant joining as a contributor
+    /// is a permission denial the user cannot diagnose. `canSubmit` therefore requires this,
+    /// which makes an unresolved join unreachable rather than merely unlikely.
+    @Published private(set) var isResolved = false
+
     private let service: GameBackend
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "JoinOccasion")
 
@@ -24,7 +39,7 @@ final class JoinOccasionViewModel: ObservableObject {
     }
 
     var canSubmit: Bool {
-        !isSubmitting && !isResolvingCode && !eventId.isEmpty && !code.isEmpty
+        !isSubmitting && !isResolvingCode && isResolved && !eventId.isEmpty && !code.isEmpty
             && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -73,6 +88,11 @@ final class JoinOccasionViewModel: ObservableObject {
     /// before it builds a path — a malformed code is a crash, not an error, if it reaches
     /// `document(_:)`, so it is refused at both ends rather than trusted from either.
     func resolveCode() async {
+        // Dropped up front, not only on failure. Every exit below other than the success
+        // path leaves the caller un-resolved, and re-deriving that per branch is how the
+        // stranded-celebrant state got in.
+        isResolved = false
+
         guard let normalized = InviteCode.normalized(code) else {
             errorMessage = "That doesn't look like an invite code. "
                 + "Codes are \(InviteCode.length) letters and numbers."
@@ -91,6 +111,7 @@ final class JoinOccasionViewModel: ObservableObject {
             code = normalized
             eventId = resolved.eventId
             mode = resolved.kind == ParticipantMode.celebrant.rawValue ? .celebrant : .contributor
+            isResolved = true
         } catch let error as BackendError {
             // Malformed code, or a code whose stored eventId is not a usable one. Both are
             // "this invite is not real", not "the network failed".
