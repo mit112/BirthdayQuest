@@ -33,6 +33,7 @@ final class AppSession: ObservableObject {
     }
 
     func bootstrap() async {
+        errorMessage = nil
         do {
             _ = try await auth.signInAnonymouslyIfNeeded()
             isAnonymous = auth.isAnonymous
@@ -55,6 +56,9 @@ final class AppSession: ObservableObject {
             let fetched = try await service.fetchMyOccasions()
             occasions = fetched.sorted { $0.occasionDate > $1.occasionDate }
             rootState = fetched.isEmpty ? .empty : .occasions
+            // A message from an earlier failed attempt must not outlive the retry that
+            // fixed it — the empty state renders it unconditionally.
+            errorMessage = nil
         } catch {
             logger.error("Loading occasions failed: \(error.localizedDescription)")
             errorMessage = "Couldn't load your occasions."
@@ -63,6 +67,7 @@ final class AppSession: ObservableObject {
     }
 
     func linkApple(idToken: String, nonce: String) async {
+        errorMessage = nil
         do {
             try await auth.signInWithApple(idToken: idToken, nonce: nonce)
             isAnonymous = auth.isAnonymous

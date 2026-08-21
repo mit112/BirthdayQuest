@@ -72,9 +72,27 @@ protocol GameBackend: AnyObject {
     /// celebrant's next app open retry a first attempt that failed.
     func consumeCelebrantCode(eventId: String) async throws
 
+    /// Resolves an invite code to the occasion it belongs to and the mode it authorises.
+    /// Returns nil when no such code exists.
+    ///
+    /// Lives on the backend seam rather than in the join view model because it is the sole
+    /// determinant of `mode` for a deep link — a celebrant link is textually identical to a
+    /// contributor one — and a rule that can only be exercised against a live Firestore is a
+    /// rule nothing tests. `inviteCodes/{CODE}` is `allow get` / deny `list`: resolving a
+    /// code you already hold is what a code is for, but the collection cannot be enumerated.
+    func resolveInviteCode(_ code: String) async throws -> (eventId: String, kind: String)?
+
     // MARK: Rewards
 
-    func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void)
+    /// `listenerKey` mirrors `listenToChallenges`: two screens can watch the same
+    /// occasion's rewards at once (a host who is also the celebrant sees both the carousel
+    /// and the host panel), and each must be able to release its own subscription without
+    /// cancelling the other's.
+    func listenToRewards(
+        eventId: String,
+        listenerKey: String,
+        completion: @escaping (Result<[Reward], Error>) -> Void
+    )
     func fetchReward(eventId: String, rewardId: String) async throws -> Reward?
     func unlockRewardAtomically(
         eventId: String,
@@ -153,6 +171,17 @@ protocol GameBackend: AnyObject {
 /// Protocol requirements cannot declare default arguments, so the two that have one are
 /// restated here as convenience overloads.
 extension GameBackend {
+
+    func listenToRewards(
+        eventId: String,
+        completion: @escaping (Result<[Reward], Error>) -> Void
+    ) {
+        listenToRewards(
+            eventId: eventId,
+            listenerKey: ListenerKey.rewards(eventId),
+            completion: completion
+        )
+    }
 
     func listenToChallenges(
         eventId: String,

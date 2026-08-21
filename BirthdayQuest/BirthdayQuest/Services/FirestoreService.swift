@@ -263,10 +263,29 @@ final class FirestoreService: GameBackend {
         try await eventRef(eventId).updateData(["celebrantCode": ""])
     }
 
+    func resolveInviteCode(_ code: String) async throws -> (eventId: String, kind: String)? {
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !normalized.isEmpty else { return nil }
+
+        let snapshot = try await db.collection(Collections.inviteCodes)
+            .document(normalized).getDocument()
+        guard snapshot.exists,
+              let data = snapshot.data(),
+              let eventId = data["eventId"] as? String,
+              let kind = data["kind"] as? String
+        else { return nil }
+
+        return (eventId, kind)
+    }
+
     // MARK: - Rewards
 
-    func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void) {
-        let key = ListenerKey.rewards(eventId)
+    func listenToRewards(
+        eventId: String,
+        listenerKey: String,
+        completion: @escaping (Result<[Reward], Error>) -> Void
+    ) {
+        let key = listenerKey
         removeListener(forKey: key)
 
         listeners[key] = rewardsRef(eventId)

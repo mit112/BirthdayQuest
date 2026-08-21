@@ -35,12 +35,14 @@ final class AdminViewModel: ObservableObject {
     private let service: GameBackend
     private let eventId: String
     private let challengesListenerKey: String
+    private let rewardsListenerKey: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Admin")
 
     init(eventId: String, service: GameBackend = FirestoreService.shared) {
         self.eventId = eventId
         self.service = service
         self.challengesListenerKey = ListenerKey.scoped("admin_challenges", eventId: eventId)
+        self.rewardsListenerKey = ListenerKey.scoped("admin_rewards", eventId: eventId)
     }
     
     // MARK: - Computed Filters
@@ -64,19 +66,32 @@ final class AdminViewModel: ObservableObject {
         service.listenToChallenges(
             eventId: eventId, listenerKey: challengesListenerKey
         ) { [weak self] result in
-            guard case .success(let challenges) = result else { return }
             Task { @MainActor in
-                self?.challenges = challenges
+                guard let self else { return }
+                switch result {
+                case .success(let challenges):
+                    self.challenges = challenges
+                case .failure(let error):
+                    self.report("challenges", error)
+                }
             }
         }
 
-        service.listenToRewards(eventId: eventId) { [weak self] result in
-            // Shares the occasion's rewards key with the celebrant's carousel. Admin is a
-            // push destination from Profile, which never shows that carousel, so the two
-            // cannot be on screen at once.
-            guard case .success(let rewards) = result else { return }
+        // A key of its own, not the carousel's. A host who is also the celebrant has both
+        // screens alive in one tab bar, and SwiftUI runs the incoming tab's onAppear before
+        // the outgoing hierarchy's onDisappear — sharing the key would let this screen's
+        // teardown silently kill the carousel's listener and strand it loading.
+        service.listenToRewards(
+            eventId: eventId, listenerKey: rewardsListenerKey
+        ) { [weak self] result in
             Task { @MainActor in
-                self?.rewards = rewards
+                guard let self else { return }
+                switch result {
+                case .success(let rewards):
+                    self.rewards = rewards
+                case .failure(let error):
+                    self.report("gifts", error)
+                }
             }
         }
 
@@ -85,7 +100,19 @@ final class AdminViewModel: ObservableObject {
     
     func stopListening() {
         service.removeListener(forKey: challengesListenerKey)
-        service.removeListener(forKey: ListenerKey.rewards(eventId))
+        service.removeListener(forKey: rewardsListenerKey)
+    }
+
+    /// A listener failure is a first-class outcome now that membership can be revoked:
+    /// permission-denied arrives here the moment a host removes themselves. Surfacing it
+    /// through the same alert as every other admin action means it can't be mistaken for
+    /// an empty occasion.
+    private func report(_ subject: String, _ error: Error) {
+        logger.error("Admin \(subject) listener: \(error.localizedDescription)")
+        actionResult = AdminActionResult(
+            message: "❌ Lost the live feed for \(subject). Reopen this panel to retry.",
+            isError: true
+        )
     }
 
     /// The roster is a one-shot read, not a listener: participants change when someone
@@ -294,8 +321,13 @@ final class AdminViewModel: ObservableObject {
 
     /// Closing an occasion stops new joins. It is a plain host toggle, not a lifecycle
     /// state: nothing else in the app reads it as a phase.
-    func setOpen(_ isOpen: Bool) async {
+    /// Returns whether the write landed, so the caller can re-read the occasion. The
+    /// toggle's label comes from `EventSession.occasion`, which is fetched once at open —
+    /// without a refresh a successful close still reads "Open to new joins".
+    @discardableResult
+    func setOpen(_ isOpen: Bool) async -> Bool {
         isPerformingAction = true
+        defer { isPerformingAction = false }
 
         do {
             try await service.setOccasionOpen(eventId: eventId, isOpen: isOpen)
@@ -304,14 +336,14 @@ final class AdminViewModel: ObservableObject {
                 isError: false
             )
             BQDesign.Haptics.success()
+            return true
         } catch {
             actionResult = AdminActionResult(
                 message: "❌ Failed: \(error.localizedDescription)",
                 isError: true
             )
             BQDesign.Haptics.error()
+            return false
         }
-
-        isPerformingAction = false
     }
 }

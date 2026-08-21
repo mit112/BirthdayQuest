@@ -230,6 +230,13 @@ private extension ProfileView {
                 StatCard(icon: "🕵️", value: viewModel.secretChallengeStatus.rawValue, label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
                 StatCard(icon: "🎁", value: "\(gameState.rewardsUnlocked)/\(gameState.totalRewards)", label: "Gifts Unlocked", color: BQDesign.Colors.primaryPink, index: 1)
             }
+
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .font(BQDesign.Typography.caption)
+                    .foregroundStyle(BQDesign.Colors.error)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(.horizontal, BQDesign.Spacing.lg)
     }

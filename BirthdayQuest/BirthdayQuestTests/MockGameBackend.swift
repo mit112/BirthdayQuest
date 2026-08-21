@@ -21,6 +21,10 @@ final class MockGameBackend: GameBackend {
     private(set) var calls: [String] = []
     private(set) var updatedGameStateFields: [[String: Any]] = []
     private(set) var removedListenerKeys: [String] = []
+    /// Every key a listener was registered under. Paired with `removedListenerKeys`, this
+    /// is what lets a test prove two screens can watch the same collection at once and that
+    /// one leaving does not cancel the other.
+    private(set) var registeredListenerKeys: [String] = []
     private(set) var unlockedRewardIds: [String] = []
     private(set) var completedChallengeIds: [String] = []
     /// Every `eventId` the backend was asked for, in order. Lets a test prove a view model
@@ -70,21 +74,31 @@ final class MockGameBackend: GameBackend {
     // Held so a test can drive a listener manually: call startListening(), then invoke
     // emitRewards(...) to simulate a Firestore snapshot arriving.
 
-    private var rewardsHandler: ((Result<[Reward], Error>) -> Void)?
-    private var challengesHandler: ((Result<[Challenge], Error>) -> Void)?
+    // Rewards and challenges are held per listener key, because both are legitimately
+    // watched by two screens of one occasion at once. Emitting reaches every live handler,
+    // so a test can prove that releasing one key leaves the other still receiving.
+    private var rewardsHandlers: [String: (Result<[Reward], Error>) -> Void] = [:]
+    private var challengesHandlers: [String: (Result<[Challenge], Error>) -> Void] = [:]
     private var timelineHandler: ((Result<[TimelineEvent], Error>) -> Void)?
     private var gameStateHandler: ((Result<GameState, Error>) -> Void)?
 
-    func emitRewards(_ value: [Reward]) { rewardsHandler?(.success(value)) }
-    func emitChallenges(_ value: [Challenge]) { challengesHandler?(.success(value)) }
+    func emitRewards(_ value: [Reward]) { rewardsHandlers.values.forEach { $0(.success(value)) } }
+    func emitChallenges(_ value: [Challenge]) { challengesHandlers.values.forEach { $0(.success(value)) } }
     func emitTimeline(_ value: [TimelineEvent]) { timelineHandler?(.success(value)) }
     func emitGameState(_ value: GameState) { gameStateHandler?(.success(value)) }
+
+    /// Listener keys still receiving emissions.
+    var liveListenerKeys: Set<String> {
+        Set(rewardsHandlers.keys).union(challengesHandlers.keys)
+    }
 
     // MARK: - GameBackend: Listener Management
 
     func removeListener(forKey key: String) {
         calls.append("removeListener")
         removedListenerKeys.append(key)
+        rewardsHandlers.removeValue(forKey: key)
+        challengesHandlers.removeValue(forKey: key)
     }
 
     func removeAllListeners() {
@@ -150,6 +164,18 @@ final class MockGameBackend: GameBackend {
         openStateChanges.append((eventId, isOpen))
     }
 
+    func resolveInviteCode(_ code: String) async throws -> (eventId: String, kind: String)? {
+        calls.append("resolveInviteCode")
+        resolvedCodes.append(code)
+        try throwIfNeeded()
+        return stubbedCodeResolution
+    }
+
+    /// Stub for `resolveInviteCode`. Defaults to nil so an unstubbed lookup reads as
+    /// "no such code" rather than silently succeeding.
+    var stubbedCodeResolution: (eventId: String, kind: String)?
+    private(set) var resolvedCodes: [String] = []
+
     func consumeCelebrantCode(eventId: String) async throws {
         record("consumeCelebrantCode", eventId: eventId)
         try throwIfNeeded()
@@ -162,9 +188,14 @@ final class MockGameBackend: GameBackend {
 
     // MARK: - GameBackend: Rewards
 
-    func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void) {
+    func listenToRewards(
+        eventId: String,
+        listenerKey: String,
+        completion: @escaping (Result<[Reward], Error>) -> Void
+    ) {
         record("listenToRewards", eventId: eventId)
-        rewardsHandler = completion
+        registeredListenerKeys.append(listenerKey)
+        rewardsHandlers[listenerKey] = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
             return
@@ -197,7 +228,8 @@ final class MockGameBackend: GameBackend {
         completion: @escaping (Result<[Challenge], Error>) -> Void
     ) {
         record("listenToChallenges", eventId: eventId)
-        challengesHandler = completion
+        registeredListenerKeys.append(listenerKey)
+        challengesHandlers[listenerKey] = completion
         if let listenerFailure {
             completion(.failure(listenerFailure))
             return
@@ -316,8 +348,9 @@ final class MockGameBackend: GameBackend {
         return stubbedUploadUrl
     }
 
-    /// Recorded so a test can prove the caller sent a real image type rather than letting
-    /// the SDK default to application/octet-stream, which the Storage rules reject.
+    /// Pinned by `ChallengeSubmissionTests.sendsAnImageContentType`: `putData` with no
+    /// metadata uploads as application/octet-stream, which `storage.rules` rejects, and
+    /// that 403 was the audit's headline bug.
     private(set) var uploadedContentTypes: [String] = []
 
     // MARK: - GameBackend: Admin

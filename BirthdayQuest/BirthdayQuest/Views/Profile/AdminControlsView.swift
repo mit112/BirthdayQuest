@@ -397,7 +397,11 @@ private extension AdminControlsView {
                     isOpen ? "Close" : "Reopen",
                     color: BQDesign.Colors.secretAccent
                 ) {
-                    Task { await viewModel.setOpen(!isOpen) }
+                    Task {
+                        if await viewModel.setOpen(!isOpen) {
+                            await event.refreshOccasion()
+                        }
+                    }
                 }
             }
         }

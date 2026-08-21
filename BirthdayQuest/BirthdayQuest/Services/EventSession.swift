@@ -126,6 +126,17 @@ final class EventSession: ObservableObject {
         }
     }
 
+    /// Re-reads the occasion document. The host panel changes `isOpen` through the backend,
+    /// and the toggle it renders reads off this cached copy — without a re-read a
+    /// successful close still reads "Open to new joins".
+    func refreshOccasion() async {
+        do {
+            occasion = try await service.fetchOccasion(eventId: eventId)
+        } catch {
+            logger.error("Refreshing the occasion failed: \(error.localizedDescription)")
+        }
+    }
+
     func stop() {
         for key in registeredListenerKeys {
             service.removeListener(forKey: key)

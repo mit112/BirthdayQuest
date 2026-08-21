@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
 
 /// Owns the friend-facing "have I sent my secret dare yet?" status on the Profile tab.
 ///
@@ -20,10 +21,15 @@ final class ProfileViewModel: ObservableObject {
     }
 
     @Published var secretChallengeStatus: SecretChallengeStatus = .unknown
+    /// Set when the listener fails. Membership is revocable, so permission-denied is an
+    /// expected outcome here, not an impossible one — leaving the status on "—" would make
+    /// a revoked contributor look like one who simply hasn't written a dare.
+    @Published var errorMessage: String?
 
     private let service: GameBackend
     private let eventId: String
     private let listenerKey: String
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Profile")
 
     init(eventId: String, service: GameBackend = FirestoreService.shared) {
         self.eventId = eventId
@@ -33,10 +39,20 @@ final class ProfileViewModel: ObservableObject {
 
     func startListening(userId: String) {
         service.listenToChallenges(eventId: eventId, listenerKey: listenerKey) { [weak self] result in
-            guard case .success(let challenges) = result else { return }
-            let status = Self.status(for: userId, in: challenges)
-            Task { @MainActor in
-                self?.secretChallengeStatus = status
+            switch result {
+            case .success(let challenges):
+                let status = Self.status(for: userId, in: challenges)
+                Task { @MainActor in
+                    self?.secretChallengeStatus = status
+                    self?.errorMessage = nil
+                }
+            case .failure(let error):
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.logger.error("Secret dare status listener: \(error.localizedDescription)")
+                    self.secretChallengeStatus = .unknown
+                    self.errorMessage = "Couldn't check your secret dare."
+                }
             }
         }
     }

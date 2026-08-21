@@ -17,7 +17,6 @@ final class JoinOccasionViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let service: GameBackend
-    private let db = Firestore.firestore()
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "JoinOccasion")
 
     init(service: GameBackend = FirestoreService.shared) {
@@ -55,8 +54,9 @@ final class JoinOccasionViewModel: ObservableObject {
     /// indistinguishable from a contributor one, so without this the mode picker would
     /// default wrong and every celebrant join would be rejected by the rules.
     ///
-    /// `inviteCodes/{CODE}` is deny-list (`allow get`, deny `list`): resolving a code you
-    /// already hold is what a code is for, but the collection can never be enumerated.
+    /// The lookup itself lives behind `GameBackend.resolveInviteCode(_:)` so this — the
+    /// only thing that decides whether a link is a celebrant invite — is drivable from a
+    /// test rather than only against a live Firestore.
     func resolveCode() async {
         let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !normalized.isEmpty else { return }
@@ -66,19 +66,13 @@ final class JoinOccasionViewModel: ObservableObject {
         defer { isResolvingCode = false }
 
         do {
-            let snapshot = try await db.collection(Collections.inviteCodes)
-                .document(normalized).getDocument()
-            guard snapshot.exists,
-                  let data = snapshot.data(),
-                  let resolvedEventId = data["eventId"] as? String,
-                  let kind = data["kind"] as? String
-            else {
+            guard let resolved = try await service.resolveInviteCode(normalized) else {
                 errorMessage = "That invite code doesn't match this occasion."
                 return
             }
             code = normalized
-            eventId = resolvedEventId
-            mode = kind == ParticipantMode.celebrant.rawValue ? .celebrant : .contributor
+            eventId = resolved.eventId
+            mode = resolved.kind == ParticipantMode.celebrant.rawValue ? .celebrant : .contributor
         } catch {
             logger.error("Code lookup failed: \(error.localizedDescription)")
             errorMessage = "Couldn't check that code. Check your connection and try again."

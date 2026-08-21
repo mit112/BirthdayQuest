@@ -32,6 +32,23 @@ struct AvatarCatalogTests {
         }
     }
 
+    /// Golden values, not a self-comparison. Calling the mapping twice in one process is
+    /// something Swift's per-process-seeded `hashValue` would also pass, so it could never
+    /// have caught the bug R15 exists for: an avatar that changes on every app launch.
+    /// These literals were computed from the FNV-1a implementation and must not drift.
+    @Test("a name maps to a fixed avatar id that survives a relaunch", arguments: [
+        ("Priya Patel", "01"),
+        ("Sam", "04"),
+        ("Jordan", "05"),
+        ("Riley", "03"),
+    ])
+    func nameMappingIsPinned(name: String, expected: String) {
+        #expect(
+            AvatarCatalog.avatarId(forName: name) == expected,
+            "\(name) must always resolve to avatar \(expected), in this process and the next"
+        )
+    }
+
     @Test("mapping a name to an avatar is stable across repeated calls")
     func nameMappingIsStable() {
         let first = AvatarCatalog.avatarId(forName: "Priya Patel")

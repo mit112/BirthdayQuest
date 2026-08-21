@@ -279,3 +279,197 @@ struct AdminViewModelTests {
         #expect(vm.isPerformingAction == false)
     }
 }
+
+/// Listener callbacks and the roster fetch both hop through `Task { @MainActor in … }`, so
+/// their effects land a turn or two after the call that started them.
+@MainActor
+private func settle(turns: Int = 8) async {
+    for _ in 0..<turns { await Task.yield() }
+}
+
+@MainActor
+@Suite("AdminViewModel listeners and the roster")
+struct AdminViewModelListenerTests {
+
+    private func participant(
+        id: String, name: String, mode: ParticipantMode = .contributor, isHost: Bool = false
+    ) -> Participant {
+        var participant = Participant(
+            name: name, avatarId: AvatarCatalog.fallback,
+            mode: mode, isHost: isHost, usedCode: "ABCD2345"
+        )
+        participant.id = id
+        return participant
+    }
+
+    @Test("the host panel and the celebrant carousel hold separate rewards listeners")
+    func rewardsKeysDoNotCollide() {
+        let mock = MockGameBackend()
+        let carousel = RewardsViewModel(eventId: "evt_1", service: mock)
+        let admin = AdminViewModel(eventId: "evt_1", service: mock)
+
+        carousel.startListening()
+        admin.startListening()
+
+        #expect(mock.liveListenerKeys.contains(ListenerKey.rewards("evt_1")))
+        #expect(mock.liveListenerKeys.contains(ListenerKey.scoped("admin_rewards", eventId: "evt_1")))
+        #expect(mock.liveListenerKeys.count == 3, "two rewards listeners plus admin's challenges")
+    }
+
+    @Test("leaving the host panel leaves the carousel's rewards listener alive")
+    func adminTeardownSparesTheCarousel() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "r1")]
+        let carousel = RewardsViewModel(eventId: "evt_1", service: mock)
+        let admin = AdminViewModel(eventId: "evt_1", service: mock)
+
+        carousel.startListening()
+        admin.startListening()
+        admin.stopListening()
+
+        #expect(
+            mock.liveListenerKeys == [ListenerKey.rewards("evt_1")],
+            "the carousel must survive the host panel being dismissed"
+        )
+
+        // Prove it is still receiving, not merely still registered. The view model hops to
+        // the main actor inside its handler, so the emission lands one turn later.
+        mock.emitRewards([.fixture(id: "r1"), .fixture(id: "r2")])
+        await settle()
+        #expect(carousel.rewards.count == 2)
+        #expect(carousel.isLoading == false)
+    }
+
+    @Test("a failed listener is reported rather than left looking like an empty occasion")
+    func listenerFailureIsReported() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = NSError(
+            domain: "FIRFirestoreErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+        )
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.actionResult?.isError == true)
+    }
+
+    @Test("the roster excludes the host looking at it")
+    func rosterExcludesHost() async {
+        let mock = MockGameBackend()
+        mock.stubParticipants = [
+            participant(id: "uid_host", name: "Sam", isHost: true),
+            participant(id: "uid_alex", name: "Alex", mode: .celebrant),
+            participant(id: "uid_jo", name: "Jordan"),
+        ]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.otherParticipants.map(\.name) == ["Alex", "Jordan"])
+    }
+
+    @Test("closing the occasion writes the new state and reports success to the caller")
+    func setOpenWritesAndReportsSuccess() async {
+        let mock = MockGameBackend()
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        let succeeded = await vm.setOpen(false)
+
+        #expect(succeeded, "the caller re-reads the occasion only on success")
+        #expect(mock.openStateChanges.map(\.isOpen) == [false])
+        #expect(mock.openStateChanges.map(\.eventId) == ["evt_1"])
+        #expect(vm.actionResult?.isError == false)
+        #expect(vm.isPerformingAction == false)
+    }
+
+    @Test("a failed close reports failure so the stale label is not refreshed over a no-op")
+    func setOpenFailureReportsFalse() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        let succeeded = await vm.setOpen(false)
+
+        #expect(succeeded == false)
+        #expect(vm.actionResult?.isError == true)
+        #expect(vm.isPerformingAction == false)
+    }
+}
+
+@MainActor
+@Suite("ProfileViewModel listener failures")
+struct ProfileViewModelFailureTests {
+
+    @Test("a permission-denied status listener says so instead of reading as no dare")
+    func listenerFailureSurfaces() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = NSError(domain: "FIRFirestoreErrorDomain", code: 7)
+        let vm = ProfileViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening(userId: "uid_1")
+        await settle()
+
+        #expect(vm.errorMessage != nil)
+        #expect(vm.secretChallengeStatus == .unknown, "'None' would be a lie about a denied read")
+    }
+}
+
+@MainActor
+@Suite("ChallengeSubmissionViewModel proof upload")
+struct ChallengeSubmissionTests {
+
+    @Test("a photo proof is uploaded with an image content type, never octet-stream")
+    func sendsAnImageContentType() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c1"), service: mock
+        )
+        vm.selectedSubmissionType = .photo
+        vm.selectedImageData = Data([0xFF, 0xD8, 0xFF, 0xE0])
+
+        await vm.submit()
+
+        #expect(
+            mock.uploadedContentTypes == ["image/jpeg"],
+            "storage.rules requires image/*; putData with no metadata sends octet-stream and 403s"
+        )
+        #expect(mock.completedChallengeIds == ["c1"])
+        #expect(Set(mock.requestedEventIds) == ["evt_1"])
+        #expect(vm.showError == false)
+    }
+
+    @Test("a text proof uploads nothing at all")
+    func textProofSkipsUpload() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c1"), service: mock
+        )
+        vm.selectedSubmissionType = .text
+        vm.textProof = "Done it"
+
+        await vm.submit()
+
+        #expect(mock.uploadedContentTypes.isEmpty)
+        #expect(mock.completedChallengeIds == ["c1"])
+    }
+
+    @Test("a failed upload surfaces an error and completes nothing")
+    func failedUploadSurfaces() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c1"), service: mock
+        )
+        vm.selectedSubmissionType = .photo
+        vm.selectedImageData = Data([0xFF, 0xD8, 0xFF, 0xE0])
+
+        await vm.submit()
+
+        #expect(vm.showError)
+        #expect(mock.completedChallengeIds.isEmpty)
+        #expect(vm.isSubmitting == false)
+    }
+}
