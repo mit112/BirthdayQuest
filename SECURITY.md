@@ -14,38 +14,69 @@ rather than a public issue. I'll aim to respond within a week.
 These are design characteristics of this app, not bugs. If you fork it and point it at your own
 Firebase project, you are accepting all of them.
 
-### There is no user authentication
+### Identity is an anonymous account by default, and losing it is unrecoverable
 
-The app does not authenticate anyone. Identity is a *device-locked character claim*: the app writes
-a random `deviceId` into `UserDefaults` and into the user's Firestore document. There is no
-`request.auth`, which means:
+Every user is a Firebase **anonymous** uid, created on first launch. `request.auth.uid` gates every
+security rule, and participants and memberships are keyed by that uid
+(`events/{eventId}/participants/{uid}`, `memberships/{uid}/events/{eventId}`).
 
-* Security rules cannot distinguish your five players from anyone else holding your Firebase
-  config (which ships inside every copy of the app binary).
-* Clearing app data, or reinstalling, releases a claim.
-* `firestore.rules` in this repo restricts *shape* — no deletes, no new collections, append-only
-  timeline — but it cannot restrict *who* writes. Treat the database as writable by anyone who
-  obtains your config.
+An anonymous account lives and dies with the app install. Deleting the app or replacing the device
+loses the uid, and with it every occasion the user belongs to and any host role they held. Because
+`hostUid` is immutable in the rules, **there is no host-transfer path** — an occasion whose host
+loses their account cannot be administered by anyone again.
 
-If you need real isolation, add Firebase Anonymous Auth and gate every rule on
-`request.auth != null`, keyed to the claiming uid.
+Sign in with Apple upgrades the anonymous account **in place** via `linkWithCredential`, preserving
+the uid and all existing data, which is the only recovery path. It requires two setup steps that
+are not in this repository: the **Sign in with Apple** capability on the Xcode target, and the
+**Apple** provider enabled in the Firebase console. Until both are done the upgrade UI is present
+but will fail at runtime, and every account stays disposable.
 
-### Reward media URLs are public links
+### Security rules carry the entire enforcement burden
 
-Reward content is served from long-lived, unauthenticated Firebase Storage download URLs stored in
-Firestore. Anyone who obtains a URL can view that media without any credential, indefinitely.
+There are no Cloud Functions. `firestore.rules` and `storage.rules` are the only thing standing
+between a client and the data, so a rules mistake is a data breach rather than a bug.
 
-**Do not put anything genuinely private behind a reward.** Assume every video, audio note, and
-photo you upload is publicly reachable by link.
+The only mitigation is the emulator test suite in `firebase-tests/`. **That suite is not optional** —
+run `npm test` there after any rules change, and treat a red run as a release blocker.
 
-### There is a hardcoded override PIN
+Isolation between occasions is by **path**, not by query discipline: all content lives under
+`events/{eventId}` subcollections, so a client cannot express a query that reaches another
+occasion, because the path does not exist for them.
 
-`CharacterSelectViewModel.overridePin` is `"1234"`. It lets anyone take over an
-already-claimed character. It exists so a party organizer can fix a mis-tap on the day. Change it,
-or gate it behind `#if DEBUG`, before deploying anywhere you care about.
+### Any member can rewrite their own occasion's point balance and unlock flags
 
-### The points economy is client-visible
+`events/{eventId}/state/main` updates and `rewards.isUnlocked` are gated on occasion membership
+only. Balance mutations go through transactions with server-side re-checks and idempotency guards,
+so points cannot be *double-spent* — but a member who writes `state/main` directly can set the
+balance to anything and unlock every reward.
 
-Point values and reward costs are seeded into Firestore and readable by clients. Balance mutations
-use transactions with server-side re-checks and idempotency guards, so the balance cannot be
-double-spent — but a client that writes `game_state` directly can set it to anything.
+This is bounded to occasions the user already belongs to; there is no cross-occasion exposure. It is
+the cost of a no-Functions design, and it means **you should only invite people you would trust with
+the surprise.** Relatedly, a participant can rewrite their own `usedCode` field after joining, so
+never build a "revoke this code and remove whoever used it" feature on top of that value.
+
+### Reward media URLs are public links, even though Storage rules gate the objects
+
+`storage.rules` restricts object reads and writes to members of the owning occasion, denies
+overwrites outright, and permits deletion only by the celebrant. That protects the *objects*.
+
+It does not protect the *links*. The app stores long-lived Firebase **download URLs** (the
+`?alt=media&token=…` form, from `StorageReference.downloadURL()`) in Firestore, and those URLs are
+designed to bypass Storage rules — anyone holding one can fetch the media with no credential,
+indefinitely, whether or not they belong to the occasion.
+
+**Do not put anything genuinely private behind a reward.** Assume every video, audio note, and photo
+is publicly reachable by anyone who ever sees its URL.
+
+### Invite codes are bearer tokens
+
+Joining an occasion means presenting a code that matches `contributorCode` or `celebrantCode` on the
+event document. Only the host can write those fields, so only the host can issue a code — but the
+code itself is the entire credential, and invite links carry the eventId in plaintext. Anyone who
+obtains a contributor link can join as a contributor.
+
+The `inviteCodes` collection permits `get` but denies `list`, so a code you already hold resolves
+while the collection cannot be enumerated. The celebrant code is single-use: the celebrant clears it
+on claim. That clear is necessarily a second write after the join commits, so a crash in between
+leaves the code briefly claimable — a second holder of a privately shared celebrant link could take
+the role. It shows up in the host's roster.
