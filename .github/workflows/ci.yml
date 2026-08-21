@@ -90,17 +90,38 @@ jobs:
 
   rules-tests:
     runs-on: ubuntu-latest
+    env:
+      # Pinned, not floating. The emulators this CLI downloads are what the 113 rules tests were
+      # verified against, and with no Cloud Functions these rules carry the entire enforcement
+      # burden — a silent emulator upgrade changing rule evaluation is not something to discover
+      # from a red build on an unrelated PR.
+      FIREBASE_TOOLS_VERSION: '15.8.0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: firebase-tests/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - run: npm install -g firebase-tools
-      - run: npm install
+
+      # ~170 MB of JARs, otherwise re-downloaded on every single run. They are versioned by the
+      # firebase-tools release that fetches them, so the pin above is the entire cache key.
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ env.FIREBASE_TOOLS_VERSION }}
+
+      - run: npm install -g firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }}
+
+      # `ci`, not `install`: it installs exactly what package-lock.json pins and fails if the
+      # lockfile is out of sync, rather than silently resolving a newer transitive dependency.
+      - run: npm ci
         working-directory: firebase-tests
+
       - run: npm test
         working-directory: firebase-tests
