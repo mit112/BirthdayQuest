@@ -90,7 +90,9 @@ struct RewardContentSheet: View {
     
     @State private var confettiCounter = 0
     @State private var appeared = false
-    
+    @ScaledMetric private var confettiEmojiSize: CGFloat = 50
+    @ScaledMetric private var unavailableHeartIconSize: CGFloat = 40
+
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "RewardContent")
     
     var body: some View {
@@ -109,7 +111,7 @@ struct RewardContentSheet: View {
                 // Content area
                 VStack(spacing: BQDesign.Spacing.md) {
                     Text("🎉")
-                        .font(.system(size: 50))
+                        .font(.system(size: confettiEmojiSize))
                         .scaleEffect(appeared ? 1 : 0.3)
                     
                     Text("A gift from \(reward.fromName)")
@@ -149,7 +151,7 @@ struct RewardContentSheet: View {
                         .font(BQDesign.Typography.bodyBold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
+                        .frame(minHeight: 52)
                         .background(BQDesign.Colors.primaryGradient)
                         .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
                         .padding(.horizontal, BQDesign.Spacing.xl)
@@ -235,7 +237,7 @@ private extension RewardContentSheet {
     func contentUnavailable(_ reason: String) -> some View {
         VStack(spacing: BQDesign.Spacing.md) {
             Image(systemName: "heart.circle")
-                .font(.system(size: 40))
+                .font(.system(size: unavailableHeartIconSize))
                 .foregroundStyle(BQDesign.Colors.primaryGradient)
             
             Text("From \(reward.fromName)")
@@ -244,12 +246,12 @@ private extension RewardContentSheet {
             
             Text(reason)
                 .font(BQDesign.Typography.caption)
-                .foregroundColor(BQDesign.Colors.textTertiary)
+                .foregroundColor(BQDesign.Colors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, BQDesign.Spacing.md)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 200)
+        .frame(minHeight: 200)
         .background(
             RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                 .fill(BQDesign.Colors.cardBackground)

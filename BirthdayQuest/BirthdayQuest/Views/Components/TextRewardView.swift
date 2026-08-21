@@ -8,14 +8,17 @@ struct TextRewardView: View {
     let fromName: String
     
     @State private var appeared = false
-    
+    // Oversized decorative flourish, not readable content — treated as a glyph so it doesn't
+    // balloon to the point of breaking the card layout at large accessibility text sizes.
+    @ScaledMetric private var quoteMarkSize: CGFloat = 80
+
     var body: some View {
         VStack(spacing: 0) {
             // Decorative quotation mark
             Text("\u{201C}")
-                .font(.system(size: 80, weight: .bold, design: .serif))
+                .font(.system(size: quoteMarkSize, weight: .bold, design: .serif))
                 .foregroundColor(BQDesign.Colors.gold.opacity(0.15))
-                .frame(height: 50)
+                .frame(minHeight: 50)
                 .padding(.top, BQDesign.Spacing.md)
             
             // Message body

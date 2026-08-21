@@ -8,7 +8,8 @@ struct ImageGalleryView: View {
     let fromName: String
     
     @State private var currentPage = 0
-    
+    @ScaledMetric private var failureIconSize: CGFloat = 30
+
     var body: some View {
         VStack(spacing: BQDesign.Spacing.md) {
             // Swipeable images
@@ -56,21 +57,21 @@ struct ImageGalleryView: View {
             // Counter
             Text("\(currentPage + 1) of \(urls.count)")
                 .font(BQDesign.Typography.caption)
-                .foregroundColor(BQDesign.Colors.textTertiary)
+                .foregroundColor(BQDesign.Colors.textSecondary)
         }
     }
     
     private var failedPlaceholder: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
             Image(systemName: "photo")
-                .font(.system(size: 30))
+                .font(.system(size: failureIconSize))
                 .foregroundColor(BQDesign.Colors.textTertiary)
             Text("Couldn't load image")
                 .font(BQDesign.Typography.caption)
-                .foregroundColor(BQDesign.Colors.textTertiary)
+                .foregroundColor(BQDesign.Colors.textPrimary)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 350)
+        .frame(minHeight: 350)
         .background(
             RoundedRectangle(cornerRadius: BQDesign.Radius.xl, style: .continuous)
                 .fill(BQDesign.Colors.cardBackground)

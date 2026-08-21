@@ -6,6 +6,8 @@ struct RewardsCarouselView: View {
     @StateObject private var viewModel: RewardsViewModel
     @State private var scrolledID: Int?
     @State private var scrollViewWidth: CGFloat = 0
+    @ScaledMetric private var giftEmojiSize: CGFloat = 60
+    @ScaledMetric private var timelineArrowIconSize: CGFloat = 14
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: RewardsViewModel(eventId: eventId))
@@ -81,7 +83,7 @@ private extension RewardsCarouselView {
     var emptyState: some View {
         VStack(spacing: BQDesign.Spacing.md) {
             Text("🎁")
-                .font(.system(size: 60))
+                .font(.system(size: giftEmojiSize))
             Text("No gifts yet")
                 .font(BQDesign.Typography.sectionTitle)
                 .foregroundColor(BQDesign.Colors.textPrimary)
@@ -128,7 +130,9 @@ private extension RewardsCarouselView {
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
             .contentMargins(.horizontal, horizontalInset, for: .scrollContent)
-            .frame(height: 400)
+            // minHeight, not a fixed height: the cards inside grow with Dynamic Type, and a
+            // fixed viewport would clip them.
+            .frame(minHeight: 400)
             .background(GeometryReader { proxy in
                 Color.clear.onAppear { scrollViewWidth = proxy.size.width }
             })
@@ -175,7 +179,7 @@ private extension RewardsCarouselView {
                         Text("Check out your timeline")
                             .font(BQDesign.Typography.bodyBold)
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: timelineArrowIconSize, weight: .semibold))
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, BQDesign.Spacing.lg)

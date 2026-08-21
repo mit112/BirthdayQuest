@@ -43,6 +43,9 @@ struct EmptyOccasionsView: View {
     @State private var joining = false
     @State private var isRetrying = false
 
+    @ScaledMetric private var crownSize: CGFloat = 56
+    @ScaledMetric private var errorIconSize: CGFloat = 48
+
     var body: some View {
         ZStack {
             BQDesign.Colors.background.ignoresSafeArea()
@@ -58,7 +61,7 @@ struct EmptyOccasionsView: View {
 
     private var empty: some View {
         VStack(spacing: BQDesign.Spacing.lg) {
-            Text("👑").font(.system(size: 56))
+            Text("👑").font(.system(size: crownSize))
             Text("No occasions yet")
                 .font(BQDesign.Typography.heroTitle)
                 .foregroundStyle(BQDesign.Colors.primaryGradient)
@@ -82,7 +85,7 @@ struct EmptyOccasionsView: View {
             // `Colors.error` measures 3.83:1 on this background, below the 4.5:1 floor for
             // body text, which is why the message itself is `textPrimary`.
             Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 48))
+                .font(.system(size: errorIconSize))
                 .foregroundStyle(BQDesign.Colors.error)
                 .accessibilityHidden(true)
 
@@ -126,6 +129,8 @@ struct EmptyOccasionsView: View {
 
 struct LoadingView: View {
     @State private var pulse = false
+    @Environment(\.bqMotionLevel) private var motionLevel
+    @ScaledMetric private var crownSize: CGFloat = 60
 
     var body: some View {
         ZStack {
@@ -133,10 +138,12 @@ struct LoadingView: View {
 
             VStack(spacing: BQDesign.Spacing.md) {
                 Text("👑")
-                    .font(.system(size: 60))
+                    .font(.system(size: crownSize))
                     .scaleEffect(pulse ? 1.1 : 0.95)
                     .animation(
-                        .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                        motionLevel.allowsPerpetual
+                            ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                            : nil,
                         value: pulse
                     )
 

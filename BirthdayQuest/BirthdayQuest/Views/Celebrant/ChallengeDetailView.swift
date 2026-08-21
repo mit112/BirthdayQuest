@@ -11,7 +11,20 @@ struct ChallengeDetailView: View {
     @StateObject private var viewModel: ChallengeSubmissionViewModel
     @State private var confettiTrigger = 0
     @State private var selectedOption: Int = 0 // For 2-in-1: 0 = option A, 1 = option B
-    
+
+    @ScaledMetric private var categoryIconSize: CGFloat = 40
+    @ScaledMetric private var twoInOneBoltIconSize: CGFloat = 12
+    @ScaledMetric private var starIconSize: CGFloat = 12
+    @ScaledMetric private var submissionTypeIconSize: CGFloat = 13
+    @ScaledMetric private var photoButtonIconSize: CGFloat = 16
+    @ScaledMetric private var submitSuccessIconSize: CGFloat = 18
+    @ScaledMetric private var submitIconSize: CGFloat = 16
+    @ScaledMetric private var completedBannerIconSize: CGFloat = 24
+    @ScaledMetric private var textQuoteIconSize: CGFloat = 14
+    @ScaledMetric private var thumbsUpIconSize: CGFloat = 20
+    @ScaledMetric private var proofPlaceholderIconSize: CGFloat = 18
+    @ScaledMetric private var timelineArrowIconSize: CGFloat = 14
+
     init(eventId: String, challenge: Challenge, onDismiss: @escaping () -> Void) {
         self.challenge = challenge
         self.onDismiss = onDismiss
@@ -103,7 +116,7 @@ private extension ChallengeDetailView {
                 .frame(width: 100, height: 100)
             
             Image(systemName: challenge.category.icon)
-                .font(.system(size: 40))
+                .font(.system(size: categoryIconSize))
                 .foregroundColor(.white)
         }
         .bqShadow(BQDesign.Shadows.glow)
@@ -115,10 +128,11 @@ private extension ChallengeDetailView {
         VStack(spacing: BQDesign.Spacing.sm) {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: twoInOneBoltIconSize, weight: .bold))
                     .foregroundColor(BQDesign.Colors.primaryOrange)
                 Text("2-in-1 Challenge")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(BQDesign.Typography.caption)
+                    .fontWeight(.bold)
                     .foregroundColor(BQDesign.Colors.primaryOrange)
             }
             
@@ -137,10 +151,11 @@ private extension ChallengeDetailView {
             BQDesign.Haptics.selection()
         } label: {
             Text(label)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(BQDesign.Typography.caption)
+                .fontWeight(.semibold)
                 .foregroundColor(selectedOption == index ? .white : BQDesign.Colors.textSecondary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 38)
+                .frame(minHeight: 38)
                 .background(
                     RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
                         .fill(selectedOption == index
@@ -197,10 +212,10 @@ private extension ChallengeDetailView {
                 VStack(spacing: 4) {
                     Text("✦ \(challenge.pointValue)")
                         .font(BQDesign.Typography.points)
-                        .foregroundColor(BQDesign.Colors.gold)
+                        .foregroundColor(BQDesign.Colors.goldText)
                     Text("Points")
                         .font(BQDesign.Typography.captionSmall)
-                        .foregroundColor(BQDesign.Colors.textTertiary)
+                        .foregroundColor(BQDesign.Colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
                 
@@ -214,13 +229,13 @@ private extension ChallengeDetailView {
                     HStack(spacing: 2) {
                         ForEach(0..<challenge.difficulty.stars, id: \.self) { _ in
                             Image(systemName: "star.fill")
-                                .font(.system(size: 12))
+                                .font(.system(size: starIconSize))
                         }
                     }
                     .foregroundColor(Color(hex: challenge.difficulty.color))
                     Text("Difficulty")
                         .font(BQDesign.Typography.captionSmall)
-                        .foregroundColor(BQDesign.Colors.textTertiary)
+                        .foregroundColor(BQDesign.Colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -269,9 +284,10 @@ private extension ChallengeDetailView {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: type.icon)
-                            .font(.system(size: 13))
+                            .font(.system(size: submissionTypeIconSize))
                         Text(type.label)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(BQDesign.Typography.caption)
+                            .fontWeight(.semibold)
                     }
                     .foregroundColor(
                         viewModel.selectedSubmissionType == type
@@ -279,7 +295,7 @@ private extension ChallengeDetailView {
                         : BQDesign.Colors.textSecondary
                     )
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
+                    .frame(minHeight: 40)
                     .background(
                         RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
                             .fill(
@@ -320,13 +336,13 @@ private extension ChallengeDetailView {
             ) {
                 HStack(spacing: BQDesign.Spacing.sm) {
                     Image(systemName: viewModel.previewImage != nil ? "arrow.triangle.2.circlepath" : "camera.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: photoButtonIconSize))
                     Text(viewModel.previewImage != nil ? "Choose Different" : "Select Photo")
                         .font(BQDesign.Typography.bodyBold)
                 }
                 .foregroundColor(BQDesign.Colors.primaryPurple)
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(minHeight: 52)
                 .background(
                     RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                         .stroke(BQDesign.Colors.primaryPurple, lineWidth: 1.5)
@@ -380,19 +396,19 @@ private extension ChallengeDetailView {
                     ProgressView().tint(.white)
                 } else if viewModel.submitSuccess {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.system(size: submitSuccessIconSize))
                     Text("Done!")
                         .font(BQDesign.Typography.bodyBold)
                 } else {
                     Image(systemName: "paperplane.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: submitIconSize))
                     Text("Submit & Earn ✦ \(challenge.pointValue)")
                         .font(BQDesign.Typography.bodyBold)
                 }
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .frame(minHeight: 56)
             .background(
                 viewModel.submitSuccess
                 ? AnyShapeStyle(BQDesign.Colors.success)
@@ -408,7 +424,7 @@ private extension ChallengeDetailView {
     var completedBanner: some View {
         HStack(spacing: BQDesign.Spacing.sm) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 24))
+                .font(.system(size: completedBannerIconSize))
                 .foregroundColor(BQDesign.Colors.success)
             
             VStack(alignment: .leading, spacing: 2) {
@@ -417,7 +433,7 @@ private extension ChallengeDetailView {
                     .foregroundColor(BQDesign.Colors.textPrimary)
                 Text("+\(challenge.pointValue) ✦ earned")
                     .font(BQDesign.Typography.caption)
-                    .foregroundColor(BQDesign.Colors.gold)
+                    .foregroundColor(BQDesign.Colors.goldText)
             }
             
             Spacer()
@@ -508,7 +524,7 @@ private extension ChallengeDetailView {
                 VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
                     HStack(spacing: BQDesign.Spacing.xs) {
                         Image(systemName: "text.quote")
-                            .font(.system(size: 14))
+                            .font(.system(size: textQuoteIconSize))
                             .foregroundColor(BQDesign.Colors.primaryPurple)
                         Text("Your response")
                             .font(BQDesign.Typography.caption)
@@ -536,7 +552,7 @@ private extension ChallengeDetailView {
     var buttonProofView: some View {
         HStack(spacing: BQDesign.Spacing.sm) {
             Image(systemName: "hand.thumbsup.fill")
-                .font(.system(size: 20))
+                .font(.system(size: thumbsUpIconSize))
                 .foregroundColor(BQDesign.Colors.primaryPurple)
             Text("Verified by friends")
                 .font(BQDesign.Typography.body)
@@ -555,7 +571,7 @@ private extension ChallengeDetailView {
     func proofPlaceholder(icon: String, text: String) -> some View {
         HStack(spacing: BQDesign.Spacing.sm) {
             Image(systemName: icon)
-                .font(.system(size: 18))
+                .font(.system(size: proofPlaceholderIconSize))
                 .foregroundColor(BQDesign.Colors.textTertiary)
             Text(text)
                 .font(BQDesign.Typography.body)
@@ -583,7 +599,7 @@ private extension ChallengeDetailView {
                 Text("Check out your timeline")
                     .font(BQDesign.Typography.bodyBold)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: timelineArrowIconSize, weight: .semibold))
             }
             .foregroundColor(.white)
             .padding(.horizontal, BQDesign.Spacing.lg)

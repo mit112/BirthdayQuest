@@ -5,24 +5,27 @@ import SwiftUI
 // Creates the "living world" feel behind the timeline path.
 
 struct TimelineBackgroundView: View {
-    
+
     @State private var phase: CGFloat = 0
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
     var body: some View {
         ZStack {
             // Layer 1: Animated gradient that shifts color temperature
             animatedGradient
-            
+
             // Layer 2: Large soft bokeh circles (atmospheric depth)
             BokehFieldView()
-            
+
             // Layer 3: Tiny twinkling star particles
             SparkleFieldView()
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
-                phase = 1
+            if motionLevel.allowsPerpetual {
+                withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
             }
         }
     }
@@ -66,7 +69,8 @@ private struct BokehDot: View {
     
     @State private var driftOffset: CGSize = .zero
     @State private var opacity: Double = 0
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
     private var config: BokehConfig {
         // Deterministic from index so layout is stable
         let seed = Double(index)
@@ -110,12 +114,14 @@ private struct BokehDot: View {
                 let seed = Double(index)
                 let driftX = CGFloat((seed * 17.3).truncatingRemainder(dividingBy: 40)) - 20
                 let driftY = CGFloat((seed * 23.7).truncatingRemainder(dividingBy: 30)) - 15
-                withAnimation(
-                    .easeInOut(duration: config.duration)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-                ) {
-                    driftOffset = CGSize(width: driftX, height: driftY)
+                if motionLevel.allowsPerpetual {
+                    withAnimation(
+                        .easeInOut(duration: config.duration)
+                        .repeatForever(autoreverses: true)
+                        .delay(delay)
+                    ) {
+                        driftOffset = CGSize(width: driftX, height: driftY)
+                    }
                 }
             }
     }
@@ -148,26 +154,32 @@ struct SparkleFieldView: View {
 private struct SparkleParticle: View {
     let index: Int
     let bounds: CGSize
-    
+
     @State private var twinkle: Bool = false
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+    // Decorative glyph sized per-particle from `index`, so the base value is set in `init`
+    // rather than a fixed literal, and then left to scale with Dynamic Type.
+    @ScaledMetric private var sparkleSize: CGFloat
+
+    init(index: Int, bounds: CGSize) {
+        self.index = index
+        self.bounds = bounds
+        _sparkleSize = ScaledMetric(wrappedValue: [2.0, 2.5, 3.0, 3.5, 4.0][index % 5])
+    }
+
     private var x: CGFloat {
         let seed = Double(index)
         return CGFloat((seed * 37.7).truncatingRemainder(dividingBy: Double(bounds.width)))
     }
-    
+
     private var y: CGFloat {
         let seed = Double(index)
         return CGFloat((seed * 53.3).truncatingRemainder(dividingBy: Double(bounds.height)))
     }
-    
-    private var size: CGFloat {
-        CGFloat([2.0, 2.5, 3.0, 3.5, 4.0][index % 5])
-    }
-    
+
     var body: some View {
         Image(systemName: "sparkle")
-            .font(.system(size: size, weight: .bold))
+            .font(.system(size: sparkleSize, weight: .bold))
             .foregroundStyle(
                 [
                     BQDesign.Colors.gold,
@@ -183,12 +195,14 @@ private struct SparkleParticle: View {
                 let delay = Double(index) * 0.2
                 // Deterministic duration from index — stable across re-renders
                 let duration = 1.8 + (Double(index) * 0.37).truncatingRemainder(dividingBy: 1.7)
-                withAnimation(
-                    .easeInOut(duration: duration)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-                ) {
-                    twinkle = true
+                if motionLevel.allowsPerpetual {
+                    withAnimation(
+                        .easeInOut(duration: duration)
+                        .repeatForever(autoreverses: true)
+                        .delay(delay)
+                    ) {
+                        twinkle = true
+                    }
                 }
             }
     }

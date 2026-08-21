@@ -11,7 +11,10 @@ struct AudioPlayerView: View {
     
     @StateObject private var player = AudioPlayerController()
     @State private var appeared = false
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+    @ScaledMetric private var skipIconSize: CGFloat = 22
+    @ScaledMetric private var playPauseIconSize: CGFloat = 24
+
     var body: some View {
         VStack(spacing: BQDesign.Spacing.lg) {
             // Sender label
@@ -32,7 +35,7 @@ struct AudioPlayerView: View {
                     player.skip(by: -10)
                 } label: {
                     Image(systemName: "gobackward.10")
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: skipIconSize, weight: .medium))
                         .foregroundColor(BQDesign.Colors.textSecondary)
                 }
                 .disabled(player.isFailed || player.isBuffering)
@@ -53,7 +56,7 @@ struct AudioPlayerView: View {
                                 .tint(.white)
                         } else {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 24))
+                                .font(.system(size: playPauseIconSize))
                                 .foregroundColor(.white)
                                 .offset(x: player.isPlaying ? 0 : 2)
                         }
@@ -67,7 +70,7 @@ struct AudioPlayerView: View {
                     player.skip(by: 10)
                 } label: {
                     Image(systemName: "goforward.10")
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: skipIconSize, weight: .medium))
                         .foregroundColor(BQDesign.Colors.textSecondary)
                 }
                 .disabled(player.isFailed || player.isBuffering)
@@ -114,11 +117,11 @@ struct AudioPlayerView: View {
                     HStack {
                         Text(player.isScrubbing ? player.scrubTimeString : player.currentTimeString)
                             .font(BQDesign.Typography.captionSmall)
-                            .foregroundColor(BQDesign.Colors.textTertiary)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
                         Spacer()
                         Text(player.durationString)
                             .font(BQDesign.Typography.captionSmall)
-                            .foregroundColor(BQDesign.Colors.textTertiary)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
                     }
                 }
                 .padding(.horizontal, BQDesign.Spacing.lg)
@@ -175,9 +178,11 @@ private extension AudioPlayerView {
                     .frame(width: 4)
                     .frame(height: barHeight(for: i))
                     .animation(
-                        .easeInOut(duration: 0.4)
-                        .repeatForever(autoreverses: true)
-                        .delay(Double(i) * 0.05),
+                        motionLevel.allowsPerpetual
+                            ? .easeInOut(duration: 0.4)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(i) * 0.05)
+                            : nil,
                         value: player.isPlaying
                     )
             }

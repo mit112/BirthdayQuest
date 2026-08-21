@@ -7,6 +7,7 @@ struct SecretChallengesSheet: View {
     let onSelect: (Challenge) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var appeared = false
+    @ScaledMetric private var headerEmojiSize: CGFloat = 44
     
     var body: some View {
         ZStack {
@@ -22,10 +23,12 @@ struct SecretChallengesSheet: View {
                 // Header
                 VStack(spacing: BQDesign.Spacing.sm) {
                     Text("🕵️‍♂️")
-                        .font(.system(size: 44))
-                    
+                        .font(.system(size: headerEmojiSize))
+
+                    // Explicit text style, not a token: the monospaced design is the
+                    // "classified transmission" look and no BQDesign token carries it.
                     Text("SECRET MISSIONS")
-                        .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                        .font(.system(.title2, design: .monospaced, weight: .heavy))
                         .foregroundColor(.white)
                         .tracking(3)
                     
@@ -71,15 +74,20 @@ private struct SecretMissionCard: View {
     
     let challenge: Challenge
     let onTap: () -> Void
-    
+
+    @ScaledMetric private var pointsSparkleSize: CGFloat = 11
+    @ScaledMetric private var chevronSize: CGFloat = 12
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
                 // From label
                 // Document IDs are human-readable names by design (e.g. "sam", "jordan")
                 if let fromId = challenge.createdByUserId {
+                    // Explicit text style: monospaced design has no BQDesign token,
+                    // and it carries the "classified" look here too.
                     Text("FROM: \(fromId.uppercased())")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
                         .foregroundColor(BQDesign.Colors.secretAccent.opacity(0.7))
                 }
                 
@@ -95,7 +103,7 @@ private struct SecretMissionCard: View {
                 HStack {
                     // Points
                     HStack(spacing: 2) {
-                        Text("✦").font(.system(size: 11, weight: .bold))
+                        Text("✦").font(.system(size: pointsSparkleSize, weight: .bold))
                         Text("\(challenge.pointValue)")
                             .font(BQDesign.Typography.captionSmall)
                     }
@@ -110,7 +118,7 @@ private struct SecretMissionCard: View {
                             .foregroundColor(BQDesign.Colors.success)
                     } else {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.system(size: chevronSize))
                             .foregroundColor(.white.opacity(0.4))
                     }
                 }

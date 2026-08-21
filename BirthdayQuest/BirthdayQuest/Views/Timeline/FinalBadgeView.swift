@@ -12,7 +12,13 @@ struct FinalBadgeView: View {
     @State private var crownSpin: Double = 0
     @State private var revealScale: CGFloat = 0.6
     @State private var particlesBurst = false
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
+    @ScaledMetric private var crownGlyphSize: CGFloat = 42
+    @ScaledMetric private var lockedGlyphSize: CGFloat = 40
+    @ScaledMetric private var sparkleGlyphSizeUnlocked: CGFloat = 8
+    @ScaledMetric private var sparkleGlyphSizeLocked: CGFloat = 5
+
     private let badgeSize: CGFloat = 96
     
     // Glow intensity increases as user gets closer to unlocking
@@ -62,16 +68,20 @@ struct FinalBadgeView: View {
         withAnimation(.spring(response: 0.7, dampingFraction: 0.65).delay(0.15)) {
             appeared = true
         }
-        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-            pulse = true
-        }
-        // Shimmer sweep
-        withAnimation(.linear(duration: shimmerDuration).repeatForever(autoreverses: false).delay(0.5)) {
-            shimmerOffset = 200
+        if motionLevel.allowsPerpetual {
+            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+            // Shimmer sweep
+            withAnimation(.linear(duration: shimmerDuration).repeatForever(autoreverses: false).delay(0.5)) {
+                shimmerOffset = 200
+            }
         }
         if isUnlocked {
-            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
-                crownSpin = 360
+            if motionLevel.allowsPerpetual {
+                withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                    crownSpin = 360
+                }
             }
             withAnimation(.spring(response: 0.6, dampingFraction: 0.5).delay(0.3)) {
                 revealScale = 1.0
@@ -159,12 +169,12 @@ private extension FinalBadgeView {
             // Icon
             if isUnlocked {
                 Text("👑")
-                    .font(.system(size: 42))
+                    .font(.system(size: crownGlyphSize))
                     .scaleEffect(revealScale)
                     .rotationEffect(.degrees(crownSpin))
             } else {
                 Text("?")
-                    .font(.system(size: 40, weight: .heavy, design: .rounded))
+                    .font(.system(size: lockedGlyphSize, weight: .heavy, design: .rounded))
                     .foregroundStyle(
                         // Question mark becomes more golden as progress increases
                         LinearGradient(
@@ -240,7 +250,7 @@ private extension FinalBadgeView {
     var orbitingSparkles: some View {
         ForEach(0..<(isUnlocked ? 6 : 3), id: \.self) { i in
             Image(systemName: "sparkle")
-                .font(.system(size: isUnlocked ? 8 : 5, weight: .bold))
+                .font(.system(size: isUnlocked ? sparkleGlyphSizeUnlocked : sparkleGlyphSizeLocked, weight: .bold))
                 .foregroundStyle(
                     isUnlocked
                         ? BQDesign.Colors.gold.opacity(0.7)
@@ -264,7 +274,7 @@ private extension FinalBadgeView {
             if isUnlocked {
                 Text("Quest Complete! 🎉")
                     .font(BQDesign.Typography.sectionTitle)
-                    .foregroundColor(BQDesign.Colors.gold)
+                    .foregroundColor(BQDesign.Colors.goldText)
                 
                 Text("Your friends have one more surprise...")
                     .font(BQDesign.Typography.body)
@@ -277,7 +287,7 @@ private extension FinalBadgeView {
                 
                 Text(progressText)
                     .font(BQDesign.Typography.caption)
-                    .foregroundColor(BQDesign.Colors.textTertiary)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
             }
         }
     }

@@ -16,16 +16,23 @@ struct AvatarView: View {
     var size: CGFloat = 64
     var showsCrown: Bool = false
 
+    // The crown is a decorative glyph sized proportionally to this instance's `size`, so the
+    // ScaledMetric base is computed per-instance in `init` rather than a fixed literal — it
+    // still scales with Dynamic Type on top of that.
+    @ScaledMetric private var crownSize: CGFloat
+
     init(avatarId: String, size: CGFloat = 64, showsCrown: Bool = false) {
         self.avatarId = avatarId
         self.size = size
         self.showsCrown = showsCrown
+        _crownSize = ScaledMetric(wrappedValue: size * 0.32)
     }
 
     init(name: String, size: CGFloat = 64, showsCrown: Bool = false) {
         self.avatarId = AvatarCatalog.avatarId(forName: name)
         self.size = size
         self.showsCrown = showsCrown
+        _crownSize = ScaledMetric(wrappedValue: size * 0.32)
     }
 
     var body: some View {
@@ -44,7 +51,7 @@ struct AvatarView: View {
 
             if showsCrown {
                 Text("👑")
-                    .font(.system(size: size * 0.32))
+                    .font(.system(size: crownSize))
                     .offset(x: size * 0.06, y: -size * 0.10)
                     .accessibilityHidden(true)
             }

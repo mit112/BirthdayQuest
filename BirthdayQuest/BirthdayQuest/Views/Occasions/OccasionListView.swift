@@ -178,7 +178,10 @@ struct OccasionListView: View {
                     .font(BQDesign.Typography.caption)
                     .foregroundStyle(BQDesign.Colors.textPrimary)
             }
-            .frame(height: Self.appleButtonHeight)
+            // `minHeight`, not `height`: this row matches the Apple button's height at the default
+            // text size, but the label scales with Dynamic Type and a fixed height would clip it.
+            // The button below keeps a fixed height because it is a system control that sizes itself.
+            .frame(minHeight: Self.appleButtonHeight)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Linking your Apple ID")
         } else {

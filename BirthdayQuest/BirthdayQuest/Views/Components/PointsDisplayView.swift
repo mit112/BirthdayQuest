@@ -5,11 +5,20 @@ struct PointsDisplayView: View {
     
     let points: Int
     var style: PointsStyle = .large
-    
+
+    // ✦ is a decorative glyph, not text content, so it scales via ScaledMetric off the
+    // style's own base size rather than through a Font token.
+    @ScaledMetric private var largeSymbolSize: CGFloat = 22
+    @ScaledMetric private var compactSymbolSize: CGFloat = 14
+
+    private var symbolSize: CGFloat {
+        style == .large ? largeSymbolSize : compactSymbolSize
+    }
+
     var body: some View {
         HStack(spacing: BQDesign.Spacing.xs) {
             Text("✦")
-                .font(style.symbolFont)
+                .font(.system(size: symbolSize, weight: .bold))
                 .foregroundStyle(BQDesign.Colors.goldGradient)
             
             Text("\(points)")
@@ -29,17 +38,10 @@ struct PointsDisplayView: View {
 
 // MARK: - Points Style
 
-enum PointsStyle {
+enum PointsStyle: Equatable {
     case large
     case compact
-    
-    var symbolFont: Font {
-        switch self {
-        case .large: return .system(size: 22, weight: .bold)
-        case .compact: return .system(size: 14, weight: .bold)
-        }
-    }
-    
+
     var numberFont: Font {
         switch self {
         case .large: return BQDesign.Typography.pointsLarge

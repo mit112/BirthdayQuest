@@ -6,6 +6,9 @@ struct ProfileView: View {
     @State private var appeared = false
     @State private var avatarGlow = false
     @StateObject private var viewModel: ProfileViewModel
+    @Environment(\.bqMotionLevel) private var motionLevel
+    @ScaledMetric private var occasionEmojiSize: CGFloat = 18
+    @ScaledMetric private var chevronIconSize: CGFloat = 12
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: ProfileViewModel(eventId: eventId))
@@ -54,8 +57,10 @@ struct ProfileView: View {
             withAnimation(BQDesign.Animation.smooth.delay(0.1)) {
                 appeared = true
             }
-            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(0.3)) {
-                avatarGlow = true
+            if motionLevel.allowsPerpetual {
+                withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(0.3)) {
+                    avatarGlow = true
+                }
             }
             if !isCelebrant {
                 loadSecretChallengeStatus()
@@ -164,7 +169,7 @@ private extension ProfileView {
 
             // Role badge
             Text(roleBadge)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(BQDesign.Typography.caption)
                 .foregroundColor(isCelebrant ? BQDesign.Colors.gold : BQDesign.Colors.primaryPurple)
                 .padding(.horizontal, BQDesign.Spacing.md)
                 .padding(.vertical, 6)
@@ -267,11 +272,11 @@ private extension ProfileView {
                     .frame(width: 38, height: 38)
 
                 Text(emoji)
-                    .font(.system(size: 18))
+                    .font(.system(size: occasionEmojiSize))
             }
 
             Text(text)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(BQDesign.Typography.body)
                 .foregroundColor(BQDesign.Colors.textPrimary)
 
             Spacer()
@@ -315,7 +320,7 @@ private extension ProfileView {
                         .font(BQDesign.Typography.body)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: chevronIconSize, weight: .semibold))
                 }
                 .foregroundColor(BQDesign.Colors.primaryPurple)
                 .padding(BQDesign.Spacing.md)

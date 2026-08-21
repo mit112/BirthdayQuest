@@ -28,7 +28,8 @@ private struct ParticleDot: View {
     
     @State private var position: CGPoint = .zero
     @State private var opacity: Double = 0
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
     // Deterministic from index — no flickering on redraw
     private var size: CGFloat {
         [3.0, 4.0, 2.5, 5.0, 3.5, 2.0, 4.5, 3.0][index % 8]
@@ -68,12 +69,17 @@ private struct ParticleDot: View {
                     opacity = targetOpacity
                 }
                 
-                withAnimation(
-                    .easeInOut(duration: duration)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-                ) {
-                    position = seededPosition(seed: index + 100)
+                // The fade-in above is one-shot and unaffected by motion gating, so opacity
+                // still reaches `targetOpacity`; only the perpetual drift is gated, leaving
+                // the particle static at its seeded start position rather than invisible.
+                if motionLevel.allowsPerpetual {
+                    withAnimation(
+                        .easeInOut(duration: duration)
+                        .repeatForever(autoreverses: true)
+                        .delay(delay)
+                    ) {
+                        position = seededPosition(seed: index + 100)
+                    }
                 }
             }
     }

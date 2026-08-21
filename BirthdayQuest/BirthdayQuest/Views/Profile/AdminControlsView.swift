@@ -16,6 +16,10 @@ struct AdminControlsView: View {
     /// Which code the host most recently copied, so its button can confirm it. Held here
     /// rather than per-row because only one confirmation should ever be showing.
     @State private var copiedCode: String?
+    @ScaledMetric private var chevronIconSize: CGFloat = 12
+    @ScaledMetric private var secretChallengeIconSize: CGFloat = 10
+    @ScaledMetric private var crownIconSize: CGFloat = 10
+    @ScaledMetric private var sectionHeaderIconSize: CGFloat = 14
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: AdminViewModel(eventId: eventId))
@@ -300,7 +304,7 @@ private extension AdminControlsView {
                 .foregroundColor(BQDesign.Colors.primaryPurple)
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: chevronIconSize, weight: .semibold))
                 .foregroundColor(BQDesign.Colors.textTertiary)
         }
         .frame(minHeight: 44)
@@ -474,9 +478,12 @@ private extension AdminControlsView {
                                 HStack(spacing: 4) {
                                     if challenge.isSecret {
                                         Image(systemName: "eye.slash.fill")
-                                            .font(.system(size: 10))
+                                            .font(.system(size: secretChallengeIconSize))
                                             .foregroundColor(BQDesign.Colors.secretAccent)
                                     }
+                                    // Kept single-line: this is a compact management-list row,
+                                    // and the full title is still reachable via the "Force
+                                    // Complete Challenge?" confirmation dialog this row opens.
                                     Text(challenge.title)
                                         .font(BQDesign.Typography.caption)
                                         .foregroundColor(BQDesign.Colors.textPrimary)
@@ -567,7 +574,7 @@ private extension AdminControlsView {
                             .font(BQDesign.Typography.bodyBold)
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: chevronIconSize, weight: .semibold))
                     }
                     .foregroundColor(.white)
                     .padding(BQDesign.Spacing.md)
@@ -624,7 +631,7 @@ private extension AdminControlsView {
 
                             if participant.isCelebrant {
                                 Text("👑")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: crownIconSize))
                             }
 
                             Spacer()
@@ -705,7 +712,7 @@ private extension AdminControlsView {
     func adminSectionHeader(_ text: String, icon: String) -> some View {
         HStack(spacing: BQDesign.Spacing.xs) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: sectionHeaderIconSize, weight: .semibold))
                 .foregroundColor(BQDesign.Colors.primaryPurple)
             Text(text)
                 .font(BQDesign.Typography.cardTitle)

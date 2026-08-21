@@ -7,7 +7,15 @@ struct ChallengeCardView: View {
     let onTap: () -> Void
     
     @State private var appeared = false
-    
+
+    @ScaledMetric private var badgeIconSize: CGFloat = 20
+    @ScaledMetric private var pointsSparkleSize: CGFloat = 10
+    @ScaledMetric private var difficultyStarSize: CGFloat = 7
+    @ScaledMetric private var completionCheckSize: CGFloat = 10
+    @ScaledMetric private var twoInOneBoltBadgeSize: CGFloat = 8
+    @ScaledMetric private var statusCheckSize: CGFloat = 22
+    @ScaledMetric private var chevronSize: CGFloat = 13
+
     private var isCompleted: Bool { challenge.isCompleted }
     
     var body: some View {
@@ -21,17 +29,18 @@ struct ChallengeCardView: View {
                 
                 // Center: Info
                 VStack(alignment: .leading, spacing: 4) {
+                    // Title truncation removed: at large Dynamic Type sizes a 1-line
+                    // limit could reduce it to an unreadable fragment; let it wrap.
                     Text(challenge.title)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(BQDesign.Typography.cardTitle)
                         .foregroundColor(
                             isCompleted
                             ? BQDesign.Colors.textTertiary
                             : BQDesign.Colors.textPrimary
                         )
-                        .lineLimit(1)
-                    
+
                     Text(challenge.description)
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .font(BQDesign.Typography.caption)
                         .foregroundColor(BQDesign.Colors.textSecondary)
                         .lineLimit(2)
                     
@@ -120,11 +129,11 @@ private extension ChallengeCardView {
             // Icon
             if isCompleted {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: badgeIconSize, weight: .bold))
                     .foregroundColor(.white)
             } else {
                 Image(systemName: challenge.category.icon)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: badgeIconSize, weight: .semibold))
                     .foregroundColor(.white)
             }
         }
@@ -137,17 +146,18 @@ private extension ChallengeCardView {
             // Points chip
             HStack(spacing: 2) {
                 Text("✦")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: pointsSparkleSize, weight: .bold))
                 Text("\(challenge.pointValue)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(BQDesign.Typography.captionSmall)
+                    .fontWeight(.bold)
             }
-            .foregroundColor(BQDesign.Colors.gold)
+            .foregroundColor(BQDesign.Colors.goldText)
             
             // Difficulty stars
             HStack(spacing: 1) {
                 ForEach(0..<challenge.difficulty.stars, id: \.self) { _ in
                     Image(systemName: "star.fill")
-                        .font(.system(size: 7))
+                        .font(.system(size: difficultyStarSize))
                 }
             }
             .foregroundColor(Color(hex: challenge.difficulty.color))
@@ -155,14 +165,15 @@ private extension ChallengeCardView {
             // 2-in-1 badge or completion indicator
             if isCompleted {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: completionCheckSize))
                     .foregroundColor(BQDesign.Colors.success.opacity(0.6))
             } else if challenge.isTwoInOne {
                 HStack(spacing: 2) {
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 8))
+                        .font(.system(size: twoInOneBoltBadgeSize))
                     Text("2-in-1")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(BQDesign.Typography.captionSmall)
+                        .fontWeight(.bold)
                 }
                 .foregroundColor(BQDesign.Colors.primaryOrange)
             }
@@ -181,12 +192,12 @@ private extension ChallengeCardView {
                     .frame(width: 34, height: 34)
                 
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: statusCheckSize))
                     .foregroundColor(BQDesign.Colors.success)
             }
         } else {
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: chevronSize, weight: .semibold))
                 .foregroundColor(BQDesign.Colors.textTertiary.opacity(0.6))
         }
     }

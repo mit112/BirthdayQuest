@@ -10,11 +10,14 @@ struct TimelineView: View {
     @State private var headerAppeared = false
     @State private var crownBounce = false
     @State private var scrollOffset: CGFloat = 0
-    
+
     // Node tap → detail sheets
     @State private var selectedChallenge: Challenge?
     @State private var selectedReward: Reward?
     @State private var isLoadingDetail = false
+
+    @ScaledMetric private var headerCrownSize: CGFloat = 44
+    @ScaledMetric private var emptyStateMapGlyphSize: CGFloat = 48
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: TimelineViewModel(eventId: eventId))
@@ -227,10 +230,17 @@ struct BezierTrailConnector: View {
     let toAlignment: HorizontalAlignment
     let index: Int
     let isCompleted: Bool
-    
+
     @State private var drawn = false
     @State private var shimmer: CGFloat = -0.3
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
+    // Decorative sparkle glyph; one size per index%3 slot since the original picked
+    // from a fixed array rather than a single literal.
+    @ScaledMetric private var sparkleGlyphSizeA: CGFloat = 7
+    @ScaledMetric private var sparkleGlyphSizeB: CGFloat = 6
+    @ScaledMetric private var sparkleGlyphSizeC: CGFloat = 8
+
     private let height: CGFloat = 60
     
     // Trail colors cycle through the palette
@@ -297,19 +307,20 @@ struct BezierTrailConnector: View {
             withAnimation(.easeOut(duration: 0.4).delay(Double(index) * 0.05)) {
                 drawn = true
             }
-            if isCompleted {
+            if isCompleted && motionLevel.allowsPerpetual {
                 withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
                     shimmer = 1.3
                 }
             }
         }
     }
-    
+
     private var sparkleDecoration: some View {
         let midX = (xPosition(for: fromAlignment) + xPosition(for: toAlignment)) / 2
+        let sparkleGlyphSize = [sparkleGlyphSizeA, sparkleGlyphSizeB, sparkleGlyphSizeC][index % 3]
         return GeometryReader { geo in
             Image(systemName: ["sparkle", "star.fill", "sparkle"][index % 3])
-                .font(.system(size: [7, 6, 8][index % 3], weight: .bold))
+                .font(.system(size: sparkleGlyphSize, weight: .bold))
                 .foregroundStyle(sparkleColor.opacity(0.5))
                 .position(x: midX * geo.size.width, y: height * 0.5)
                 .opacity(drawn ? 1 : 0)
@@ -358,7 +369,7 @@ private extension TimelineView {
     var header: some View {
         VStack(spacing: BQDesign.Spacing.xs) {
             Text("👑")
-                .font(.system(size: 44))
+                .font(.system(size: headerCrownSize))
                 .scaleEffect(crownBounce ? 1.0 : 0.85)
                 .offset(y: crownBounce ? 0 : 5)
                 .opacity(headerAppeared ? 1 : 0)
@@ -396,7 +407,7 @@ private extension TimelineView {
                     .frame(width: 100, height: 100)
                 
                 Text("🗺️")
-                    .font(.system(size: 48))
+                    .font(.system(size: emptyStateMapGlyphSize))
             }
             
             VStack(spacing: BQDesign.Spacing.sm) {
@@ -405,7 +416,7 @@ private extension TimelineView {
                     .foregroundColor(BQDesign.Colors.textSecondary)
                 Text("Complete challenges & unlock rewards\nto fill this path")
                     .font(BQDesign.Typography.caption)
-                    .foregroundColor(BQDesign.Colors.textTertiary)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
                     .multilineTextAlignment(.center)
             }
             

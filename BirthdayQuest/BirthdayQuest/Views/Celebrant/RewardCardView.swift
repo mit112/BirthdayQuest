@@ -5,9 +5,12 @@ struct RewardCardView: View {
     let reward: Reward
     let isAffordable: Bool
     let onTap: () -> Void
-    
+
     @State private var glowOpacity: Double = 0.0
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+    @ScaledMetric private var lockIconSize: CGFloat = 20
+    @ScaledMetric private var costGlyphSize: CGFloat = 14
+
     private var isLocked: Bool { !reward.isUnlocked && !isAffordable }
     private var isUnlocked: Bool { reward.isUnlocked }
     
@@ -46,7 +49,7 @@ struct RewardCardView: View {
                                 .fill(Color.black.opacity(0.3))
                                 .frame(width: 80, height: 80)
                             Image(systemName: "lock.fill")
-                                .font(.system(size: 20))
+                                .font(.system(size: lockIconSize))
                                 .foregroundColor(.white.opacity(0.7))
                         }
                     }
@@ -66,7 +69,6 @@ struct RewardCardView: View {
                             .font(BQDesign.Typography.caption)
                             .foregroundColor(textColor.opacity(0.5))
                             .multilineTextAlignment(.center)
-                            .lineLimit(2)
                             .padding(.horizontal, BQDesign.Spacing.md)
                     }
                     
@@ -85,7 +87,7 @@ struct RewardCardView: View {
                     } else {
                         HStack(spacing: BQDesign.Spacing.xs) {
                             Text("✦")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: costGlyphSize, weight: .bold))
                             Text("\(reward.pointCost)")
                                 .font(BQDesign.Typography.bodyBold)
                         }
@@ -105,12 +107,13 @@ struct RewardCardView: View {
                 }
                 .padding(BQDesign.Spacing.lg)
             }
-            .frame(width: 260, height: 380)
+            .frame(width: 260)
+            .frame(minHeight: 380)
             .bqShadow(BQDesign.Shadows.card)
         }
         .buttonStyle(.plain)
         .onAppear {
-            if isAffordable {
+            if isAffordable && motionLevel.allowsPerpetual {
                 withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                     glowOpacity = 0.15
                 }

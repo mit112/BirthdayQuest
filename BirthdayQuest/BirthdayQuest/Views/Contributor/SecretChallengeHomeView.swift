@@ -5,6 +5,9 @@ struct SecretChallengeHomeView: View {
     @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: SecretChallengeViewModel
     @State private var appeared = false
+    @ScaledMetric private var savedCheckmarkIconSize: CGFloat = 16
+    @ScaledMetric private var saveIconSize: CGFloat = 16
+    @ScaledMetric private var deliverIconSize: CGFloat = 14
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: SecretChallengeViewModel(eventId: eventId))
@@ -120,8 +123,11 @@ private extension SecretChallengeHomeView {
     var dossierCard: some View {
         VStack(spacing: BQDesign.Spacing.lg) {
             // "CLASSIFIED" stamp
+            // No design-system token uses `design: .monospaced`, and it's load-bearing here
+            // (the "stamped dossier" look) — falls back to an explicit scalable text style
+            // instead of a fixed size, per the same reasoning as the MISSION_* labels below.
             Text("C L A S S I F I E D")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced, weight: .heavy))
                 .foregroundColor(BQDesign.Colors.secretAccent.opacity(0.6))
                 .tracking(4)
                 .padding(.vertical, BQDesign.Spacing.xs)
@@ -135,8 +141,10 @@ private extension SecretChallengeHomeView {
             
             // Title field
             VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+                // 10pt has no exact Dynamic Type equivalent; .caption2 (11pt) is the nearest
+                // built-in style that still scales, so it's reused for the size-10 labels too.
                 Text("MISSION NAME")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
                     .foregroundColor(.white.opacity(0.4))
                 
                 TextField("", text: $viewModel.title, prompt:
@@ -152,7 +160,7 @@ private extension SecretChallengeHomeView {
             // Description field
             VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
                 Text("MISSION BRIEF")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
                     .foregroundColor(.white.opacity(0.4))
                 
                 TextField("", text: $viewModel.description, prompt:
@@ -170,7 +178,7 @@ private extension SecretChallengeHomeView {
             // Point value picker
             VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
                 Text("REWARD POINTS")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
                     .foregroundColor(.white.opacity(0.4))
                 
                 HStack(spacing: BQDesign.Spacing.sm) {
@@ -225,19 +233,19 @@ private extension SecretChallengeHomeView {
                             ProgressView().tint(.white)
                         } else if viewModel.saveSuccess {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: savedCheckmarkIconSize, weight: .bold))
                             Text("Saved!")
                                 .font(BQDesign.Typography.bodyBold)
                         } else {
                             Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: saveIconSize, weight: .semibold))
                             Text(viewModel.hasExisting ? "Update Dare" : "Save Dare")
                                 .font(BQDesign.Typography.bodyBold)
                         }
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .frame(minHeight: 52)
                     .background(
                         RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                             .fill(BQDesign.Colors.secretAccent)
@@ -254,13 +262,13 @@ private extension SecretChallengeHomeView {
                 } label: {
                     HStack(spacing: BQDesign.Spacing.sm) {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: deliverIconSize))
                         Text("Deliver to \(event.celebrantName)")
                             .font(BQDesign.Typography.bodyBold)
                     }
                     .foregroundColor(.white.opacity(0.7))
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(minHeight: 48)
                     .background(
                         RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                             .stroke(Color.white.opacity(0.2), lineWidth: 1)

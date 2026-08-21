@@ -18,20 +18,46 @@ enum BQDesign {
         static let cardBackground = Color.white
         static let surfaceElevated = Color(hex: "FFFFFF")
         
-        // Text hierarchy
-        static let textPrimary = Color(hex: "2D2B3D")
-        static let textSecondary = Color(hex: "8E8AA0")
+        // Text hierarchy.
+        //
+        // Ratios below are against `background` (#FBF7F4); on `cardBackground` each is slightly
+        // higher, so the app background is the binding case. WCAG AA needs 4.5:1 for body text
+        // and 3:1 for large text.
+        static let textPrimary = Color(hex: "2D2B3D")     // 12.93:1 — any size
+        static let textSecondary = Color(hex: "6B6880")   // 5.03:1  — any size
+
+        /// **Not a text colour.** 1.88:1 against the app background — it fails AA for body *and*
+        /// large text, so it may only tint decoration: divider rules, skeleton fills, page dots,
+        /// progress tracks. Anything a user has to read takes `textSecondary` instead, which is
+        /// the lightest token that clears AA. Kept light on purpose, because that is exactly what
+        /// makes it right for a 15%-opacity skeleton block and wrong for a sentence.
         static let textTertiary = Color(hex: "B8B5C6")
         
-        // Accents
+        // Accents.
+        //
+        // `gold` and `success` are 1.90:1 and 1.73:1 on the light backgrounds and 8.42:1 and
+        // 9.27:1 on `secretDark` — they carry text only on a dark surface. On a light one they
+        // are for fills, glyphs and badges, with the sentence itself left at `textPrimary`.
         static let gold = Color(hex: "F5A623")
+
+        /// `gold` for text on a *light* surface, where `gold` itself is 1.90:1 and illegible.
+        /// Same hue (37deg) and saturation, dropped in lightness until it clears AA body text —
+        /// 4.65:1 on the app background, 4.95:1 on a card. Use it for point values and earned
+        /// totals; keep `gold` for the fills, glyphs and badges beside them, so the accent
+        /// survives while the number stays readable.
+        static let goldText = Color(hex: "9C6407")
+
         static let goldLight = Color(hex: "FFF3DC")
         static let success = Color(hex: "4CD964")
         static let challengeBlue = Color(hex: "5B9FE6")
         static let secretDark = Color(hex: "1A1A2E")
         static let secretAccent = Color(hex: "E94560")
 
-        // Semantic
+        // Semantic.
+        //
+        // 3.59:1 — large text and UI only, never a body sentence. The error rows across the
+        // occasion, create, join and host-panel surfaces put this on the *icon* and leave the
+        // sentence at `textPrimary`; copy that split rather than tinting the text.
         static let error = Color(hex: "E94560")
 
         // Points
@@ -65,18 +91,26 @@ enum BQDesign {
     
     // MARK: - Typography
     
+    /// Every token is a *semantic text style*, never a fixed point size, so all of them track the
+    /// user's Dynamic Type setting. `Font.system(size:)` cannot do that and the user cannot
+    /// override it, which is why no token may reintroduce one.
+    ///
+    /// The style was chosen to land on each token's former point size wherever a style matched it
+    /// exactly (8 of 11 did, at the default content size). The other three shift by at most 2pt:
+    /// `cardTitle` 18 -> 17 (`.headline`, whose intrinsic semibold matches the old weight),
+    /// `caption` 14 -> 13, and `pointsLarge` 36 -> 34.
     enum Typography {
-        static let heroTitle = Font.system(size: 34, weight: .bold, design: .rounded)
-        static let screenTitle = Font.system(size: 28, weight: .bold, design: .rounded)
-        static let sectionTitle = Font.system(size: 22, weight: .semibold, design: .rounded)
-        static let cardTitle = Font.system(size: 18, weight: .semibold, design: .rounded)
-        static let body = Font.system(size: 16, weight: .regular, design: .rounded)
-        static let bodyBold = Font.system(size: 16, weight: .semibold, design: .rounded)
-        static let caption = Font.system(size: 14, weight: .medium, design: .rounded)
-        static let captionSmall = Font.system(size: 12, weight: .medium, design: .rounded)
-        static let points = Font.system(size: 20, weight: .bold, design: .rounded)
-        static let pointsLarge = Font.system(size: 36, weight: .heavy, design: .rounded)
-        static let tagline = Font.system(size: 15, weight: .medium, design: .serif)
+        static let heroTitle = Font.system(.largeTitle, design: .rounded, weight: .bold)
+        static let screenTitle = Font.system(.title, design: .rounded, weight: .bold)
+        static let sectionTitle = Font.system(.title2, design: .rounded, weight: .semibold)
+        static let cardTitle = Font.system(.headline, design: .rounded)
+        static let body = Font.system(.callout, design: .rounded)
+        static let bodyBold = Font.system(.callout, design: .rounded, weight: .semibold)
+        static let caption = Font.system(.footnote, design: .rounded, weight: .medium)
+        static let captionSmall = Font.system(.caption, design: .rounded, weight: .medium)
+        static let points = Font.system(.title3, design: .rounded, weight: .bold)
+        static let pointsLarge = Font.system(.largeTitle, design: .rounded, weight: .heavy)
+        static let tagline = Font.system(.subheadline, design: .serif, weight: .medium)
     }
     
     // MARK: - Spacing
@@ -150,4 +184,53 @@ struct Shadow {
     let radius: CGFloat
     let x: CGFloat
     let y: CGFloat
+}
+
+// MARK: - Motion Gating
+
+/// How much *decorative* motion the current environment allows.
+///
+/// The precedence order is fixed and one-way: `accessibilityReduceMotion` is tier 1 and always
+/// wins, Low Power Mode is tier 2 and only gets a vote if tier 1 passed, and the design's own
+/// preference is tier 3. It is derived in exactly one place — `resolve(reduceMotion:lowPower:)`,
+/// reached through `\.bqMotionLevel` — so that no view can re-litigate it. That matters more here
+/// than it would elsewhere: every animation this gates is `repeatForever`, so one view that
+/// skipped the check would animate at the user *forever*, not for a moment.
+nonisolated enum MotionLevel: Equatable {
+    /// Reduce Motion is on. No decorative motion at all.
+    case none
+    /// Low Power Mode, without Reduce Motion. One-shot transitions are fine; nothing perpetual.
+    case minimal
+    /// No constraint. The design's preference applies.
+    case full
+
+    /// Whether a perpetual (`repeatForever`) decoration may run. Only `.full` permits one — a
+    /// pulse that never stops is the exact thing both a vestibular disorder and a dying battery
+    /// need relief from, so `.minimal` withholds it too.
+    var allowsPerpetual: Bool { self == .full }
+
+    /// The precedence order itself, as a pure function so it can be asserted on directly.
+    ///
+    /// `reduceMotion` is checked first and returns immediately, which is what makes tier 1 a
+    /// guarantee rather than a preference: no later tier is even consulted.
+    static func resolve(reduceMotion: Bool, lowPower: Bool) -> MotionLevel {
+        if reduceMotion { return .none }
+        if lowPower { return .minimal }
+        return .full
+    }
+}
+
+extension EnvironmentValues {
+    /// Read this rather than `accessibilityReduceMotion` directly, so the tier order above stays
+    /// in one place.
+    ///
+    /// `isLowPowerModeEnabled` is sampled per view update rather than observed, so a mid-session
+    /// toggle lands on the next redraw instead of instantly. Reduce Motion, the tier that
+    /// actually matters, *is* a live environment value and updates immediately.
+    var bqMotionLevel: MotionLevel {
+        MotionLevel.resolve(
+            reduceMotion: accessibilityReduceMotion,
+            lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled
+        )
+    }
 }

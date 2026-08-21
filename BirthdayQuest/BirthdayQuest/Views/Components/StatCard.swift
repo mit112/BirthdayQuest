@@ -8,21 +8,22 @@ struct StatCard: View {
     let label: String
     let color: Color
     var index: Int = 0
-    
+
     @State private var appeared = false
-    
+    @ScaledMetric private var iconGlyphSize: CGFloat = 26
+
     var body: some View {
         VStack(spacing: 8) {
             Text(icon)
-                .font(.system(size: 26))
+                .font(.system(size: iconGlyphSize))
                 .foregroundColor(color)
-            
+
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(BQDesign.Typography.points)
                 .foregroundColor(BQDesign.Colors.textPrimary)
-            
+
             Text(label)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(BQDesign.Typography.captionSmall)
                 .foregroundColor(BQDesign.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity)

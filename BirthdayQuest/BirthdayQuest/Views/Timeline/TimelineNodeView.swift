@@ -11,13 +11,20 @@ struct TimelineNodeView: View {
     let index: Int
     let totalCount: Int
     var onTap: (() -> Void)?
-    
+
     @State private var appeared = false
     @State private var badgePop = false
     @State private var glowPulse = false
     @State private var breathe = false
     @State private var sparkleVisible = false
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
+    // Glyph sizes: sized dimensions rather than tokens, since these are decorative
+    // symbols/icons, not text — but @ScaledMetric still lets them grow with Dynamic Type.
+    @ScaledMetric private var starGlyphSize: CGFloat = 10
+    @ScaledMetric private var badgeIconSize: CGFloat = 68 * 0.32 // mirrors nodeSize * 0.32
+    @ScaledMetric private var sparkleRingGlyphSize: CGFloat = 6
+
     private let nodeSize: CGFloat = 68
     private var isChallenge: Bool { event.type == .challengeCompleted }
     private var isReward: Bool { event.type == .rewardUnlocked }
@@ -47,27 +54,28 @@ struct TimelineNodeView: View {
             
             // Title
             Text(event.title)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .font(BQDesign.Typography.bodyBold)
                 .foregroundColor(BQDesign.Colors.textPrimary)
-                .lineLimit(1)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 8)
-            
+
             // Points
             HStack(spacing: 3) {
                 Text("✦")
-                    .font(.system(size: 10, weight: .heavy))
+                    .font(.system(size: starGlyphSize, weight: .heavy))
+                // Explicit style, not .caption: the bold weight is load-bearing here —
+                // it matches the emphasis of the star glyph beside it.
                 Text(pointsText)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(.footnote, design: .rounded, weight: .bold))
             }
             .foregroundColor(pointsColor)
             .opacity(appeared ? 1 : 0)
-            
+
             // Friend name for rewards
             if let friend = event.fromFriendName {
                 Text("from \(friend)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(BQDesign.Colors.textTertiary)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
                     .opacity(appeared ? 1 : 0)
             }
         }
@@ -93,14 +101,14 @@ struct TimelineNodeView: View {
         }
         
         // Reward glow pulse
-        if isReward {
+        if isReward && motionLevel.allowsPerpetual {
             withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true).delay(delay + 0.3)) {
                 glowPulse = true
             }
         }
-        
+
         // Latest node breathing
-        if isLatest {
+        if isLatest && motionLevel.allowsPerpetual {
             withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(delay + 0.2)) {
                 breathe = true
             }
@@ -170,7 +178,7 @@ private extension TimelineNodeView {
             AvatarView(name: friendName, size: nodeSize * 0.58)
         } else {
             Image(systemName: badgeIcon)
-                .font(.system(size: nodeSize * 0.32, weight: .bold))
+                .font(.system(size: badgeIconSize, weight: .bold))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
         }
@@ -185,7 +193,7 @@ private extension TimelineNodeView {
     var sparkleRing: some View {
         ForEach(0..<6, id: \.self) { i in
             Image(systemName: "sparkle")
-                .font(.system(size: 6, weight: .heavy))
+                .font(.system(size: sparkleRingGlyphSize, weight: .heavy))
                 .foregroundStyle(BQDesign.Colors.gold.opacity(0.7))
                 .offset(
                     x: cos(CGFloat(i) * .pi / 3) * (nodeSize * 0.55),

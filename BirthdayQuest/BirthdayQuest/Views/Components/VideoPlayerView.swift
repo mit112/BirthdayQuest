@@ -65,6 +65,7 @@ struct VideoPlayerView: View {
 
     @StateObject private var controller = VideoPlayerController()
     @State private var appeared = false
+    @ScaledMetric private var failureIconSize: CGFloat = 32
 
     var body: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
@@ -77,7 +78,7 @@ struct VideoPlayerView: View {
                     // Error state
                     VStack(spacing: BQDesign.Spacing.md) {
                         Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 32))
+                            .font(.system(size: failureIconSize))
                             .foregroundColor(BQDesign.Colors.textTertiary)
                         Text("Couldn't load video")
                             .font(BQDesign.Typography.caption)

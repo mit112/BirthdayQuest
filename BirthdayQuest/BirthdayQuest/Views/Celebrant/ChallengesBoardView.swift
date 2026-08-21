@@ -5,6 +5,7 @@ struct ChallengesBoardView: View {
     @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: ChallengesViewModel
     @State private var headerAppeared = false
+    @ScaledMetric private var emptyStateEmojiSize: CGFloat = 60
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: ChallengesViewModel(eventId: eventId))
@@ -55,7 +56,7 @@ private extension ChallengesBoardView {
                     .fill(BQDesign.Colors.primaryPurple.opacity(0.06))
                     .frame(width: 100, height: 100)
                 Text("⚔️")
-                    .font(.system(size: 60))
+                    .font(.system(size: emptyStateEmojiSize))
             }
             Text("No challenges yet")
                 .font(BQDesign.Typography.sectionTitle)

@@ -4,7 +4,8 @@ import SwiftUI
 
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = -1.0
-    
+    @Environment(\.bqMotionLevel) private var motionLevel
+
     func body(content: Content) -> some View {
         content
             .overlay(
@@ -25,11 +26,16 @@ struct ShimmerModifier: ViewModifier {
                 .mask(content)
             )
             .onAppear {
-                withAnimation(
-                    .linear(duration: 1.8)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    phase = 2.0
+                // Reduced motion leaves the shimmer sweep off; the base skeleton shapes
+                // underneath (SkeletonRect/SkeletonCircle) render regardless, so the loading
+                // affordance stays visible as a static grey placeholder.
+                if motionLevel.allowsPerpetual {
+                    withAnimation(
+                        .linear(duration: 1.8)
+                        .repeatForever(autoreverses: false)
+                    ) {
+                        phase = 2.0
+                    }
                 }
             }
     }

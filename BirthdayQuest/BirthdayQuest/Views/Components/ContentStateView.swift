@@ -49,12 +49,14 @@ struct ContentFailureView: View {
         onDarkBackground ? .white.opacity(0.75) : BQDesign.Colors.textPrimary.opacity(0.75)
     }
 
+    @ScaledMetric private var failureIconSize: CGFloat = 40
+
     var body: some View {
         VStack(spacing: BQDesign.Spacing.md) {
             // Decorative: the message below carries the meaning, so it is hidden from
             // VoiceOver rather than read out as "warning triangle".
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 40))
+                .font(.system(size: failureIconSize))
                 .foregroundStyle(BQDesign.Colors.error)
                 .accessibilityHidden(true)
 
@@ -85,10 +87,12 @@ struct ConnectionLostBanner: View {
 
     let message: String
 
+    @ScaledMetric private var bannerIconSize: CGFloat = 14
+
     var body: some View {
         HStack(alignment: .top, spacing: BQDesign.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
+                .font(.system(size: bannerIconSize))
                 .foregroundStyle(BQDesign.Colors.error)
                 .accessibilityHidden(true)
 
