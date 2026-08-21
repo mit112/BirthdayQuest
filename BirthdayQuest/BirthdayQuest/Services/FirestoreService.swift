@@ -262,20 +262,49 @@ final class FirestoreService: GameBackend {
         let memberships = try await db.collection(Collections.memberships).document(uid)
             .collection(Collections.events).getDocuments()
 
-        var occasions: [Occasion] = []
-        for membership in memberships.documents {
-            let eventId = membership.documentID
-            do {
-                let doc = try await eventRef(eventId).getDocument()
-                guard let occasion = try? doc.data(as: Occasion.self) else {
-                    logger.error("Skipping occasion \(eventId): event document did not decode")
-                    continue
+        // Concurrent, not sequential. This is the occasion-list cold path — it runs on every
+        // launch — and a serial loop made it N round trips deep, so the wait grew with the
+        // number of occasions the user had.
+        //
+        // The skip-on-failure behaviour is load-bearing and must survive: a membership can
+        // outlive the event document, or name one this user has since been removed from, and
+        // either would otherwise fail the *whole* list and leave the user staring at an empty
+        // account. So each child returns `Occasion?` and never throws, which also means the
+        // group cannot cancel its siblings on one bad document.
+        // The children are `@MainActor`, which is where this whole type already lives. That
+        // is not a compromise on the parallelism: the cost here is network latency, and
+        // `getDocument()` suspends, so the requests still overlap. What it buys is that no
+        // value crosses an isolation boundary.
+        let occasions = await withTaskGroup(of: Occasion?.self) { group in
+            for membership in memberships.documents {
+                let eventId = membership.documentID
+                group.addTask { @MainActor in
+                    do {
+                        let doc = try await self.eventRef(eventId).getDocument()
+                        guard let occasion = try? doc.data(as: Occasion.self) else {
+                            self.logger.error(
+                                "Skipping occasion \(eventId): event document did not decode"
+                            )
+                            return nil
+                        }
+                        return occasion
+                    } catch {
+                        self.logger.error(
+                            "Skipping occasion \(eventId): \(error.localizedDescription)"
+                        )
+                        return nil
+                    }
                 }
-                occasions.append(occasion)
-            } catch {
-                logger.error("Skipping occasion \(eventId): \(error.localizedDescription)")
             }
+
+            var collected: [Occasion] = []
+            for await occasion in group {
+                if let occasion { collected.append(occasion) }
+            }
+            return collected
         }
+
+        // Sorted after collection, because a task group yields in completion order.
         return occasions.sorted { $0.occasionDate > $1.occasionDate }
     }
 
@@ -646,26 +675,10 @@ final class FirestoreService: GameBackend {
             }
 
             // Manual parsing — avoids Codable decode failures from Firestore type mismatches.
-            // Every field nil-coalesces, so documents written without the retired
-            // `birthdayBoyId` parse cleanly.
-            let state = GameState(
-                birthdayBoyId: data["birthdayBoyId"] as? String ?? "",
-                totalPointsEarned: (data["totalPointsEarned"] as? NSNumber)?.intValue ?? 0,
-                totalPointsSpent: (data["totalPointsSpent"] as? NSNumber)?.intValue ?? 0,
-                currentPoints: (data["currentPoints"] as? NSNumber)?.intValue ?? 0,
-                challengesCompleted: (data["challengesCompleted"] as? NSNumber)?.intValue ?? 0,
-                totalChallenges: (data["totalChallenges"] as? NSNumber)?.intValue ?? 0,
-                secretChallengesFound: (data["secretChallengesFound"] as? NSNumber)?.intValue ?? 0,
-                secretChallengesCompleted: (data["secretChallengesCompleted"] as? NSNumber)?.intValue ?? 0,
-                rewardsUnlocked: (data["rewardsUnlocked"] as? NSNumber)?.intValue ?? 0,
-                totalRewards: (data["totalRewards"] as? NSNumber)?.intValue ?? 0,
-                allRewardsUnlocked: data["allRewardsUnlocked"] as? Bool ?? false,
-                finalBadgeUnlocked: data["finalBadgeUnlocked"] as? Bool ?? false,
-                finalBadgeUnlockedAt: (data["finalBadgeUnlockedAt"] as? Timestamp)?.dateValue(),
-                gameStartedAt: (data["gameStartedAt"] as? Timestamp)?.dateValue(),
-                currentDay: (data["currentDay"] as? NSNumber)?.intValue ?? 1,
-                updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue()
-            )
+            // The parse itself lives on `GameState` so its field-name literals are reachable
+            // from a test; this type is replaced by a mock in every Swift test, so a typo in
+            // any one of them used to be undetectable.
+            let state = GameState(wire: data)
             self.logger.debug("GameState updated: \(state.currentPoints) pts, \(state.challengesCompleted) challenges, \(state.rewardsUnlocked) rewards")
             completion(.success(state))
         }
