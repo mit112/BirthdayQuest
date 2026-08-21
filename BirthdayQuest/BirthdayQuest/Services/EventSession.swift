@@ -96,6 +96,16 @@ final class EventSession: ObservableObject {
 
     private let service: GameBackend
     private var registeredListenerKeys: Set<String> = []
+    /// Set by `stop()`, and never cleared — an `EventSession` is created when an occasion is
+    /// opened and thrown away when it closes, so there is no restart to support.
+    ///
+    /// `start()` suspends twice before it registers anything. A user who taps into an
+    /// occasion and straight back out runs `onDisappear` — and therefore `stop()` — while
+    /// `start()` is still parked on one of those awaits, with `registeredListenerKeys` empty:
+    /// `stop()` removed nothing, then `start()` resumed and registered a listener that now
+    /// has nobody left to remove it. Both methods are `@MainActor`, so this flag is checked
+    /// and set without interleaving.
+    private var isStopped = false
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "EventSession")
 
     init(eventId: String, service: GameBackend = FirestoreService.shared) {
@@ -116,6 +126,13 @@ final class EventSession: ObservableObject {
         }
 
         await retireCelebrantCodeIfNeeded()
+
+        // The caller may already have left. Registering now would leak the listener for the
+        // lifetime of the process, because the only thing that removes it has already run.
+        guard !isStopped else {
+            logger.info("Occasion closed before the game-state listener was registered")
+            return
+        }
 
         let key = ListenerKey.gameState(eventId)
         registeredListenerKeys.insert(key)
@@ -147,6 +164,7 @@ final class EventSession: ObservableObject {
     }
 
     func stop() {
+        isStopped = true
         for key in registeredListenerKeys {
             service.removeListener(forKey: key)
         }

@@ -232,3 +232,68 @@ struct EventSessionTests {
         ])
     }
 }
+
+// MARK: - Leaving Before The Listener Registers
+
+/// `start()` suspends twice — `fetchOccasion`, then `fetchMyParticipant` — before it registers
+/// the game-state listener. A user who taps into an occasion and straight back out runs
+/// `onDisappear`, and therefore `stop()`, while `start()` is still parked on one of those
+/// awaits with nothing registered yet. `stop()` removed nothing, `start()` then resumed and
+/// registered a listener whose only remover had already run: a leak for the life of the
+/// process, one per in-and-out tap.
+@Suite("EventSession teardown races start")
+@MainActor
+struct EventSessionTeardownRaceTests {
+
+    private func occasion() -> Occasion {
+        Occasion(
+            id: "evt_1", name: "Alex's 30th", occasionType: .birthday, celebrantName: "Alex",
+            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date()
+        )
+    }
+
+    private func participant() -> Participant {
+        var participant = Participant(
+            name: "Sam", avatarId: AvatarCatalog.fallback,
+            mode: .contributor, isHost: false, usedCode: "ABCD2345"
+        )
+        participant.id = "uid_sam"
+        return participant
+    }
+
+    /// `Task { }` from a `@MainActor` context does not begin until this function suspends, so
+    /// `stop()` is guaranteed to run first — the interleaving is deterministic, not timed.
+    @Test("stopping while start() is still in flight registers no listener")
+    func stopDuringStartRegistersNothing() async {
+        let mock = MockGameBackend()
+        mock.stubbedOccasion = occasion()
+        mock.stubbedParticipant = participant()
+        let session = EventSession(eventId: "evt_1", service: mock)
+
+        let starting = Task { await session.start() }
+        session.stop()
+        await starting.value
+        await settle()
+
+        #expect(
+            mock.called("listenToGameState") == false,
+            "start() resumed after stop() and registered a listener nobody will remove"
+        )
+    }
+
+    /// The guard must not fire on the normal path. A session that is started and then stopped
+    /// registers its listener and removes it — that is the case the flag has to leave alone.
+    @Test("the ordinary start-then-stop path still registers and then removes")
+    func normalLifecycleIsUnaffected() async {
+        let mock = MockGameBackend()
+        mock.stubbedOccasion = occasion()
+        mock.stubbedParticipant = participant()
+        let session = EventSession(eventId: "evt_1", service: mock)
+
+        await session.start()
+        #expect(mock.callCount("listenToGameState") == 1)
+
+        session.stop()
+        #expect(mock.removedListenerKeys == [ListenerKey.gameState("evt_1")])
+    }
+}
