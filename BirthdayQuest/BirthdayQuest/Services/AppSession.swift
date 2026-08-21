@@ -74,7 +74,7 @@ final class AppSession: ObservableObject {
             await loadOccasions()
         } catch {
             logger.error("Apple link failed: \(error.localizedDescription)")
-            errorMessage = "Couldn't save your account. You can try again from Profile."
+            errorMessage = "Couldn't link your Apple ID. You can try again from My Occasions."
         }
     }
 }

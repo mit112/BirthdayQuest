@@ -9,8 +9,7 @@ struct AppSessionTests {
     private func occasion(_ id: String) -> Occasion {
         Occasion(
             id: id, name: "Alex's 30th", occasionType: .birthday, celebrantName: "Alex",
-            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date(),
-            contributorCode: "ABCD2345", celebrantCode: "EFGH6789"
+            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date()
         )
     }
 
@@ -72,8 +71,7 @@ struct AppSessionErrorTests {
     private func occasion(_ id: String) -> Occasion {
         Occasion(
             id: id, name: "Alex's 30th", occasionType: .birthday, celebrantName: "Alex",
-            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date(),
-            contributorCode: "ABCD2345", celebrantCode: "EFGH6789"
+            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date()
         )
     }
 
