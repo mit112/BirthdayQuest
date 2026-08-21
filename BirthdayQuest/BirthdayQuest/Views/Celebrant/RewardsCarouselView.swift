@@ -30,11 +30,14 @@ struct RewardsCarouselView: View {
         ZStack {
             BQDesign.Colors.background.ignoresSafeArea()
             
-            if viewModel.isLoading {
+            switch viewModel.contentState {
+            case .loading:
                 RewardsSkeletonView()
-            } else if viewModel.rewards.isEmpty {
+            case .failed(let message):
+                ContentFailureView(message: message)
+            case .empty:
                 emptyState
-            } else {
+            case .ready:
                 mainContent
             }
         }

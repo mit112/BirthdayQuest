@@ -24,7 +24,10 @@ final class ChallengesViewModel: ObservableObject {
     @Published var showDetail = false
     @Published var showSecretPortal = false
     @Published var secretsDiscovered = false
-    @Published var errorMessage: String?
+    /// Set when the challenges listener is refused. Rendered inline in place of the empty
+    /// state, not as an alert: membership is revocable, so this is a persistent condition
+    /// and an alert would be dismissed straight back onto "No challenges yet".
+    @Published var loadFailure: String?
     
     // MARK: - Computed
     
@@ -50,6 +53,14 @@ final class ChallengesViewModel: ObservableObject {
     var hasSecrets: Bool {
         !deliveredSecrets.isEmpty
     }
+
+    /// The branch the board renders. A refused read outranks the empty state so an occasion
+    /// with 13 challenges in it never reads as "The adventure is being prepared...".
+    var contentState: ContentState {
+        if let loadFailure { return .failed(loadFailure) }
+        if isLoading { return .loading }
+        return regularChallenges.isEmpty ? .empty : .ready
+    }
     
     // MARK: - Listeners
     
@@ -62,9 +73,13 @@ final class ChallengesViewModel: ObservableObject {
                 case .success(let challenges):
                     self.challenges = challenges
                     self.secretChallenges = challenges.filter { $0.isSecret && $0.isDelivered }
+                    self.loadFailure = nil
                 case .failure(let error):
-                    self.errorMessage = "Couldn't load challenges."
                     self.logger.error("Challenges listener: \(error.localizedDescription)")
+                    self.loadFailure = """
+                        The challenges didn't load. You may no longer have access to this \
+                        occasion, or the connection dropped.
+                        """
                 }
             }
         }

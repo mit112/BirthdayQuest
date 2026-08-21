@@ -9,6 +9,22 @@ import Foundation
 // idempotency guard) lives inside FirestoreService, so a mock replaces it rather than
 // verifying it. That needs the Firebase emulator.
 
+/// Listener callbacks and the roster fetch both hop through `Task { @MainActor in … }`, so
+/// their effects land a turn or two after the call that started them.
+@MainActor
+private func settle(turns: Int = 8) async {
+    for _ in 0..<turns { await Task.yield() }
+}
+
+/// The failure every content listener has to survive now that membership is revocable: a
+/// host closing the occasion or removing a contributor turns every read into this.
+private func permissionDenied() -> NSError {
+    NSError(
+        domain: "FIRFirestoreErrorDomain", code: 7,
+        userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+    )
+}
+
 @MainActor
 @Suite("RewardsViewModel unlock flow")
 struct RewardsViewModelTests {
@@ -70,20 +86,54 @@ struct RewardsViewModelTests {
         #expect(vm.showUnlockConfirm == false)
     }
 
-    @Test("a rewards listener failure clears loading and surfaces an error")
-    func rewardsListenerFailureStopsLoading() async {
+    @Test("a refused rewards read renders as a failure, never as an empty occasion")
+    func rewardsListenerFailureIsRendered() async {
         let mock = MockGameBackend()
-        mock.listenerFailure = NSError(
-            domain: "FIRFirestoreErrorDomain", code: 7,
-            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
-        )
+        mock.listenerFailure = permissionDenied()
         let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.startListening()
-        await Task.yield()
+        await settle()
 
         #expect(vm.isLoading == false)
-        #expect(vm.errorMessage != nil)
+        // This is the assertion the old test was missing. It asserted `errorMessage != nil`,
+        // which was *already true* while the screen rendered "No gifts yet" — the message
+        // was written and read by nothing. `contentState` is what the view branches on, so
+        // only this can fail if the failure becomes invisible again.
+        guard case .failed(let message) = vm.contentState else {
+            Issue.record("a refused read must render .failed, not \(String(describing: vm.contentState))")
+            return
+        }
+        #expect(message.isEmpty == false)
+        #expect(vm.showError == false, "losing access is persistent; an alert is dismissed and gone")
+    }
+
+    @Test("an occasion that genuinely has no gifts still reads as empty, not as a failure")
+    func emptyRewardsAreStillEmpty() async {
+        let mock = MockGameBackend()
+        mock.rewards = []
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.contentState == .empty, "the fix must not turn every empty occasion into an error")
+    }
+
+    @Test("a later snapshot clears the failure instead of leaving a stale error on screen")
+    func rewardsFailureClearsOnRecovery() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = permissionDenied()
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+        mock.listenerFailure = nil
+        mock.emitRewards([.fixture(id: "r1")])
+        await settle()
+
+        #expect(vm.contentState == .ready)
+        #expect(vm.loadFailure == nil)
     }
 }
 
@@ -280,13 +330,6 @@ struct AdminViewModelTests {
     }
 }
 
-/// Listener callbacks and the roster fetch both hop through `Task { @MainActor in … }`, so
-/// their effects land a turn or two after the call that started them.
-@MainActor
-private func settle(turns: Int = 8) async {
-    for _ in 0..<turns { await Task.yield() }
-}
-
 @MainActor
 @Suite("AdminViewModel listeners and the roster")
 struct AdminViewModelListenerTests {
@@ -414,6 +457,110 @@ struct ProfileViewModelFailureTests {
 
         #expect(vm.errorMessage != nil)
         #expect(vm.secretChallengeStatus == .unknown, "'None' would be a lie about a denied read")
+    }
+}
+
+/// The defect these pin: four listeners set an error message that no view read, so a refused
+/// read fell through to `isEmpty` and rendered a cheerful empty state on an occasion with 13
+/// challenges, 8 gifts and 20 timeline entries in it. Each test asserts the branch the view
+/// takes — `.failed` — because "the view model holds a string" was true the whole time the
+/// bug shipped.
+@MainActor
+@Suite("Refused content reads are rendered, not swallowed")
+struct RefusedReadTests {
+
+    @Test("a refused challenges read renders as a failure, never as no challenges")
+    func challengesFailureIsRendered() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = permissionDenied()
+        let vm = ChallengesViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.isLoading == false)
+        guard case .failed(let message) = vm.contentState else {
+            Issue.record("a refused read must render .failed, not \(String(describing: vm.contentState))")
+            return
+        }
+        #expect(message.isEmpty == false)
+    }
+
+    @Test("an occasion that genuinely has no challenges still reads as empty")
+    func emptyChallengesAreStillEmpty() async {
+        let mock = MockGameBackend()
+        mock.challenges = []
+        let vm = ChallengesViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.contentState == .empty)
+    }
+
+    @Test("a refused timeline read renders as a failure, never as a journey not yet begun")
+    func timelineFailureIsRendered() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = permissionDenied()
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.isLoading == false)
+        guard case .failed(let message) = vm.contentState else {
+            Issue.record("a refused read must render .failed, not \(String(describing: vm.contentState))")
+            return
+        }
+        #expect(message.isEmpty == false)
+        #expect(vm.isEmpty, "the events list really is empty — .failed has to outrank it")
+    }
+
+    @Test("an occasion that genuinely has no timeline entries still reads as empty")
+    func emptyTimelineIsStillEmpty() async {
+        let mock = MockGameBackend()
+        mock.timeline = []
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        await settle()
+
+        #expect(vm.contentState == .empty)
+    }
+
+    @Test("a refused dossier read renders as a failure and stops inviting a new dare")
+    func secretDareFailureIsRendered() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = permissionDenied()
+        let vm = SecretChallengeViewModel(eventId: "evt_1", service: mock)
+
+        vm.loadExisting(userId: "uid_1")
+        await settle()
+
+        #expect(vm.isLoading == false)
+        guard case .failed(let message) = vm.contentState else {
+            Issue.record("a refused read must render .failed, not \(String(describing: vm.contentState))")
+            return
+        }
+        #expect(message.isEmpty == false)
+        #expect(
+            vm.statusText != "Create your secret dare",
+            "the badge would otherwise invite authoring into an occasion that stopped answering"
+        )
+        #expect(vm.showError == false, "the save alert must not be the vehicle for a persistent state")
+    }
+
+    @Test("a contributor who simply has not written a dare still gets the editable dossier")
+    func noDareYetIsStillReady() async {
+        let mock = MockGameBackend()
+        mock.challenges = []
+        let vm = SecretChallengeViewModel(eventId: "evt_1", service: mock)
+
+        vm.loadExisting(userId: "uid_1")
+        await settle()
+
+        #expect(vm.contentState == .ready)
+        #expect(vm.statusText == "Create your secret dare")
     }
 }
 

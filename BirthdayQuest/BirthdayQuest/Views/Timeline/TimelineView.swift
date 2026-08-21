@@ -25,9 +25,15 @@ struct TimelineView: View {
             // Layer 1 & 2: Living gradient + bokeh + sparkles
             TimelineBackgroundView()
             
-            if viewModel.isLoading {
+            switch viewModel.contentState {
+            case .loading:
                 TimelineSkeletonView()
-            } else {
+            case .failed(let message):
+                // Replaces the whole scroll rather than just the path. Keeping the header
+                // and the final-badge progress around a failure notice would frame the
+                // screen as working, with one apologetic paragraph where the journey was.
+                ContentFailureView(message: message)
+            case .empty, .ready:
                 mainContent
             }
             

@@ -31,6 +31,10 @@ final class SecretChallengeViewModel: ObservableObject {
     @Published var saveSuccess = false
     @Published var errorMessage: String?
     @Published var showError = false
+    /// Set when the dossier listener is refused. Kept apart from `errorMessage`, which
+    /// drives the save/deliver alert: a refused read is a persistent state, and an alert
+    /// would be dismissed straight back onto a blank dossier that invites authoring.
+    @Published var loadFailure: String?
     
     // MARK: - Options
     
@@ -43,12 +47,21 @@ final class SecretChallengeViewModel: ObservableObject {
     var isCompleted: Bool { existingChallenge?.isCompleted ?? false }
     
     var statusText: String {
+        if loadFailure != nil { return "⚠️ Couldn't load" }
         if isCompleted { return "✅ Completed!" }
         if existingChallenge?.isDelivered == true { return "📨 Delivered — waiting on them..." }
         if hasExisting { return "📝 Draft — edit anytime" }
         return "Create your secret dare"
     }
     
+    /// The branch the dossier renders. There is no meaningful empty state here — an
+    /// unwritten dare and a written one are the same editable card — so this is only ever
+    /// `.loading`, `.failed` or `.ready`.
+    var contentState: ContentState {
+        if let loadFailure { return .failed(loadFailure) }
+        return isLoading ? .loading : .ready
+    }
+
     var canSave: Bool {
         !title.trimmingCharacters(in: .whitespaces).isEmpty &&
         !description.trimmingCharacters(in: .whitespaces).isEmpty &&
@@ -81,9 +94,13 @@ final class SecretChallengeViewModel: ObservableObject {
                         self.description = mine.description
                         self.pointValue = mine.pointValue
                     }
+                    self.loadFailure = nil
                 case .failure(let error):
-                    self.errorMessage = "Couldn't load your dare."
                     self.logger.error("Secret challenge listener: \(error.localizedDescription)")
+                    self.loadFailure = """
+                        Your dare didn't load. You may no longer have access to this \
+                        occasion, or the connection dropped.
+                        """
                 }
             }
         }

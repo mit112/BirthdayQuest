@@ -26,6 +26,11 @@ final class RewardsViewModel: ObservableObject {
     @Published var showTimelinePrompt = false
     @Published var errorMessage: String?
     @Published var showError = false
+    /// Set when the rewards listener is refused. Kept apart from `errorMessage`, which
+    /// drives the unlock alert: an alert is right for an action the user just took and
+    /// wrong for a read that has been refused and will stay refused — it is dismissed once
+    /// and leaves the empty state behind it.
+    @Published var loadFailure: String?
 
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Rewards")
 
@@ -41,6 +46,14 @@ final class RewardsViewModel: ObservableObject {
     var totalCount: Int {
         rewards.count
     }
+
+    /// The branch the carousel renders. A refused read outranks both the skeleton and the
+    /// empty state, so "No gifts yet" can never stand in for "we were not allowed to look".
+    var contentState: ContentState {
+        if let loadFailure { return .failed(loadFailure) }
+        if isLoading { return .loading }
+        return rewards.isEmpty ? .empty : .ready
+    }
     
     // MARK: - Listeners
     
@@ -52,9 +65,13 @@ final class RewardsViewModel: ObservableObject {
                 switch result {
                 case .success(let rewards):
                     self.rewards = rewards
+                    self.loadFailure = nil
                 case .failure(let error):
-                    self.errorMessage = "Couldn't load gifts. Pull to retry."
                     self.logger.error("Rewards listener: \(error.localizedDescription)")
+                    self.loadFailure = """
+                        Your gifts didn't load. You may no longer have access to this \
+                        occasion, or the connection dropped.
+                        """
                 }
             }
         }

@@ -29,11 +29,22 @@ final class TimelineViewModel: ObservableObject {
     @Published var newEventIds: Set<String> = []
     @Published var finalBadgeUnlocked = false
     @Published var showFinalCelebration = false
-    @Published var errorMessage: String?
-    
+    /// Set when the timeline listener is refused. Rendered inline in place of the empty
+    /// state — an append-only timeline that has stopped answering is not a journey that
+    /// hasn't begun.
+    @Published var loadFailure: String?
+
     // MARK: - Computed
-    
+
     var isEmpty: Bool { events.isEmpty }
+
+    /// The branch the timeline renders. A refused read outranks the empty state so 20
+    /// recorded moments never read as "Your journey begins...".
+    var contentState: ContentState {
+        if let loadFailure { return .failed(loadFailure) }
+        if isLoading { return .loading }
+        return events.isEmpty ? .empty : .ready
+    }
     
     // MARK: - Listeners
     
@@ -55,9 +66,13 @@ final class TimelineViewModel: ObservableObject {
 
                     self.previousEventCount = self.events.count
                     self.events = events
+                    self.loadFailure = nil
                 case .failure(let error):
-                    self.errorMessage = "Couldn't load the timeline."
                     self.logger.error("Timeline listener: \(error.localizedDescription)")
+                    self.loadFailure = """
+                        The timeline didn't load. You may no longer have access to this \
+                        occasion, or the connection dropped.
+                        """
                 }
             }
         }

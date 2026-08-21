@@ -29,15 +29,21 @@ struct SecretChallengeHomeView: View {
                     statusBadge
                         .opacity(appeared ? 1 : 0)
                     
-                    if viewModel.isLoading {
+                    switch viewModel.contentState {
+                    case .loading:
                         DossierSkeletonView()
                             .padding(.top, BQDesign.Spacing.md)
-                    } else {
+                    case .failed(let message):
+                        // Not the dossier: an editable card would invite the contributor to
+                        // write a dare into an occasion that is no longer answering them.
+                        ContentFailureView(message: message, onDarkBackground: true)
+                            .padding(.top, BQDesign.Spacing.md)
+                    case .empty, .ready:
                         // The dossier card
                         dossierCard
                             .opacity(appeared ? 1 : 0)
                             .scaleEffect(appeared ? 1 : 0.95)
-                        
+
                         // Action buttons
                         actionButtons
                             .opacity(appeared ? 1 : 0)
@@ -88,7 +94,8 @@ private extension SecretChallengeHomeView {
     var statusBadge: some View {
         Text(viewModel.statusText)
             .font(BQDesign.Typography.caption)
-            .foregroundColor(BQDesign.Colors.secretAccent)
+            .foregroundColor(statusBadgeColor)
+            .accessibilityLabel("Status: \(viewModel.statusText)")
             .padding(.horizontal, BQDesign.Spacing.md)
             .padding(.vertical, BQDesign.Spacing.sm)
             .background(
@@ -100,6 +107,15 @@ private extension SecretChallengeHomeView {
             )
     }
     
+    /// `secretAccent` on the dark dossier clears the 3:1 bar for graphics but not the 4.5:1
+    /// bar for 14pt text. That is pre-existing for the four cheerful statuses and out of
+    /// scope to restyle, but the failure status is new copy the user has to act on, so it
+    /// gets a foreground that actually passes.
+    var statusBadgeColor: Color {
+        if case .failed = viewModel.contentState { return .white }
+        return BQDesign.Colors.secretAccent
+    }
+
     // MARK: Dossier Card
     var dossierCard: some View {
         VStack(spacing: BQDesign.Spacing.lg) {

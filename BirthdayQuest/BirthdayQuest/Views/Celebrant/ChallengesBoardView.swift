@@ -15,11 +15,14 @@ struct ChallengesBoardView: View {
             // Living gradient background (matches timeline world)
             ChallengesBackgroundView()
             
-            if viewModel.isLoading {
+            switch viewModel.contentState {
+            case .loading:
                 ChallengesSkeletonView()
-            } else if viewModel.regularChallenges.isEmpty {
+            case .failed(let message):
+                ContentFailureView(message: message)
+            case .empty:
                 emptyState
-            } else {
+            case .ready:
                 mainContent
             }
         }
