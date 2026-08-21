@@ -18,7 +18,13 @@ struct AdminControlsView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: BQDesign.Spacing.lg) {
-                    
+
+                    // 0. Invite links + celebrant-joined status. Kept first: an occasion
+                    // whose celebrant never installs the app is unrecoverable, so the host
+                    // needs this the moment they open this screen, not after scrolling past
+                    // everything else.
+                    inviteCard
+
                     // 1. Read-only game state dashboard
                     gameStateCard
                     
@@ -126,6 +132,80 @@ struct AdminControlsView: View {
         }
         .onAppear { viewModel.startListening() }
         .onDisappear { viewModel.stopListening() }
+    }
+}
+
+// MARK: - Section 0: Invite Links + Celebrant Status
+
+private extension AdminControlsView {
+
+    var inviteCard: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
+            adminSectionHeader("Invite", icon: "square.and.arrow.up")
+
+            if let link = event.occasion?.contributorLink {
+                VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+                    ShareLink(item: link) {
+                        adminLinkRow("Share the friend link", icon: "person.2.fill")
+                    }
+                    Text(event.occasion?.contributorCode ?? "")
+                        .font(BQDesign.Typography.captionSmall.monospaced())
+                        .foregroundColor(BQDesign.Colors.textSecondary)
+                }
+            }
+
+            Divider()
+
+            if let link = event.occasion?.celebrantLink {
+                ShareLink(item: link) {
+                    adminLinkRow(
+                        "Share the \(event.occasion?.occasionType.celebrantLabel ?? "guest of honour") link",
+                        icon: "gift.fill"
+                    )
+                }
+            }
+
+            celebrantStatusBanner
+        }
+        .adminCard()
+    }
+
+    func adminLinkRow(_ title: String, icon: String) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+            Text(title)
+                .font(BQDesign.Typography.body)
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(BQDesign.Colors.textTertiary)
+        }
+    }
+
+    /// The spec's #1 named risk: there is deliberately no handover mode, so a celebrant who
+    /// never installs the app cannot be rescued on the day. Surfacing this unmissably, right
+    /// where the invite links live, is the mitigation.
+    var celebrantStatusBanner: some View {
+        Group {
+            if viewModel.celebrantHasJoined {
+                Label(
+                    "\(event.occasion?.celebrantName ?? "They") have joined.",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .foregroundColor(BQDesign.Colors.success)
+            } else {
+                Label(
+                    "\(event.occasion?.celebrantName ?? "They") haven't joined yet. "
+                        + "Share the link above — they need the app installed to open their gifts.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundColor(BQDesign.Colors.error)
+            }
+        }
+        .font(BQDesign.Typography.caption)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

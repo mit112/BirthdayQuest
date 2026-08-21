@@ -59,6 +59,13 @@ final class AdminViewModel: ObservableObject {
     var otherParticipants: [Participant] {
         participants.filter { !$0.isHost }
     }
+
+    /// Whether anyone with `mode == .celebrant` has joined yet. There is no handover mode,
+    /// so an occasion whose celebrant never installs the app cannot be rescued on the day —
+    /// this has to be checked from the moment the occasion is created, not discovered late.
+    var celebrantHasJoined: Bool {
+        participants.contains { $0.isCelebrant }
+    }
     
     // MARK: - Listener Lifecycle
     
