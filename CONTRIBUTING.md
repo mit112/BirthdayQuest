@@ -21,12 +21,28 @@ Requirements:
 
 * Xcode 26 or newer (the deployment target is iOS 26.0)
 * Your own Firebase project with Firestore and Storage enabled
+* The **Anonymous** sign-in provider enabled on that project (Authentication → Sign-in method).
+  This is the one that costs people an hour: the app signs in anonymously on launch and every
+  security rule keys off `request.auth.uid`, so with the provider disabled you get an empty
+  occasion list and a connection error rather than anything that points at the cause
+* Node and Java, for the emulator rules suite below
 
 ## Before you open a PR
 
 * `xcodebuild -project BirthdayQuest/BirthdayQuest.xcodeproj -scheme BirthdayQuest \
    -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build` succeeds
-* `swiftlint` is clean (config is in `.swiftlint.yml`)
+* The Swift tests pass, **scoped to the unit-test target**:
+  `xcodebuild -project BirthdayQuest/BirthdayQuest.xcodeproj -scheme BirthdayQuest \
+   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:BirthdayQuestTests test`.
+  Don't drop the `-only-testing:` — a bare `test` also runs `BirthdayQuestUITests`, which boots a
+  simulator and launches the app. It is slow, thrashes memory, and hangs in teardown. CI passes
+  `-skip-testing:BirthdayQuestUITests` for the same reason
+* The emulator rules suite passes: `cd firebase-tests && npm test`. **Required for any change to
+  `firestore.rules` or `storage.rules`.** There are no Cloud Functions in this project, so the
+  rules carry the entire enforcement burden and that suite is the only thing verifying them —
+  a rules mistake here is a data breach, not a bug
+* `swiftlint` is clean (config is in `.swiftlint.yml`). Run it from the **repo root**; from the
+  nested source directory it misses `.swiftlint.yml` and reports hundreds of phantom violations
 * UI changes include a screenshot or screen recording — this app is almost entirely UI, so
   describing a visual change in prose isn't reviewable
 

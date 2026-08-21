@@ -12,6 +12,8 @@ body:
           required: true
         - label: I enabled Cloud Firestore and Firebase Storage
           required: true
+        - label: I enabled the **Anonymous** sign-in provider (Authentication → Sign-in method)
+          required: true
         - label: I deployed the security rules (`firebase deploy --only firestore:rules,storage`) or set Firestore to test mode
           required: true
         - label: I'm on Xcode 26 or newer
