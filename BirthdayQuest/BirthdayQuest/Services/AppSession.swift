@@ -17,6 +17,19 @@ final class AppSession: ObservableObject {
     @Published var isAnonymous = true
     @Published var errorMessage: String?
 
+    /// An occasion that should be opened as soon as a list is on screen to open it from.
+    ///
+    /// It lives here, rather than being handed back through the create sheet's completion
+    /// handler, because creating the *first* occasion changes `rootState` from `.empty` to
+    /// `.occasions` — which replaces the whole root view. The handler therefore fired on a
+    /// view already being torn down, and the first occasion a user ever made dropped them on
+    /// the list instead of inside it, with no invite link in sight. Routing the request
+    /// through the session is what lets it survive that swap, and it means the create flow
+    /// behaves identically from either root instead of only from the populated one.
+    ///
+    /// Whoever acts on it clears it, so a back-swipe out of the occasion does not re-open it.
+    @Published var pendingOpenEventId: String?
+
     /// Friction arrives only once there is something to lose: a user with more than one
     /// occasion, or any host, has accumulated history worth recovering after a reinstall.
     var shouldPromptAppleLink: Bool {

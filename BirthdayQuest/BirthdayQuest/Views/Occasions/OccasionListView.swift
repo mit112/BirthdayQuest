@@ -65,10 +65,19 @@ struct OccasionListView: View {
                     .accessibilityLabel("Add an occasion")
                 }
             }
-            .sheet(isPresented: $creating) { CreateOccasionView(onCreated: { openEventId = $0 }) }
+            .sheet(isPresented: $creating) { CreateOccasionView() }
             .sheet(isPresented: $joining) { JoinOccasionView() }
             .navigationDestination(item: $openEventId) { eventId in
                 EventContainerView(eventId: eventId)
+            }
+            // `task(id:)` rather than `onChange` because this view is often *new* when the
+            // request arrives: creating a first occasion swaps the root from
+            // `EmptyOccasionsView` to this one, and an `onChange` on a freshly-appeared view
+            // never sees the value that was set before it existed.
+            .task(id: session.pendingOpenEventId) {
+                guard let pending = session.pendingOpenEventId else { return }
+                openEventId = pending
+                session.pendingOpenEventId = nil
             }
         }
     }

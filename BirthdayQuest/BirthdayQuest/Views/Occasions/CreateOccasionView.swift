@@ -6,12 +6,6 @@ struct CreateOccasionView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
 
-    /// Called with the new event id once the occasion exists and the list has been
-    /// refreshed. The caller decides what to open: this sheet is presented from the
-    /// occasion list, outside any `EventSession`, so it cannot present in-occasion screens
-    /// itself. Sharing the invite link lives inside the occasion, one tap later.
-    var onCreated: ((String) -> Void)?
-
     var body: some View {
         NavigationStack {
             Form {
@@ -38,7 +32,19 @@ struct CreateOccasionView: View {
 
                 if let errorMessage = viewModel.errorMessage {
                     Section {
-                        Text(errorMessage).foregroundStyle(BQDesign.Colors.error)
+                        // Icon carries the severity in colour; the sentence stays at
+                        // `textPrimary`. `Colors.error` is 3.83:1 on white — under the
+                        // 4.5:1 floor for body text — and colour alone is not a signal.
+                        HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.sm) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(BQDesign.Colors.error)
+                                .accessibilityHidden(true)
+                            Text(errorMessage)
+                                .foregroundStyle(BQDesign.Colors.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Error: \(errorMessage)")
                     }
                 }
             }
@@ -51,9 +57,15 @@ struct CreateOccasionView: View {
                     Button("Create") {
                         Task {
                             guard let eventId = await viewModel.create() else { return }
+                            // Refresh, then dismiss, then ask for the open — in that order.
+                            // The refresh is what moves an empty account to the occasion list
+                            // root, and the request has to outlive that swap, so it is made
+                            // on the session rather than handed back through this sheet.
+                            // A new occasion is empty, so landing the host inside it is what
+                            // puts the invite link in front of them.
                             await session.refreshOccasions()
                             dismiss()
-                            onCreated?(eventId)
+                            session.pendingOpenEventId = eventId
                         }
                     }
                     .disabled(!viewModel.canSubmit)
