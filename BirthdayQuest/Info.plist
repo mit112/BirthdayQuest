@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Registers the birthdayquest:// scheme so a shared invite link opens the app.
+	     Occasion.contributorLink / .celebrantLink mint these URLs and
+	     ContentView's .onOpenURL consumes them; without this entry iOS routes
+	     the scheme nowhere and a tapped invite link does nothing.
+
+	     This file exists only for keys that cannot be expressed as an
+	     INFOPLIST_KEY_* build setting — CFBundleURLTypes is an array of
+	     dictionaries. GENERATE_INFOPLIST_FILE stays YES, so Xcode merges the
+	     generated keys on top of this base. It deliberately lives at
+	     SOURCE_ROOT rather than inside the folder-synced BirthdayQuest/ group,
+	     which would also add it to Copy Bundle Resources and fail the build. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.example.birthdayquest.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>birthdayquest</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
