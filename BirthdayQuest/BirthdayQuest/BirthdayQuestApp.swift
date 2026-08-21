@@ -31,6 +31,14 @@ struct BirthdayQuestApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(session)
+                // Every BQDesign colour is a fixed hex with no dark variant, and the tab bar
+                // above is pinned to a light `cardBackground`. Surfaces that lean on a
+                // system-adaptive background instead — the plain `List` in `OccasionListView`,
+                // for one — would put near-black `textPrimary` on dark grey in dark mode, which
+                // measures about 1.1:1. Pin the appearance the palette was actually designed for
+                // rather than shipping unreadable text; a real dark theme means dark variants for
+                // every token, which is its own piece of work.
+                .preferredColorScheme(.light)
         }
     }
 }
