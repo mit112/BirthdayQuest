@@ -1,15 +1,18 @@
 import SwiftUI
 
-/// Enhanced admin controls for the organizer.
-/// Access from Profile tab. Full game management for live birthday weekend.
+/// Host controls for one occasion.
+/// Access from the Profile tab. Full game management while the occasion is live.
 struct AdminControlsView: View {
-    
-    @EnvironmentObject private var session: SessionManager
-    @StateObject private var viewModel = AdminViewModel()
+
+    @EnvironmentObject private var event: EventSession
+    @StateObject private var viewModel: AdminViewModel
     @State private var pointsToAdd: String = ""
-    @State private var showResetConfirm = false
-    
-    private var gameState: GameState { session.gameState }
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: AdminViewModel(eventId: eventId))
+    }
+
+    private var gameState: GameState { event.gameState }
     
     var body: some View {
         NavigationStack {
@@ -28,18 +31,21 @@ struct AdminControlsView: View {
                     // 4. Force unlock rewards (NEW)
                     forceRewardsCard
                     
-                    // 5. Nuclear options: final badge + unclaim (NEW)
+                    // 5. Nuclear options: final badge
                     nuclearOptionsCard
+
+                    // 5b. Roster
+                    rosterCard
                     
-                    // 6. Day counter + reset (existing, reorganized)
-                    dayAndResetCard
+                    // 6. Day counter + join toggle
+                    dayAndJoinsCard
                     
                     Spacer().frame(height: BQDesign.Spacing.xxl)
                 }
                 .padding(BQDesign.Spacing.lg)
             }
             .background(BQDesign.Colors.background.ignoresSafeArea())
-            .navigationTitle("🔧 Admin")
+            .navigationTitle("🔧 Host")
             .navigationBarTitleDisplayMode(.inline)
             .overlay {
                 if viewModel.isPerformingAction {
@@ -116,33 +122,6 @@ struct AdminControlsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This is the big moment. The final badge celebration will trigger for everyone. Make sure you're ready.")
-            }
-            // Unclaim confirmation
-            .confirmationDialog(
-                "Unclaim Character?",
-                isPresented: Binding(
-                    get: { viewModel.userToUnclaim != nil },
-                    set: { if !$0 { viewModel.userToUnclaim = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let user = viewModel.userToUnclaim {
-                    Button("Unclaim \(user.name)", role: .destructive) {
-                        Task { await viewModel.unclaimCharacter(user) }
-                    }
-                    Button("Cancel", role: .cancel) { viewModel.userToUnclaim = nil }
-                }
-            } message: {
-                if let user = viewModel.userToUnclaim {
-                    Text("Remove \(user.name)'s character claim? They'll need to re-select on next app open.")
-                }
-            }
-            // Reset own character
-            .confirmationDialog("Reset Your Character?", isPresented: $showResetConfirm, titleVisibility: .visible) {
-                Button("Reset", role: .destructive) { session.clearSession() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This takes you back to character select.")
             }
         }
         .onAppear { viewModel.startListening() }
@@ -340,40 +319,31 @@ private extension AdminControlsView {
                 }
             }
             
-            // Unclaim Characters
-            if viewModel.claimedUsers.isEmpty {
-                HStack {
-                    Image(systemName: "person.crop.circle.badge.questionmark")
-                        .foregroundColor(BQDesign.Colors.textTertiary)
-                    Text("No other characters claimed")
-                        .font(BQDesign.Typography.caption)
-                        .foregroundColor(BQDesign.Colors.textSecondary)
-                }
+        }
+        .adminCard()
+    }
+
+    var rosterCard: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
+            adminSectionHeader("Who's Here", icon: "person.2.fill")
+
+            if viewModel.otherParticipants.isEmpty {
+                adminEmptyState("Nobody else has joined yet. Share your invite link.")
             } else {
                 VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
-                    Text("Unclaim Characters")
-                        .font(BQDesign.Typography.caption)
-                        .foregroundColor(BQDesign.Colors.textSecondary)
-                    
-                    ForEach(viewModel.claimedUsers) { user in
+                    ForEach(viewModel.otherParticipants) { participant in
                         HStack(spacing: BQDesign.Spacing.sm) {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(BQDesign.Colors.textSecondary)
-                            Text(user.name)
+                            AvatarView(avatarId: participant.avatarId, size: 28)
+                            Text(participant.name)
                                 .font(BQDesign.Typography.caption)
                                 .foregroundColor(BQDesign.Colors.textPrimary)
-                            
-                            if user.role == .birthdayBoy {
+
+                            if participant.isCelebrant {
                                 Text("👑")
                                     .font(.system(size: 10))
                             }
-                            
+
                             Spacer()
-                            
-                            adminActionButton("Unclaim", color: BQDesign.Colors.secretAccent) {
-                                viewModel.userToUnclaim = user
-                            }
                         }
                         .padding(BQDesign.Spacing.sm)
                         .background(
@@ -388,13 +358,15 @@ private extension AdminControlsView {
     }
 }
 
-// MARK: - Section 6: Day Counter + Reset
+// MARK: - Section 6: Day Counter + Joins
 
 private extension AdminControlsView {
-    
-    var dayAndResetCard: some View {
+
+    var isOpen: Bool { event.occasion?.isOpen ?? true }
+
+    var dayAndJoinsCard: some View {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
-            adminSectionHeader("Day & Session", icon: "calendar")
+            adminSectionHeader("Day & Joins", icon: "calendar")
             
             // Day counter
             HStack(spacing: BQDesign.Spacing.sm) {
@@ -412,18 +384,21 @@ private extension AdminControlsView {
             }
             
             Divider()
-            
-            // Reset own character
-            Button {
-                showResetConfirm = true
-            } label: {
-                HStack {
-                    Image(systemName: "arrow.uturn.backward")
-                    Text("Reset My Character")
-                        .font(BQDesign.Typography.body)
-                    Spacer()
+
+            // Open / close to new joins
+            HStack(spacing: BQDesign.Spacing.sm) {
+                Text(isOpen ? "Open to new joins" : "Closed to new joins")
+                    .font(BQDesign.Typography.body)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+
+                Spacer()
+
+                adminActionButton(
+                    isOpen ? "Close" : "Reopen",
+                    color: BQDesign.Colors.secretAccent
+                ) {
+                    Task { await viewModel.setOpen(!isOpen) }
                 }
-                .foregroundColor(BQDesign.Colors.secretAccent)
             }
         }
         .adminCard()

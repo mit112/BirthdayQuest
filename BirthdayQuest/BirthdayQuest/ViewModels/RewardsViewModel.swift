@@ -7,8 +7,10 @@ import OSLog
 final class RewardsViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let eventId: String
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
     }
     
@@ -29,13 +31,8 @@ final class RewardsViewModel: ObservableObject {
 
     // MARK: - Computed
     
-    // NOTE: Points are read from @EnvironmentObject session in views, NOT here.
-    // Using SessionManager.shared in computed properties is NOT observable by SwiftUI.
-    
-    // Use this ONLY for non-UI logic (e.g., one-time checks). Views must use session.currentPoints.
-    var currentPointsSnapshot: Int {
-        SessionManager.shared.gameState.currentPoints
-    }
+    // NOTE: Points are read from the EventSession @EnvironmentObject in views, NOT here.
+    // A view model reading a session's game state is not observable by SwiftUI.
     
     var unlockedCount: Int {
         rewards.filter(\.isUnlocked).count
@@ -45,14 +42,10 @@ final class RewardsViewModel: ObservableObject {
         rewards.count
     }
     
-    func isAffordable(_ reward: Reward) -> Bool {
-        !reward.isUnlocked && currentPointsSnapshot >= reward.pointCost
-    }
-    
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToRewards { [weak self] result in
+        service.listenToRewards(eventId: eventId) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.isLoading = false
@@ -68,7 +61,7 @@ final class RewardsViewModel: ObservableObject {
     }
     
     func stopListening() {
-        service.removeListener(forKey: "rewards")
+        service.removeListener(forKey: ListenerKey.rewards(eventId))
     }
     
     // MARK: - Unlock Flow
@@ -101,6 +94,7 @@ final class RewardsViewModel: ObservableObject {
             )
             
             try await service.unlockRewardAtomically(
+                eventId: eventId,
                 rewardId: rewardId,
                 pointCost: reward.pointCost,
                 timelineEvent: event

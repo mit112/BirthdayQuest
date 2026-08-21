@@ -3,8 +3,8 @@ import ConfettiSwiftUI
 
 struct TimelineView: View {
     
-    @EnvironmentObject private var session: SessionManager
-    @StateObject private var viewModel = TimelineViewModel()
+    @EnvironmentObject private var event: EventSession
+    @StateObject private var viewModel: TimelineViewModel
     @State private var confettiTrigger = 0
     @State private var scrollProxy: ScrollViewProxy?
     @State private var headerAppeared = false
@@ -15,6 +15,10 @@ struct TimelineView: View {
     @State private var selectedChallenge: Challenge?
     @State private var selectedReward: Reward?
     @State private var isLoadingDetail = false
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: TimelineViewModel(eventId: eventId))
+    }
     
     var body: some View {
         ZStack {
@@ -40,15 +44,15 @@ struct TimelineView: View {
         }
         .onAppear { viewModel.startListening() }
         .onDisappear { viewModel.stopListening() }
-        .onChange(of: session.gameState.finalBadgeUnlocked) { _, unlocked in
-            if unlocked { viewModel.updateFinalBadge(from: session.gameState) }
+        .onChange(of: event.gameState.finalBadgeUnlocked) { _, unlocked in
+            if unlocked { viewModel.updateFinalBadge(from: event.gameState) }
         }
         .onChange(of: viewModel.showFinalCelebration) { _, show in
             if show { confettiTrigger += 1; BQDesign.Haptics.success() }
         }
-        .onChange(of: session.scrollToLatestTimeline) { _, shouldScroll in
+        .onChange(of: event.scrollToLatestTimeline) { _, shouldScroll in
             if shouldScroll {
-                session.scrollToLatestTimeline = false
+                event.scrollToLatestTimeline = false
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(150))
                     if let lastId = viewModel.events.last?.id {
@@ -60,15 +64,19 @@ struct TimelineView: View {
             }
         }
         .sheet(item: $selectedChallenge) { challenge in
-            ChallengeDetailView(challenge: challenge, onDismiss: { selectedChallenge = nil })
-                .environmentObject(session)
+            ChallengeDetailView(
+                eventId: event.eventId,
+                challenge: challenge,
+                onDismiss: { selectedChallenge = nil }
+            )
+                .environmentObject(event)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
         }
         .sheet(item: $selectedReward) { reward in
             if reward.isUnlocked {
                 RewardContentSheet(reward: reward, onDismiss: { selectedReward = nil })
-                    .environmentObject(session)
+                    .environmentObject(event)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.hidden)
             }
@@ -77,14 +85,14 @@ struct TimelineView: View {
     
     // MARK: - Node Tap Handler
     
-    private func handleNodeTap(_ event: TimelineEvent) {
+    private func handleNodeTap(_ node: TimelineEvent) {
         guard !isLoadingDetail else { return }
         isLoadingDetail = true
         
         Task {
             defer { isLoadingDetail = false }
 
-            switch await viewModel.detail(for: event) {
+            switch await viewModel.detail(for: node) {
             case .challenge(let challenge):
                 selectedChallenge = challenge
             case .reward(let reward):
@@ -114,9 +122,9 @@ private extension TimelineView {
                     
                     FinalBadgeView(
                         isUnlocked: viewModel.finalBadgeUnlocked,
-                        progressText: "\(session.gameState.rewardsUnlocked)/\(session.gameState.totalRewards) gifts unlocked",
-                        progressFraction: session.gameState.totalRewards > 0
-                            ? Double(session.gameState.rewardsUnlocked) / Double(session.gameState.totalRewards)
+                        progressText: "\(event.gameState.rewardsUnlocked)/\(event.gameState.totalRewards) gifts unlocked",
+                        progressFraction: event.gameState.totalRewards > 0
+                            ? Double(event.gameState.rewardsUnlocked) / Double(event.gameState.totalRewards)
                             : 0
                     )
                     .id("finalBadge")
@@ -164,7 +172,7 @@ private extension TimelineView {
     
     var timelinePathContent: some View {
         VStack(spacing: 0) {
-            ForEach(Array(viewModel.events.enumerated()), id: \.element.id) { index, event in
+            ForEach(Array(viewModel.events.enumerated()), id: \.element.id) { index, node in
                 VStack(spacing: 0) {
                     // Bezier connector trail
                     if index > 0 {
@@ -180,13 +188,13 @@ private extension TimelineView {
                     let padding = nodePadding(for: index)
                     
                     TimelineNodeView(
-                        event: event,
-                        isNew: viewModel.isNewEvent(event),
+                        event: node,
+                        isNew: viewModel.isNewEvent(node),
                         index: index,
                         totalCount: viewModel.events.count,
-                        onTap: { handleNodeTap(event) }
+                        onTap: { handleNodeTap(node) }
                     )
-                    .id(event.id)
+                    .id(node.id)
                     .padding(.leading, padding.leading)
                     .padding(.trailing, padding.trailing)
                 }

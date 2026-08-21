@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseFirestore
+import Combine
 import OSLog
 
 @MainActor
@@ -148,16 +149,13 @@ final class JoinOccasionViewModel: ObservableObject {
             && error.code == FirestoreErrorCode.unavailable.rawValue
     }
 
-    /// Clears `celebrantCode` on the event document. Cannot share a batch with the
-    /// participant create above: the rule that permits this `get()`s the participant
-    /// document, and Firestore evaluates batched writes against committed state, so the
-    /// participant has to already exist. A failure here is not surfaced — the join itself
-    /// succeeded — only logged; it is idempotent, so the celebrant re-opening the app
-    /// re-attempts it.
+    /// Clears `celebrantCode` on the event document. A failure here is not surfaced — the
+    /// join itself succeeded — only logged. `EventSession.start()` retries it the next time
+    /// this celebrant opens the occasion, which is what keeps a dropped connection here from
+    /// leaving the celebrant link replayable forever.
     private func consumeCelebrantCode() async {
         do {
-            try await db.collection(Collections.events).document(eventId)
-                .updateData(["celebrantCode": ""])
+            try await service.consumeCelebrantCode(eventId: eventId)
         } catch {
             logger.error("Failed to consume celebrant code: \(error.localizedDescription)")
         }

@@ -64,6 +64,14 @@ protocol GameBackend: AnyObject {
     func fetchMyParticipant(eventId: String) async throws -> Participant?
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws
 
+    /// Blanks `celebrantCode` on the event document so the celebrant invite cannot be
+    /// replayed. Deliberately a standalone write, not part of the join batch: the rule that
+    /// permits it `get()`s the caller's participant document, and Firestore evaluates
+    /// batched writes against committed state, so the participant must already exist.
+    /// Idempotent — clearing an already-empty code is a no-op, which is what lets the
+    /// celebrant's next app open retry a first attempt that failed.
+    func consumeCelebrantCode(eventId: String) async throws
+
     // MARK: Rewards
 
     func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void)
@@ -150,7 +158,11 @@ extension GameBackend {
         eventId: String,
         completion: @escaping (Result<[Challenge], Error>) -> Void
     ) {
-        listenToChallenges(eventId: eventId, listenerKey: "challenges", completion: completion)
+        listenToChallenges(
+            eventId: eventId,
+            listenerKey: ListenerKey.challenges(eventId),
+            completion: completion
+        )
     }
 
     func createOccasion(

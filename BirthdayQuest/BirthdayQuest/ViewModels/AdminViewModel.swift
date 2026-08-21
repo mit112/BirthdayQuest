@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 import FirebaseFirestore
+import OSLog
 
 // MARK: - Action Result
 
@@ -20,7 +21,7 @@ final class AdminViewModel: ObservableObject {
     
     @Published var challenges: [Challenge] = []
     @Published var rewards: [Reward] = []
-    @Published var users: [BQUser] = []
+    @Published var participants: [Participant] = []
     @Published var actionResult: AdminActionResult?
     @Published var isPerformingAction = false
     
@@ -29,13 +30,17 @@ final class AdminViewModel: ObservableObject {
     @Published var challengeToComplete: Challenge?
     @Published var rewardToUnlock: Reward?
     @Published var rewardUnlockDeductsPoints = false
-    @Published var userToUnclaim: BQUser?
     @Published var showFinalBadgeConfirm = false
     
     private let service: GameBackend
+    private let eventId: String
+    private let challengesListenerKey: String
+    private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Admin")
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
+        self.challengesListenerKey = ListenerKey.scoped("admin_challenges", eventId: eventId)
     }
     
     // MARK: - Computed Filters
@@ -48,43 +53,49 @@ final class AdminViewModel: ObservableObject {
         rewards.filter { !$0.isUnlocked }.sorted { $0.sortOrder < $1.sortOrder }
     }
     
-    /// All claimed users except the organizer (you can't unclaim yourself from here — use "Reset My Character" instead)
-    var claimedUsers: [BQUser] {
-        users.filter { $0.claimed && $0.id != CharacterID.organizer }
+    /// Everyone in the occasion apart from the host looking at this screen.
+    var otherParticipants: [Participant] {
+        participants.filter { !$0.isHost }
     }
     
     // MARK: - Listener Lifecycle
     
     func startListening() {
-        service.listenToChallenges(listenerKey: "admin_challenges") { [weak self] challenges in
+        service.listenToChallenges(
+            eventId: eventId, listenerKey: challengesListenerKey
+        ) { [weak self] result in
+            guard case .success(let challenges) = result else { return }
             Task { @MainActor in
                 self?.challenges = challenges
             }
         }
-        
-        service.listenToRewards { [weak self] rewards in
-            // Note: listenToRewards uses the default "rewards" key.
-            // Admin opens from Profile which doesn't have its own reward listener,
-            // so no collision. But if this changes, add a keyed variant.
+
+        service.listenToRewards(eventId: eventId) { [weak self] result in
+            // Shares the occasion's rewards key with the celebrant's carousel. Admin is a
+            // push destination from Profile, which never shows that carousel, so the two
+            // cannot be on screen at once.
+            guard case .success(let rewards) = result else { return }
             Task { @MainActor in
                 self?.rewards = rewards
             }
         }
-        
-        service.listenToUsers { [weak self] users in
-            Task { @MainActor in
-                self?.users = users
-            }
-        }
+
+        Task { await loadParticipants() }
     }
     
     func stopListening() {
-        service.removeListener(forKey: "admin_challenges")
-        // rewards + users listeners are shared keys — only remove if we own them.
-        // Since admin is a push destination from Profile (which has no reward/user listeners),
-        // it's safe to remove here. But leave them if the architecture changes.
-        service.removeListener(forKey: "rewards")
-        service.removeListener(forKey: "users")
+        service.removeListener(forKey: challengesListenerKey)
+        service.removeListener(forKey: ListenerKey.rewards(eventId))
+    }
+
+    /// The roster is a one-shot read, not a listener: participants change when someone
+    /// joins, which is rare enough that a live subscription would cost more than it earns.
+    private func loadParticipants() async {
+        do {
+            participants = try await service.fetchParticipants(eventId: eventId)
+        } catch {
+            logger.error("Loading the roster failed: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Force Complete Challenge
@@ -107,6 +118,7 @@ final class AdminViewModel: ObservableObject {
         
         do {
             try await service.completeChallengeAtomically(
+                eventId: eventId,
                 challengeId: challengeId,
                 pointValue: challenge.pointValue,
                 isSecret: challenge.isSecret,
@@ -151,6 +163,7 @@ final class AdminViewModel: ObservableObject {
         
         do {
             try await service.adminForceUnlockReward(
+                eventId: eventId,
                 rewardId: rewardId,
                 pointCost: reward.pointCost,
                 deductPoints: deductPoints,
@@ -179,7 +192,7 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = true
         
         do {
-            try await service.updateGameState([
+            try await service.updateGameState(eventId: eventId, fields: [
                 "allRewardsUnlocked": true,
                 "finalBadgeUnlocked": true,
                 "finalBadgeUnlockedAt": Timestamp(date: Date())
@@ -207,7 +220,7 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = true
 
         do {
-            try await service.updateGameState([
+            try await service.updateGameState(eventId: eventId, fields: [
                 "currentPoints": FieldValue.increment(Int64(amount)),
                 "totalPointsEarned": FieldValue.increment(Int64(amount))
             ])
@@ -233,7 +246,7 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = true
 
         do {
-            try await service.updateGameState([
+            try await service.updateGameState(eventId: eventId, fields: [
                 "currentPoints": FieldValue.increment(Int64(-amount))
             ])
             actionResult = AdminActionResult(
@@ -258,7 +271,9 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = true
 
         do {
-            try await service.updateGameState(["currentDay": currentDay + 1])
+            try await service.updateGameState(
+                eventId: eventId, fields: ["currentDay": currentDay + 1]
+            )
             actionResult = AdminActionResult(
                 message: "📅 Now on day \(currentDay + 1).",
                 isError: false
@@ -275,16 +290,17 @@ final class AdminViewModel: ObservableObject {
         isPerformingAction = false
     }
 
-    // MARK: - Unclaim Character
-    
-    func unclaimCharacter(_ user: BQUser) async {
-        guard let userId = user.id else { return }
+    // MARK: - Open / Close the Occasion
+
+    /// Closing an occasion stops new joins. It is a plain host toggle, not a lifecycle
+    /// state: nothing else in the app reads it as a phase.
+    func setOpen(_ isOpen: Bool) async {
         isPerformingAction = true
-        
+
         do {
-            try await service.unclaimCharacter(characterId: userId)
+            try await service.setOccasionOpen(eventId: eventId, isOpen: isOpen)
             actionResult = AdminActionResult(
-                message: "✅ Unclaimed \(user.name). They'll re-select on next open.",
+                message: isOpen ? "🔓 Open to new joins." : "🔒 Closed to new joins.",
                 isError: false
             )
             BQDesign.Haptics.success()
@@ -295,7 +311,7 @@ final class AdminViewModel: ObservableObject {
             )
             BQDesign.Haptics.error()
         }
-        
+
         isPerformingAction = false
     }
 }

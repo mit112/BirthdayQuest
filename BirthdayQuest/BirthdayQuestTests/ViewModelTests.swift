@@ -17,7 +17,7 @@ struct RewardsViewModelTests {
     func failedUnlockSurfacesError() async {
         let mock = MockGameBackend()
         mock.errorToThrow = MockGameBackend.StubbedError()
-        let vm = RewardsViewModel(service: mock)
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.requestUnlock(.fixture(id: "r1", pointCost: 100))
         await vm.confirmUnlock()
@@ -32,7 +32,7 @@ struct RewardsViewModelTests {
     @Test("a successful unlock presents the reward and raises no error")
     func successfulUnlockPresentsReward() async {
         let mock = MockGameBackend()
-        let vm = RewardsViewModel(service: mock)
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.requestUnlock(.fixture(id: "r7", pointCost: 100))
         await vm.confirmUnlock()
@@ -47,7 +47,7 @@ struct RewardsViewModelTests {
     @Test("an already-unlocked reward cannot be re-purchased")
     func alreadyUnlockedIsIgnored() async {
         let mock = MockGameBackend()
-        let vm = RewardsViewModel(service: mock)
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.requestUnlock(.fixture(id: "r1", isUnlocked: true))
 
@@ -61,7 +61,7 @@ struct RewardsViewModelTests {
     @Test("the confirm dialog closes as soon as the unlock is underway")
     func confirmDialogDismisses() async {
         let mock = MockGameBackend()
-        let vm = RewardsViewModel(service: mock)
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.requestUnlock(.fixture())
         #expect(vm.showUnlockConfirm)
@@ -77,7 +77,7 @@ struct RewardsViewModelTests {
             domain: "FIRFirestoreErrorDomain", code: 7,
             userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
         )
-        let vm = RewardsViewModel(service: mock)
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
 
         vm.startListening()
         await Task.yield()
@@ -132,13 +132,16 @@ struct ProfileViewModelTests {
     func listenerWiring() {
         let mock = MockGameBackend()
         mock.challenges = [Challenge.fixture(isSecret: true, createdByUserId: "u1", isDelivered: true)]
-        let vm = ProfileViewModel(service: mock)
+        let vm = ProfileViewModel(eventId: "evt_1", service: mock)
 
         vm.startListening(userId: "u1")
         #expect(mock.called("listenToChallenges"))
 
         vm.stopListening()
-        #expect(mock.removedListenerKeys == ["profile_secret_status"])
+        #expect(
+            mock.removedListenerKeys == [ListenerKey.scoped("profile_secret_status", eventId: "evt_1")],
+            "listener keys carry the event id so one occasion cannot tear down another's"
+        )
     }
 }
 
@@ -150,7 +153,7 @@ struct TimelineViewModelTests {
     func resolvesChallenge() async {
         let mock = MockGameBackend()
         mock.stubbedChallenge = .fixture(id: "c9", title: "King's Address")
-        let vm = TimelineViewModel(service: mock)
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
 
         let detail = await vm.detail(for: .fixture(type: .challengeCompleted, referenceId: "c9"))
 
@@ -165,7 +168,7 @@ struct TimelineViewModelTests {
     func resolvesReward() async {
         let mock = MockGameBackend()
         mock.stubbedReward = .fixture(id: "r3", fromName: "Riley")
-        let vm = TimelineViewModel(service: mock)
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
 
         let detail = await vm.detail(for: .fixture(type: .rewardUnlocked, referenceId: "r3"))
 
@@ -180,7 +183,7 @@ struct TimelineViewModelTests {
     func missingDocumentIsNil() async {
         let mock = MockGameBackend()
         mock.stubbedChallenge = nil
-        let vm = TimelineViewModel(service: mock)
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
 
         let detail = await vm.detail(for: .fixture(type: .challengeCompleted))
         #expect(detail == nil)
@@ -190,18 +193,30 @@ struct TimelineViewModelTests {
     func fetchFailureIsNil() async {
         let mock = MockGameBackend()
         mock.errorToThrow = MockGameBackend.StubbedError()
-        let vm = TimelineViewModel(service: mock)
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
 
         let detail = await vm.detail(for: .fixture(type: .rewardUnlocked))
         #expect(detail == nil)
     }
 
-    @Test("only the timeline listener is torn down, not another screen's")
+    @Test("only this occasion's timeline listener is torn down, not another's")
     func stopListeningUsesOwnKey() {
         let mock = MockGameBackend()
-        let vm = TimelineViewModel(service: mock)
+        let vm = TimelineViewModel(eventId: "evt_1", service: mock)
         vm.stopListening()
-        #expect(mock.removedListenerKeys == ["timeline"])
+        #expect(mock.removedListenerKeys == [ListenerKey.timeline("evt_1")])
+        #expect(mock.called("removeAllListeners") == false, "a global teardown would kill a sibling occasion")
+    }
+
+    @Test("every backend call is scoped to the occasion the view model was handed")
+    func callsAreScopedToTheEvent() async {
+        let mock = MockGameBackend()
+        let vm = TimelineViewModel(eventId: "evt_9", service: mock)
+
+        vm.startListening()
+        _ = await vm.detail(for: .fixture(type: .challengeCompleted))
+
+        #expect(Set(mock.requestedEventIds) == ["evt_9"])
     }
 }
 
@@ -212,7 +227,7 @@ struct AdminViewModelTests {
     @Test("adding points credits both the balance and the earned total")
     func addPointsCreditsEarned() async {
         let mock = MockGameBackend()
-        let vm = AdminViewModel(service: mock)
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
 
         await vm.addPoints(50)
 
@@ -227,7 +242,7 @@ struct AdminViewModelTests {
     @Test("removing points leaves the earned total untouched so history stays accurate")
     func removePointsPreservesEarnedHistory() async {
         let mock = MockGameBackend()
-        let vm = AdminViewModel(service: mock)
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
 
         await vm.removePoints(50)
 
@@ -239,7 +254,7 @@ struct AdminViewModelTests {
     @Test("advancing the day moves to the next day number")
     func advanceDay() async {
         let mock = MockGameBackend()
-        let vm = AdminViewModel(service: mock)
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
 
         await vm.advanceDay(from: 2)
 
@@ -252,7 +267,7 @@ struct AdminViewModelTests {
     func failuresAreReported(variant: Int) async {
         let mock = MockGameBackend()
         mock.errorToThrow = MockGameBackend.StubbedError()
-        let vm = AdminViewModel(service: mock)
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
 
         switch variant {
         case 0: await vm.addPoints(10)

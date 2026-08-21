@@ -39,7 +39,7 @@ struct Reward: Identifiable, Codable {
     let createdAt: Date
     /// uids that have downloaded and locally persisted this reward's media. When every
     /// recipient appears here, the Storage object is deleted by the celebrant's device.
-    var fetchedBy: [String]? = nil
+    var fetchedBy: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id, fromUserId, fromName, title, teaser

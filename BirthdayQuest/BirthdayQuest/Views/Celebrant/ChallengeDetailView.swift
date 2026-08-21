@@ -7,15 +7,17 @@ struct ChallengeDetailView: View {
     let challenge: Challenge
     let onDismiss: () -> Void
     
-    @EnvironmentObject private var session: SessionManager
+    @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: ChallengeSubmissionViewModel
     @State private var confettiTrigger = 0
     @State private var selectedOption: Int = 0 // For 2-in-1: 0 = option A, 1 = option B
     
-    init(challenge: Challenge, onDismiss: @escaping () -> Void) {
+    init(eventId: String, challenge: Challenge, onDismiss: @escaping () -> Void) {
         self.challenge = challenge
         self.onDismiss = onDismiss
-        _viewModel = StateObject(wrappedValue: ChallengeSubmissionViewModel(challenge: challenge))
+        _viewModel = StateObject(
+            wrappedValue: ChallengeSubmissionViewModel(eventId: eventId, challenge: challenge)
+        )
     }
     
     var body: some View {
@@ -574,7 +576,7 @@ private extension ChallengeDetailView {
             onDismiss()
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(300))
-                session.navigateToTimeline()
+                event.navigateToTimeline()
             }
         } label: {
             HStack(spacing: BQDesign.Spacing.sm) {

@@ -2,9 +2,13 @@ import SwiftUI
 
 struct SecretChallengeHomeView: View {
     
-    @EnvironmentObject private var session: SessionManager
-    @StateObject private var viewModel = SecretChallengeViewModel()
+    @EnvironmentObject private var event: EventSession
+    @StateObject private var viewModel: SecretChallengeViewModel
     @State private var appeared = false
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: SecretChallengeViewModel(eventId: eventId))
+    }
     
     var body: some View {
         ZStack {
@@ -47,7 +51,7 @@ struct SecretChallengeHomeView: View {
             }
         }
         .onAppear {
-            viewModel.loadExisting()
+            viewModel.loadExisting(userId: event.participant?.id)
             withAnimation(BQDesign.Animation.smooth.delay(0.15)) {
                 appeared = true
             }
@@ -68,13 +72,13 @@ private extension SecretChallengeHomeView {
     // MARK: Header
     var headerSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
-            AvatarView(name: session.currentUser?.name ?? "Agent", size: 60)
+            AvatarView(avatarId: event.participant?.avatarId ?? AvatarCatalog.fallback, size: 60)
             
             Text("Your Secret Dare")
                 .font(BQDesign.Typography.heroTitle)
                 .foregroundColor(.white)
             
-            Text("for \(CharacterID.birthdayBoyName)")
+            Text("for \(event.celebrantName)")
                 .font(BQDesign.Typography.body)
                 .foregroundColor(.white.opacity(0.5))
         }
@@ -136,7 +140,7 @@ private extension SecretChallengeHomeView {
                     .foregroundColor(.white.opacity(0.4))
                 
                 TextField("", text: $viewModel.description, prompt:
-                    Text("Describe what he has to do...")
+                    Text("Describe what they have to do...")
                         .foregroundColor(.white.opacity(0.25)),
                     axis: .vertical
                 )
@@ -235,7 +239,7 @@ private extension SecretChallengeHomeView {
                     HStack(spacing: BQDesign.Spacing.sm) {
                         Image(systemName: "paperplane.fill")
                             .font(.system(size: 14))
-                        Text("Deliver to Birthday Boy")
+                        Text("Deliver to \(event.celebrantName)")
                             .font(BQDesign.Typography.bodyBold)
                     }
                     .foregroundColor(.white.opacity(0.7))

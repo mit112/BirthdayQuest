@@ -6,6 +6,12 @@ struct CreateOccasionView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
 
+    /// Called with the new event id once the occasion exists and the list has been
+    /// refreshed. The caller decides what to open: this sheet is presented from the
+    /// occasion list, outside any `EventSession`, so it cannot present in-occasion screens
+    /// itself. Sharing the invite link lives inside the occasion, one tap later.
+    var onCreated: ((String) -> Void)?
+
     var body: some View {
         NavigationStack {
             Form {
@@ -44,10 +50,10 @@ struct CreateOccasionView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
                         Task {
-                            if await viewModel.create() != nil {
-                                await session.refreshOccasions()
-                                dismiss()
-                            }
+                            guard let eventId = await viewModel.create() else { return }
+                            await session.refreshOccasions()
+                            dismiss()
+                            onCreated?(eventId)
                         }
                     }
                     .disabled(!viewModel.canSubmit)
@@ -74,13 +80,7 @@ struct AvatarPicker: View {
                         selection = id
                     } label: {
                         AvatarView(avatarId: id, size: 56)
-                            .overlay(
-                                Circle().strokeBorder(
-                                    selection == id
-                                        ? BQDesign.Colors.primaryPurple : .clear,
-                                    lineWidth: 3
-                                )
-                            )
+                            .overlay(selectionRing(isSelected: selection == id))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Avatar \(id)")
@@ -89,5 +89,12 @@ struct AvatarPicker: View {
             }
             .padding(.vertical, BQDesign.Spacing.xs)
         }
+    }
+
+    /// Extracted from the `AvatarView` overlay above: inlining a ternary inside
+    /// `strokeBorder` made SourceKit give up type-checking the whole expression.
+    private func selectionRing(isSelected: Bool) -> some View {
+        let color: Color = isSelected ? BQDesign.Colors.primaryPurple : .clear
+        return Circle().strokeBorder(color, lineWidth: 3)
     }
 }

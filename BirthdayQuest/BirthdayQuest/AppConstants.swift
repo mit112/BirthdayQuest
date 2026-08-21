@@ -31,6 +31,27 @@ enum InviteCode {
     }
 }
 
+// MARK: - Listener Keys
+
+/// Firestore listener registry keys, one namespace per event.
+///
+/// Registration and removal happen in different types — a view model starts a listener, its
+/// `stopListening()` (or `EventSession.stop()`) removes it — so the key has to be composed
+/// the same way in both places. Composing it here, rather than by repeating a string
+/// literal, is what makes `removeListener(forKey:)` provably tear down the listener that was
+/// registered and no other occasion's.
+enum ListenerKey {
+
+    static func scoped(_ name: String, eventId: String) -> String {
+        "\(name)@\(eventId)"
+    }
+
+    static func rewards(_ eventId: String) -> String { scoped("rewards", eventId: eventId) }
+    static func challenges(_ eventId: String) -> String { scoped("challenges", eventId: eventId) }
+    static func timeline(_ eventId: String) -> String { scoped("timeline", eventId: eventId) }
+    static func gameState(_ eventId: String) -> String { scoped("gameState", eventId: eventId) }
+}
+
 // MARK: - Storage Paths
 
 enum StoragePaths {

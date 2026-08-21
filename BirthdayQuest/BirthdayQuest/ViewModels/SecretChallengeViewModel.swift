@@ -7,10 +7,17 @@ import OSLog
 final class SecretChallengeViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let eventId: String
+    private let listenerKey: String
+    /// The author's participant id, handed in by the view from `EventSession`. Held so
+    /// `save()` can stamp authorship without reaching back into the session.
+    private var userId: String?
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "SecretChallenge")
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
+        self.listenerKey = ListenerKey.scoped("challenges_secret", eventId: eventId)
     }
     
     // MARK: - Published
@@ -37,7 +44,7 @@ final class SecretChallengeViewModel: ObservableObject {
     
     var statusText: String {
         if isCompleted { return "✅ Completed!" }
-        if existingChallenge?.isDelivered == true { return "📨 Delivered — waiting on him..." }
+        if existingChallenge?.isDelivered == true { return "📨 Delivered — waiting on them..." }
         if hasExisting { return "📝 Draft — edit anytime" }
         return "Create your secret dare"
     }
@@ -50,13 +57,14 @@ final class SecretChallengeViewModel: ObservableObject {
     
     // MARK: - Load
     
-    func loadExisting() {
-        guard let userId = SessionManager.shared.currentUser?.id else {
+    func loadExisting(userId: String?) {
+        self.userId = userId
+        guard let userId else {
             isLoading = false
             return
         }
         
-        service.listenToChallenges(listenerKey: "challenges_secret") { [weak self] result in
+        service.listenToChallenges(eventId: eventId, listenerKey: listenerKey) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.isLoading = false
@@ -82,14 +90,14 @@ final class SecretChallengeViewModel: ObservableObject {
     }
     
     func stopListening() {
-        service.removeListener(forKey: "challenges_secret")
+        service.removeListener(forKey: listenerKey)
     }
     
     // MARK: - Save / Create
     
     func save() async {
         guard canSave else { return }
-        guard let userId = SessionManager.shared.currentUser?.id else { return }
+        guard let userId else { return }
         
         isSaving = true
         
@@ -97,6 +105,7 @@ final class SecretChallengeViewModel: ObservableObject {
             if let existing = existingChallenge, let id = existing.id {
                 // Update existing
                 try await service.updateSecretChallenge(
+                    eventId: eventId,
                     challengeId: id,
                     data: [
                         "title": title.trimmingCharacters(in: .whitespaces),
@@ -123,7 +132,7 @@ final class SecretChallengeViewModel: ObservableObject {
                     proofText: nil,
                     createdAt: Date()
                 )
-                _ = try await service.createSecretChallenge(challenge)
+                _ = try await service.createSecretChallenge(eventId: eventId, challenge: challenge)
             }
             
             saveSuccess = true
@@ -134,6 +143,7 @@ final class SecretChallengeViewModel: ObservableObject {
             saveSuccess = false
             
         } catch {
+            logger.error("Saving the secret dare failed: \(error.localizedDescription)")
             errorMessage = "Couldn't save your dare. Try again!"
             showError = true
             BQDesign.Haptics.heavy()
@@ -149,11 +159,13 @@ final class SecretChallengeViewModel: ObservableObject {
         
         do {
             try await service.updateSecretChallenge(
+                eventId: eventId,
                 challengeId: id,
                 data: ["isDelivered": true]
             )
             BQDesign.Haptics.success()
         } catch {
+            logger.error("Delivering the secret dare failed: \(error.localizedDescription)")
             errorMessage = "Delivery failed. Try again!"
             showError = true
         }

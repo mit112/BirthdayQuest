@@ -13,9 +13,11 @@ enum TimelineNodeDetail {
 final class TimelineViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let eventId: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Timeline")
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
     }
     
@@ -36,7 +38,7 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToTimeline { [weak self] result in
+        service.listenToTimeline(eventId: eventId) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.isLoading = false
@@ -59,16 +61,16 @@ final class TimelineViewModel: ObservableObject {
                 }
             }
         }
-        // NOTE: Do NOT call listenToGameState here — it hijacks SessionManager's
-        // listener (same key "gameState") and breaks points updates everywhere.
+        // NOTE: Do NOT call listenToGameState here — EventSession owns that listener for
+        // this occasion, and a second registration under the same key would replace it.
         // Final badge is checked via updateFinalBadge(from:) called by the view.
     }
     
     func stopListening() {
-        service.removeListener(forKey: "timeline")
+        service.removeListener(forKey: ListenerKey.timeline(eventId))
     }
     
-    /// Called by the view when session.gameState changes (via @EnvironmentObject)
+    /// Called by the view when the EventSession's game state changes.
     func updateFinalBadge(from gameState: GameState) {
         if gameState.finalBadgeUnlocked && !finalBadgeUnlocked {
             finalBadgeUnlocked = true
@@ -87,11 +89,15 @@ final class TimelineViewModel: ObservableObject {
         do {
             switch event.type {
             case .challengeCompleted:
-                if let challenge = try await service.fetchChallenge(byId: event.referenceId) {
+                if let challenge = try await service.fetchChallenge(
+                    eventId: eventId, challengeId: event.referenceId
+                ) {
                     return .challenge(challenge)
                 }
             case .rewardUnlocked:
-                if let reward = try await service.fetchReward(byId: event.referenceId) {
+                if let reward = try await service.fetchReward(
+                    eventId: eventId, rewardId: event.referenceId
+                ) {
                     return .reward(reward)
                 }
             }

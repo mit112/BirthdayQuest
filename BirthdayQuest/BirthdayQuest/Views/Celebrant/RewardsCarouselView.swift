@@ -2,10 +2,14 @@ import SwiftUI
 
 struct RewardsCarouselView: View {
     
-    @EnvironmentObject private var session: SessionManager
-    @StateObject private var viewModel = RewardsViewModel()
+    @EnvironmentObject private var event: EventSession
+    @StateObject private var viewModel: RewardsViewModel
     @State private var scrolledID: Int?
     @State private var scrollViewWidth: CGFloat = 0
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: RewardsViewModel(eventId: eventId))
+    }
 
     private let loopMultiplier = 5
     private let cardWidth: CGFloat = 260
@@ -89,7 +93,7 @@ private extension RewardsCarouselView {
     var mainContent: some View {
         VStack(spacing: BQDesign.Spacing.lg) {
             // Header: Points
-            PointsDisplayView(points: session.currentPoints, style: .large)
+            PointsDisplayView(points: event.currentPoints, style: .large)
                 .padding(.top, BQDesign.Spacing.xl)
             
             Text("Your Gifts")
@@ -104,12 +108,12 @@ private extension RewardsCarouselView {
                     ForEach(Array(loopedRewards.enumerated()), id: \.offset) { index, reward in
                         RewardCardView(
                             reward: reward,
-                            isAffordable: !reward.isUnlocked && session.currentPoints >= reward.pointCost
+                            isAffordable: !reward.isUnlocked && event.currentPoints >= reward.pointCost
                         ) {
                             if reward.isUnlocked {
                                 viewModel.justUnlockedReward = reward
                                 viewModel.showUnlockedContent = true
-                            } else if session.currentPoints >= reward.pointCost {
+                            } else if event.currentPoints >= reward.pointCost {
                                 viewModel.requestUnlock(reward)
                             }
                         }
@@ -161,7 +165,7 @@ private extension RewardsCarouselView {
                     viewModel.showTimelinePrompt = false
                     Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(300))
-                        session.navigateToTimeline()
+                        event.navigateToTimeline()
                     }
                 } label: {
                     HStack(spacing: BQDesign.Spacing.sm) {

@@ -4,7 +4,7 @@ import Combine
 
 /// Owns the friend-facing "have I sent my secret dare yet?" status on the Profile tab.
 ///
-/// Small on purpose: the rest of Profile reads straight from `SessionManager`, so this only
+/// Small on purpose: the rest of Profile reads straight from `EventSession`, so this only
 /// exists to keep the Firestore listener out of the view body and make the status logic
 /// testable with a `MockGameBackend`.
 @MainActor
@@ -22,14 +22,18 @@ final class ProfileViewModel: ObservableObject {
     @Published var secretChallengeStatus: SecretChallengeStatus = .unknown
 
     private let service: GameBackend
-    private let listenerKey = "profile_secret_status"
+    private let eventId: String
+    private let listenerKey: String
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
+        self.listenerKey = ListenerKey.scoped("profile_secret_status", eventId: eventId)
     }
 
     func startListening(userId: String) {
-        service.listenToChallenges(listenerKey: listenerKey) { [weak self] challenges in
+        service.listenToChallenges(eventId: eventId, listenerKey: listenerKey) { [weak self] result in
+            guard case .success(let challenges) = result else { return }
             let status = Self.status(for: userId, in: challenges)
             Task { @MainActor in
                 self?.secretChallengeStatus = status

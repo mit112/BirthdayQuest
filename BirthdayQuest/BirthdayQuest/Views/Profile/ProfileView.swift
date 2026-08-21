@@ -1,48 +1,48 @@
 import SwiftUI
 
 struct ProfileView: View {
-    
-    @EnvironmentObject private var session: SessionManager
+
+    @EnvironmentObject private var event: EventSession
     @State private var appeared = false
     @State private var avatarGlow = false
-    @State private var crownBounce = false
-    @StateObject private var viewModel = ProfileViewModel()
-    
-    private var user: BQUser? { session.currentUser }
-    private var gameState: GameState { session.gameState }
-    private var isBirthdayBoy: Bool { session.isBirthdayBoy }
-    
+    @StateObject private var viewModel: ProfileViewModel
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: ProfileViewModel(eventId: eventId))
+    }
+
+    private var participant: Participant? { event.participant }
+    private var gameState: GameState { event.gameState }
+    private var isCelebrant: Bool { event.isCelebrant }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 // Living gradient background
-                ProfileBackgroundView(isBirthdayBoy: isBirthdayBoy)
-                
+                ProfileBackgroundView(isCelebrant: isCelebrant)
+
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: BQDesign.Spacing.lg) {
                         // Hero avatar area
                         avatarHero
                             .opacity(appeared ? 1 : 0)
                             .scaleEffect(appeared ? 1 : 0.9)
-                        
+
                         // Stats grid
                         statsSection
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 15)
-                        
-                        // Fun facts
-                        funFactsSection
+
+                        // Occasion details
+                        occasionSection
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 20)
-                        
-                        // Dev tools (organizer only)
-                        if session.isOrganizer {
+
+                        // Host tools
+                        if event.isHost {
                             adminSection
                         }
-                        
-                        // Switch character
-                        switchCharacterButton
-                        
+
                         Spacer().frame(height: 100)
                     }
                     .padding(.top, BQDesign.Spacing.lg)
@@ -57,15 +57,12 @@ struct ProfileView: View {
             withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(0.3)) {
                 avatarGlow = true
             }
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.5).delay(0.4)) {
-                crownBounce = true
-            }
-            if !isBirthdayBoy {
+            if !isCelebrant {
                 loadSecretChallengeStatus()
             }
         }
         .onDisappear {
-            if !isBirthdayBoy {
+            if !isCelebrant {
                 viewModel.stopListening()
             }
         }
@@ -75,21 +72,21 @@ struct ProfileView: View {
 // MARK: - Profile Background
 
 private struct ProfileBackgroundView: View {
-    let isBirthdayBoy: Bool
-    
+    let isCelebrant: Bool
+
     var body: some View {
         ZStack {
             LinearGradient(
                 stops: [
-                    .init(color: Color(hex: isBirthdayBoy ? "FFF8EE" : "F5F0FA"), location: 0.0),
+                    .init(color: Color(hex: isCelebrant ? "FFF8EE" : "F5F0FA"), location: 0.0),
                     .init(color: Color(hex: "FBF7F4"), location: 0.3),
                     .init(color: Color(hex: "FFF5EE"), location: 0.6),
-                    .init(color: Color(hex: isBirthdayBoy ? "FFF0E0" : "F0EAFA"), location: 1.0),
+                    .init(color: Color(hex: isCelebrant ? "FFF0E0" : "F0EAFA"), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            
+
             SparkleFieldView()
                 .opacity(0.3)
         }
@@ -100,7 +97,7 @@ private struct ProfileBackgroundView: View {
 // MARK: - Subviews
 
 private extension ProfileView {
-    
+
     // MARK: Avatar Hero
     var avatarHero: some View {
         VStack(spacing: BQDesign.Spacing.md) {
@@ -109,7 +106,7 @@ private extension ProfileView {
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: isBirthdayBoy
+                            colors: isCelebrant
                                 ? [BQDesign.Colors.gold.opacity(avatarGlow ? 0.25 : 0.08), Color.clear]
                                 : [BQDesign.Colors.primaryPurple.opacity(avatarGlow ? 0.2 : 0.06), Color.clear],
                             center: .center,
@@ -118,21 +115,21 @@ private extension ProfileView {
                         )
                     )
                     .frame(width: 180, height: 180)
-                
+
                 // Outer decorative ring
                 Circle()
                     .stroke(
-                        isBirthdayBoy
+                        isCelebrant
                             ? BQDesign.Colors.gold.opacity(0.2)
                             : BQDesign.Colors.primaryPurple.opacity(0.15),
                         lineWidth: 1.5
                     )
                     .frame(width: 140, height: 140)
-                
+
                 // Avatar background circle
                 Circle()
                     .fill(
-                        isBirthdayBoy
+                        isCelebrant
                         ? BQDesign.Colors.goldGradient
                         : BQDesign.Colors.primaryGradient
                     )
@@ -141,55 +138,46 @@ private extension ProfileView {
                         Circle().stroke(Color.white, lineWidth: 3)
                     )
                     .shadow(
-                        color: isBirthdayBoy
+                        color: isCelebrant
                             ? BQDesign.Colors.gold.opacity(0.3)
                             : BQDesign.Colors.primaryPurple.opacity(0.2),
                         radius: 12, y: 4
                     )
                     .shadow(
-                        color: isBirthdayBoy
+                        color: isCelebrant
                             ? BQDesign.Colors.gold.opacity(0.15)
                             : BQDesign.Colors.primaryPurple.opacity(0.1),
                         radius: 24, y: 8
                     )
-                
+
                 AvatarView(
-                    name: user?.name ?? "Agent",
+                    avatarId: participant?.avatarId ?? AvatarCatalog.fallback,
                     size: 118,
-                    isBirthdayBoy: isBirthdayBoy,
-                    showCrown: true
+                    showsCrown: isCelebrant
                 )
             }
-            
+
             // Name
-            Text(user?.name ?? "Agent")
+            Text(participant?.name ?? "Guest")
                 .font(BQDesign.Typography.heroTitle)
                 .foregroundColor(BQDesign.Colors.textPrimary)
-            
-            // Tagline
-            Text(user?.tagline ?? "")
-                .font(BQDesign.Typography.tagline)
-                .foregroundColor(BQDesign.Colors.textSecondary)
-                .italic()
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, BQDesign.Spacing.xl)
-            
+
             // Role badge
-            Text(user?.roleBadge ?? "")
+            Text(roleBadge)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundColor(isBirthdayBoy ? BQDesign.Colors.gold : BQDesign.Colors.primaryPurple)
+                .foregroundColor(isCelebrant ? BQDesign.Colors.gold : BQDesign.Colors.primaryPurple)
                 .padding(.horizontal, BQDesign.Spacing.md)
                 .padding(.vertical, 6)
                 .background(
                     Capsule().fill(
-                        isBirthdayBoy
+                        isCelebrant
                         ? BQDesign.Colors.gold.opacity(0.12)
                         : BQDesign.Colors.primaryPurple.opacity(0.1)
                     )
                 )
                 .overlay(
                     Capsule().stroke(
-                        isBirthdayBoy
+                        isCelebrant
                             ? BQDesign.Colors.gold.opacity(0.15)
                             : BQDesign.Colors.primaryPurple.opacity(0.1),
                         lineWidth: 1
@@ -197,7 +185,15 @@ private extension ProfileView {
                 )
         }
     }
-    
+
+    /// Role comes from the occasion, not from a hardcoded character sheet — a graduation's
+    /// guest of honour should not be labelled "Birthday Boy".
+    var roleBadge: String {
+        let celebrantLabel = event.occasion?.occasionType.celebrantLabel ?? "Guest of Honour"
+        if isCelebrant { return event.isHost ? "\(celebrantLabel) · Host" : celebrantLabel }
+        return event.isHost ? "Host" : "Friend"
+    }
+
     // MARK: Stats Section
     var statsSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
@@ -206,16 +202,16 @@ private extension ProfileView {
                 .foregroundColor(BQDesign.Colors.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, BQDesign.Spacing.lg)
-            
-            if isBirthdayBoy {
-                birthdayBoyStats
+
+            if isCelebrant {
+                celebrantStats
             } else {
-                friendStats
+                contributorStats
             }
         }
     }
-    
-    var birthdayBoyStats: some View {
+
+    var celebrantStats: some View {
         LazyVGrid(columns: [
             GridItem(.flexible(), spacing: 12),
             GridItem(.flexible(), spacing: 12)
@@ -227,8 +223,8 @@ private extension ProfileView {
         }
         .padding(.horizontal, BQDesign.Spacing.lg)
     }
-    
-    var friendStats: some View {
+
+    var contributorStats: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 StatCard(icon: "🕵️", value: viewModel.secretChallengeStatus.rawValue, label: "Secret Dare", color: BQDesign.Colors.secretAccent, index: 0)
@@ -237,95 +233,78 @@ private extension ProfileView {
         }
         .padding(.horizontal, BQDesign.Spacing.lg)
     }
-    
-    // MARK: Fun Facts
-    var funFactsSection: some View {
+
+    // MARK: Occasion
+    var occasionSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
-            Text("Character Intel")
+            Text("This Occasion")
                 .font(BQDesign.Typography.sectionTitle)
                 .foregroundColor(BQDesign.Colors.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, BQDesign.Spacing.lg)
-            
+
             VStack(spacing: 10) {
-                ForEach(Array((user?.funFacts ?? []).enumerated()), id: \.element) { index, fact in
-                    let characterEmojis: [String: [String]] = [
-                        "alex": ["📉", "🤖", "⚽"],
-                        "sam": ["🍥", "🤷", "☕"],
-                        "jordan": ["🏴‍☠️", "🛒", "⚽"],
-                        "riley": ["📱", "💃", "🎃"],
-                        "morgan": ["🥂", "🌧️", "👩‍🍳"]
-                    ]
-                    let fallback = ["💬", "🎯", "🦝"]
-                    let emojis = characterEmojis[user?.id ?? ""] ?? fallback
-                    
-                    HStack(spacing: 14) {
-                        // Emoji badge
-                        ZStack {
-                            Circle()
-                                .fill(factColor(for: index).opacity(0.1))
-                                .frame(width: 38, height: 38)
-                            
-                            Text(emojis[index % emojis.count])
-                                .font(.system(size: 18))
-                        }
-                        
-                        Text(fact)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundColor(BQDesign.Colors.textPrimary)
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.white)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(factColor(for: index).opacity(0.08), lineWidth: 1)
-                            )
-                    )
-                    .shadow(color: factColor(for: index).opacity(0.06), radius: 8, y: 3)
-                }
+                occasionRow("🎊", event.occasion?.name ?? "—")
+                occasionRow("🗓", event.occasion.map { $0.occasionDate.formatted(date: .abbreviated, time: .omitted) } ?? "—")
+                occasionRow("👑", event.celebrantName)
             }
             .padding(.horizontal, BQDesign.Spacing.lg)
         }
     }
-    
-    private func factColor(for index: Int) -> Color {
-        let colors: [Color] = [
-            BQDesign.Colors.primaryPurple,
-            BQDesign.Colors.primaryOrange,
-            BQDesign.Colors.primaryPink,
-            BQDesign.Colors.challengeBlue,
-            BQDesign.Colors.gold,
-        ]
-        return colors[index % colors.count]
+
+    func occasionRow(_ emoji: String, _ text: String) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(BQDesign.Colors.primaryPurple.opacity(0.1))
+                    .frame(width: 38, height: 38)
+
+                Text(emoji)
+                    .font(.system(size: 18))
+            }
+
+            Text(text)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundColor(BQDesign.Colors.textPrimary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(BQDesign.Colors.cardBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(BQDesign.Colors.primaryPurple.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .bqShadow(BQDesign.Shadows.card)
     }
-    
-    // MARK: - Secret Challenge Status (Friends)
-    
-    private func loadSecretChallengeStatus() {
-        guard let userId = session.currentUser?.id else { return }
+
+    // MARK: - Secret Challenge Status (Contributors)
+
+    func loadSecretChallengeStatus() {
+        guard let userId = participant?.id else { return }
         viewModel.startListening(userId: userId)
     }
-    
-    // MARK: Admin Section (Organizer Only)
+
+    // MARK: Host Tools
     var adminSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
-            Text("🔧 Organizer Tools")
+            Text("🔧 Host Tools")
                 .font(BQDesign.Typography.sectionTitle)
                 .foregroundColor(BQDesign.Colors.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, BQDesign.Spacing.lg)
-            
+
             NavigationLink {
-                AdminControlsView()
+                AdminControlsView(eventId: event.eventId)
+                    .environmentObject(event)
             } label: {
                 HStack {
                     Image(systemName: "slider.horizontal.3")
-                    Text("Open Admin Panel")
+                    Text("Open Host Panel")
                         .font(BQDesign.Typography.body)
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -340,28 +319,5 @@ private extension ProfileView {
             }
             .padding(.horizontal, BQDesign.Spacing.lg)
         }
-    }
-    
-    // MARK: Switch Character (Organizer Only)
-    var switchCharacterButton: some View {
-        Button {
-            session.clearSession()
-        } label: {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                Text("Switch Character")
-                    .font(BQDesign.Typography.body)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundColor(.red.opacity(0.7))
-            .padding(BQDesign.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
-                    .fill(Color.red.opacity(0.06))
-            )
-        }
-        .padding(.horizontal, BQDesign.Spacing.lg)
     }
 }

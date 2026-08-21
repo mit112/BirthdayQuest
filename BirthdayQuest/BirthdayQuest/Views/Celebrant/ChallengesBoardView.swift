@@ -2,9 +2,13 @@ import SwiftUI
 
 struct ChallengesBoardView: View {
     
-    @EnvironmentObject private var session: SessionManager
-    @StateObject private var viewModel = ChallengesViewModel()
+    @EnvironmentObject private var event: EventSession
+    @StateObject private var viewModel: ChallengesViewModel
     @State private var headerAppeared = false
+
+    init(eventId: String) {
+        _viewModel = StateObject(wrappedValue: ChallengesViewModel(eventId: eventId))
+    }
     
     var body: some View {
         ZStack {
@@ -23,7 +27,7 @@ struct ChallengesBoardView: View {
         .onDisappear { viewModel.stopListening() }
         .sheet(isPresented: $viewModel.showDetail) {
             if let challenge = viewModel.selectedChallenge {
-                ChallengeDetailView(challenge: challenge) {
+                ChallengeDetailView(eventId: event.eventId, challenge: challenge) {
                     viewModel.showDetail = false
                 }
             }
@@ -96,7 +100,7 @@ private extension ChallengesBoardView {
     
     var headerSection: some View {
         VStack(spacing: BQDesign.Spacing.sm) {
-            PointsDisplayView(points: session.currentPoints, style: .large)
+            PointsDisplayView(points: event.currentPoints, style: .large)
             
             Text("Challenges")
                 .font(BQDesign.Typography.heroTitle)

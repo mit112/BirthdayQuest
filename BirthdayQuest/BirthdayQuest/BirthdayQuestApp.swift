@@ -6,7 +6,7 @@ import AVFoundation
 @main
 struct BirthdayQuestApp: App {
     
-    @StateObject private var session = SessionManager.shared
+    @StateObject private var session = AppSession()
     
     init() {
         FirebaseApp.configure()

@@ -150,6 +150,16 @@ final class MockGameBackend: GameBackend {
         openStateChanges.append((eventId, isOpen))
     }
 
+    func consumeCelebrantCode(eventId: String) async throws {
+        record("consumeCelebrantCode", eventId: eventId)
+        try throwIfNeeded()
+        consumedCelebrantCodes.append(eventId)
+    }
+
+    /// Recorded so a test can prove the celebrant invite is retired exactly when it should
+    /// be — once on join, and again on reopen only if the first attempt failed.
+    private(set) var consumedCelebrantCodes: [String] = []
+
     // MARK: - GameBackend: Rewards
 
     func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void) {

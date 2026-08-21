@@ -7,9 +7,11 @@ import OSLog
 final class ChallengesViewModel: ObservableObject {
 
     private let service: GameBackend
+    private let eventId: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Challenges")
 
-    init(service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+        self.eventId = eventId
         self.service = service
     }
 
@@ -27,7 +29,7 @@ final class ChallengesViewModel: ObservableObject {
     // MARK: - Computed
     
     // NOTE: Points are read from @EnvironmentObject session in views, NOT here.
-    // Using SessionManager.shared in computed properties is NOT observable by SwiftUI.
+    // A view model reading a session's game state is not observable by SwiftUI.
     
     var regularChallenges: [Challenge] {
         challenges.filter { !$0.isSecret }
@@ -52,7 +54,7 @@ final class ChallengesViewModel: ObservableObject {
     // MARK: - Listeners
     
     func startListening() {
-        service.listenToChallenges { [weak self] result in
+        service.listenToChallenges(eventId: eventId) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.isLoading = false
@@ -69,7 +71,7 @@ final class ChallengesViewModel: ObservableObject {
     }
     
     func stopListening() {
-        service.removeListener(forKey: "challenges")
+        service.removeListener(forKey: ListenerKey.challenges(eventId))
     }
     
     // MARK: - Actions
@@ -88,9 +90,10 @@ final class ChallengesViewModel: ObservableObject {
 
         // Update game state — absolute set from current listener snapshot
         Task {
-            try? await service.updateGameState([
-                "secretChallengesFound": deliveredSecrets.count
-            ])
+            try? await service.updateGameState(
+                eventId: eventId,
+                fields: ["secretChallengesFound": deliveredSecrets.count]
+            )
         }
     }
 }

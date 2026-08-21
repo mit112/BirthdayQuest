@@ -51,3 +51,11 @@ extension View {
         )
     }
 }
+
+// MARK: - URL Identity
+
+/// `.sheet(item:)` needs an `Identifiable` payload, and an incoming join link is the most
+/// natural thing to key that sheet on. A URL's absolute string is already its identity.
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
+}

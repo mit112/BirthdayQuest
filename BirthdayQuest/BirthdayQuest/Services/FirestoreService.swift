@@ -259,10 +259,14 @@ final class FirestoreService: GameBackend {
         try await eventRef(eventId).updateData(["isOpen": isOpen])
     }
 
+    func consumeCelebrantCode(eventId: String) async throws {
+        try await eventRef(eventId).updateData(["celebrantCode": ""])
+    }
+
     // MARK: - Rewards
 
     func listenToRewards(eventId: String, completion: @escaping (Result<[Reward], Error>) -> Void) {
-        let key = "rewards"
+        let key = ListenerKey.rewards(eventId)
         removeListener(forKey: key)
 
         listeners[key] = rewardsRef(eventId)
@@ -365,7 +369,7 @@ final class FirestoreService: GameBackend {
     /// - Parameter listenerKey: Unique key for this listener (default: "challenges")
     func listenToChallenges(
         eventId: String,
-        listenerKey: String = "challenges",
+        listenerKey: String,
         completion: @escaping (Result<[Challenge], Error>) -> Void
     ) {
         let key = listenerKey
@@ -476,7 +480,7 @@ final class FirestoreService: GameBackend {
         eventId: String,
         completion: @escaping (Result<[TimelineEvent], Error>) -> Void
     ) {
-        let key = "timeline"
+        let key = ListenerKey.timeline(eventId)
         removeListener(forKey: key)
 
         listeners[key] = timelineRef(eventId)
@@ -506,7 +510,7 @@ final class FirestoreService: GameBackend {
         eventId: String,
         completion: @escaping (Result<GameState, Error>) -> Void
     ) {
-        let key = "gameState"
+        let key = ListenerKey.gameState(eventId)
         removeListener(forKey: key)
 
         listeners[key] = stateRef(eventId).addSnapshotListener { snapshot, error in
