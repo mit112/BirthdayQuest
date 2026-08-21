@@ -48,7 +48,13 @@ anywhere else — inject the protocol instead, so tests can pass `MockGameBacken
 
 ### Key Firestore Patterns
 - **Timestamps:** Always use `Timestamp(date: Date())`, never `FieldValue.serverTimestamp()` (breaks Codable)
-- **GameState parsing:** Manual dictionary parsing with `NSNumber?.intValue`, NOT Codable (Int64/NSNumber mismatch)
+- **GameState parsing:** Manual dictionary parsing with `NSNumber?.intValue`, NOT Codable
+  (Int64/NSNumber mismatch). It lives in `GameState.init(wire:)` behind a `WireKey` namespace, not
+  in `FirestoreService` — that put the field-name literals inside the one type every Swift test
+  mocks out. `GameState` deliberately has **no `Codable` conformance**: it was unused and it
+  invited `data(as:)`, which is the exact trap the manual parse exists to avoid. Note a boolean
+  may arrive as `NSNumber`, and `as? Bool` correctly accepts it — a stricter cast would read
+  `finalBadgeUnlocked` as `false` forever and the final celebration would never fire.
 - **Listener keys are event-scoped:** `ListenerKey.scoped(_:eventId:)`. Two view models sharing one
   key silently kill each other's listener — `AdminViewModel` uses `admin_rewards@<eventId>` for
   exactly this reason. Never call a global `removeAllListeners()` from a per-event object.
@@ -160,8 +166,11 @@ Two tiers, and both must stay green:
   regression — but it is now a stranger-facing assumption rather than a family one.
 - Near-zero accessibility: a few `accessibilityLabel`s were added on the new occasion surfaces, but
   there is no Dynamic Type or reduce-motion handling against ~10 `repeatForever` animations.
-- `fetchMyOccasions` fans out **serially** — N sequential round trips on the occasion-list cold
-  path. A `withThrowingTaskGroup` would fix it.
+- `fetchMyOccasions` fans out **concurrently** (`withTaskGroup`, `@MainActor` children so nothing
+  crosses an isolation boundary). Its **skip-on-failure is load-bearing and has no test**: each
+  child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
+  rather than failing the whole list. No test is possible while every Swift test substitutes
+  `MockGameBackend` for `FirestoreService`, so do not "tidy" that optional into a `throws`.
 - The 3 `BirthdayQuestUITests` were written against the deleted character-select flow. They compile
   but are not run and will need rewriting.
 - **A new occasion is empty.** `createOccasion` writes `totalChallenges: 0, totalRewards: 0` and
@@ -170,12 +179,12 @@ Two tiers, and both must stay green:
   pts, 8 rewards cost 750" figures described the deleted seeder and are not a live invariant. The
   *design* intent stands: balance a set so challenges cannot quite cover the rewards, and let the
   secret challenges close the gap.
-- **The `GameState` wire parser is untested.** `FirestoreService`'s manual
-  `(data[...] as? NSNumber)?.intValue` parse covers 11 field-name string literals and is reachable
-  only through `FirestoreService`, which every Swift test replaces with `MockGameBackend`. A typo in
-  one literal silently yields `0` for that counter forever, with no compile error and no test
-  failure. `GameState` also still carries a dead `birthdayBoyId` (always `""` since R24 stopped
-  writing it) and a now-unused `Codable` conformance.
+- ~~The `GameState` wire parser is untested.~~ **Closed.** Extracted to `GameState.init(wire:)`
+  and covered by `GameStateWireTests`; `birthdayBoyId` and the unused `Codable` conformance are
+  gone. Each key is asserted twice — that it reaches its own field, *and* that removing it changes
+  the parse. Keep the second assertion in any new key: a test reading a fully-populated document
+  passes just as happily against a parser that never mentions the key, since the expected value and
+  the fallback coincide. That is why the original bug was invisible.
 - **`JoinOccasionViewModel` reaches for `FirestoreErrorDomain` directly.** It is the one deliberate
   exception to the `GameBackend` seam: offline classification stays Firestore-specific. Testability
   is unaffected — all its tests drive it through `MockGameBackend`.
@@ -184,7 +193,10 @@ Two tiers, and both must stay green:
   `.system(size:)` call sites outside `DesignSystem.swift`, so the token indirection does *not* give
   a single-point fix. Zero `accessibilityReduceMotion` handling against **17** `repeatForever`
   animations across 11 files. Two palette tokens fail WCAG AA for body text on white:
-  `Colors.error` at 3.83:1 and `textSecondary` at 3.34:1. Dark mode is pinned off
+  `Colors.error` at 3.83:1 and `textSecondary` at 3.34:1 — the *tokens* are unchanged, but the
+  error rows on the occasion list, create, join and host-panel surfaces now put the colour on an
+  icon and leave the sentence at `textPrimary`. Copy that split rather than tinting body text.
+  Dark mode is pinned off
   (`.preferredColorScheme(.light)`) because every colour is a fixed hex with no dark variant — a
   real dark theme means dark variants for every token.
 - **Reward and proof media are reachable by anyone holding the URL.** The Storage rules gate the
@@ -229,10 +241,19 @@ the final whole-branch review and its remediation — and merged into `main`** (
 history stays linear and every commit survives). **`main` is not pushed**; `origin/main` is well
 behind, and the three manual steps below are why publishing was left as a deliberate decision
 rather than a formality.
-Build green, **142 Swift test cases + 113 emulator rules tests** passing, SwiftLint clean across 58
-files. (Both counts were verified on the merged `main`. Note `xcodebuild`'s "passed on" line count
-runs higher than the number of distinct tests, because parameterized cases report once per
-argument — count unique test names if you need to compare.)
+Build green, **166 Swift test cases + 113 emulator rules tests** passing, SwiftLint clean across 58
+files. (Note `xcodebuild`'s "passed on" line count runs higher than the number of distinct tests —
+182 here — because parameterized cases report once per argument; count unique test names if you
+need to compare.)
+
+**Follow-up work sits on `fix/risk-1-cluster-and-followups`, branched from `main` at `b05a22b` and
+not merged.** Seven commits closing the host-panel risk-#1 cluster and ranked follow-ups 2–6 and 8
+from `progress.md`. Both tiers and SwiftLint were verified green on the branch tip. Two corrections
+to the earlier handoff, both confirmed against the tree rather than assumed: the celebrant
+`ShareLink` was **already** fixed by `debeaa7` (`celebrantLink` is nil for a consumed code), and
+`main` at `b05a22b` had **1** SwiftLint violation, not 0 — `orphaned_doc_comment` in
+`RewardContentSheet.swift`, now fixed. Still open and untouched: accessibility (needs a named
+owner) and the CI caching items.
 
 - Design: `docs/superpowers/specs/2026-08-20-multi-tenant-occasions-design.md`
 - Plan: `docs/superpowers/plans/2026-08-20-event-scoping-and-identity.md`
