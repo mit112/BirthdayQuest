@@ -1,12 +1,21 @@
 import SwiftUI
+// For `UIPasteboard`. SwiftUI re-exports UIKit on iOS, but the dependency is real, so it is
+// named rather than inherited.
+import UIKit
 
 /// Host controls for one occasion.
 /// Access from the Profile tab. Full game management while the occasion is live.
 struct AdminControlsView: View {
 
     @EnvironmentObject private var event: EventSession
+    /// Needed because closing the occasion changes which section of `OccasionListView` it
+    /// belongs to. `EventSession` holds this occasion; `AppSession` holds the list.
+    @EnvironmentObject private var session: AppSession
     @StateObject private var viewModel: AdminViewModel
     @State private var pointsToAdd: String = ""
+    /// Which code the host most recently copied, so its button can confirm it. Held here
+    /// rather than per-row because only one confirmation should ever be showing.
+    @State private var copiedCode: String?
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: AdminViewModel(eventId: eventId))
@@ -150,42 +159,136 @@ private extension AdminControlsView {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
             adminSectionHeader("Invite", icon: "square.and.arrow.up")
 
-            if let codes = viewModel.inviteCodes {
-                if let link = codes.contributorLink {
-                    VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
-                        ShareLink(item: link) {
-                            adminLinkRow("Share the friend link", icon: "person.2.fill")
-                        }
-                        Text(codes.contributorCode)
-                            .font(BQDesign.Typography.captionSmall.monospaced())
-                            .foregroundColor(BQDesign.Colors.textSecondary)
-                    }
-                }
-
-                Divider()
-
-                // A consumed celebrant code is blank, so there is no link left to build. Say
-                // that, rather than silently rendering nothing: the code is single-use by
-                // design and "the row vanished" is not an explanation.
-                if let link = codes.celebrantLink {
-                    ShareLink(item: link) {
-                        adminLinkRow("Share the \(celebrantLabel) link", icon: "gift.fill")
-                    }
-                } else {
-                    Text("The \(celebrantLabel) link has already been used — it only works once.")
-                        .font(BQDesign.Typography.caption)
-                        .foregroundColor(BQDesign.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
+            switch viewModel.codesState {
+            case .loading:
                 Text("Loading your invite links…")
                     .font(BQDesign.Typography.caption)
                     .foregroundColor(BQDesign.Colors.textSecondary)
+
+            case .failed(let message):
+                adminInlineFailure(message) {
+                    Task { await viewModel.loadInviteCodes() }
+                }
+
+            // A host's codes document always exists, so there is no legitimate empty state —
+            // `loadInviteCodes()` reports a missing document as a failure. Handled rather than
+            // defaulted so adding a case to `ContentState` cannot silently render nothing.
+            case .empty, .ready:
+                if let codes = viewModel.inviteCodes {
+                    inviteRows(codes)
+                }
             }
 
             celebrantStatusBanner
         }
         .adminCard()
+    }
+
+    @ViewBuilder
+    func inviteRows(_ codes: InviteCodes) -> some View {
+        // The friend code has no consumed state — it is reusable for the life of the
+        // occasion — so a missing link here means the stored code is unusable rather than
+        // spent. Still says so: rendering nothing is what this whole card is being fixed for.
+        inviteBlock(
+            title: "Friends",
+            icon: "person.2.fill",
+            shareLabel: "Share the friend link",
+            code: codes.contributorCode,
+            link: codes.contributorLink,
+            missingNote: "The friend link isn't usable. Ask for help before sharing this occasion."
+        )
+
+        Divider()
+
+        // A consumed celebrant code is blank, so there is no link and no code left to show.
+        // Say that, rather than silently rendering nothing: the code is single-use by design
+        // and "the row vanished" is not an explanation.
+        inviteBlock(
+            title: celebrantLabel,
+            icon: "gift.fill",
+            shareLabel: "Share the \(celebrantLabel) link",
+            code: codes.celebrantCode,
+            link: codes.celebrantLink,
+            missingNote: "The \(celebrantLabel) link has already been used — it only works once."
+        )
+    }
+
+    /// One invitation: the share sheet, and the code underneath it as a copyable fallback.
+    ///
+    /// The code is not a debug detail. `birthdayquest://` is a custom scheme, and Messages,
+    /// WhatsApp and Mail all render an unknown scheme as inert plain text — so for most of
+    /// the ways a host actually shares this, the tappable link the `ShareLink` produces
+    /// arrives as something the recipient has to retype. The code *is* the delivery mechanism
+    /// in that case, which is why it gets a real copy affordance rather than selectable text.
+    /// `missingNote` is not optional. It was, and the friend row passed `nil` — so a code that
+    /// failed to form a link rendered as nothing at all, in the same card being fixed for
+    /// exactly that. Every branch here says something.
+    @ViewBuilder
+    func inviteBlock(
+        title: String,
+        icon: String,
+        shareLabel: String,
+        code: String,
+        link: URL?,
+        missingNote: String
+    ) -> some View {
+        if let link {
+            VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
+                ShareLink(item: link) {
+                    adminLinkRow(shareLabel, icon: icon)
+                }
+                codeRow(title: title, code: code)
+            }
+        } else {
+            Text(missingNote)
+                .font(BQDesign.Typography.caption)
+                .foregroundColor(BQDesign.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// `Copied` replaces the button's own label rather than appearing as a toast: the
+    /// confirmation belongs where the tap happened, and a pasteboard write is instant, so
+    /// there is nothing to wait for.
+    func codeRow(title: String, code: String) -> some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Text(code)
+                .font(BQDesign.Typography.body.monospaced())
+                .foregroundColor(BQDesign.Colors.textPrimary)
+                // Read out one character at a time. A code exists to be dictated or typed,
+                // and VoiceOver pronounces "ABCD2345" as a mangled word by default.
+                .accessibilityLabel("\(title) code, \(code.map(String.init).joined(separator: " "))")
+
+            Spacer()
+
+            Button {
+                UIPasteboard.general.string = code
+                BQDesign.Haptics.light()
+                copiedCode = code
+            } label: {
+                // Both states carry a word, not just a tick: colour and glyph alone would
+                // leave "did that work?" to be inferred.
+                Label(
+                    copiedCode == code ? "Copied" : "Copy",
+                    systemImage: copiedCode == code ? "checkmark" : "doc.on.doc"
+                )
+                .font(BQDesign.Typography.captionSmall)
+                .fontWeight(.semibold)
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+                // 44pt is the HIG minimum; the label alone is about half that.
+                .frame(minWidth: 88, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(copiedCode == code ? "Copied the \(title) code" : "Copy the \(title) code")
+        }
+        // Re-arms if the host copies the other code, and after the confirmation has been
+        // read. Tied to the value rather than a timer started at tap, so copying the same
+        // code twice still re-shows it.
+        .task(id: copiedCode) {
+            guard copiedCode == code else { return }
+            try? await Task.sleep(for: .seconds(3))
+            if copiedCode == code { copiedCode = nil }
+        }
     }
 
     func adminLinkRow(_ title: String, icon: String) -> some View {
@@ -200,30 +303,96 @@ private extension AdminControlsView {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(BQDesign.Colors.textTertiary)
         }
+        .frame(minHeight: 44)
     }
 
     /// The spec's #1 named risk: there is deliberately no handover mode, so a celebrant who
     /// never installs the app cannot be rescued on the day. Surfacing this unmissably, right
     /// where the invite links live, is the mitigation.
+    ///
+    /// Three branches, not two. The `unknown` case exists because a failed roster read used
+    /// to render as a confident "they haven't joined yet" — a claim about data the app never
+    /// received, on the one banner the host is meant to act on.
+    @ViewBuilder
     var celebrantStatusBanner: some View {
-        Group {
-            if viewModel.celebrantHasJoined {
-                Label(
-                    "\(event.occasion?.celebrantName ?? "They") have joined.",
-                    systemImage: "checkmark.circle.fill"
+        switch viewModel.celebrantPresence {
+        case .joined:
+            // `Colors.success` is used on the icon only; the sentence stays at
+            // `textPrimary`, which clears 4.5:1. Same split as `OccasionListView.errorRow`.
+            celebrantBanner(
+                "\(celebrantDisplayName) has joined.",
+                icon: "checkmark.circle.fill",
+                tint: BQDesign.Colors.success
+            )
+
+        case .notJoined:
+            celebrantBanner(
+                "\(celebrantDisplayName) hasn't joined yet. Share the link above — they need "
+                    + "the app installed to open their gifts.",
+                icon: "exclamationmark.triangle.fill",
+                tint: BQDesign.Colors.error
+            )
+
+        case .unknown:
+            VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+                celebrantBanner(
+                    "Couldn't check whether \(celebrantDisplayName) has joined.",
+                    icon: "questionmark.circle.fill",
+                    tint: BQDesign.Colors.textSecondary
                 )
-                .foregroundColor(BQDesign.Colors.success)
-            } else {
-                Label(
-                    "\(event.occasion?.celebrantName ?? "They") haven't joined yet. "
-                        + "Share the link above — they need the app installed to open their gifts.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .foregroundColor(BQDesign.Colors.error)
+                Button("Check again") {
+                    Task { await viewModel.loadRoster() }
+                }
+                .font(BQDesign.Typography.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+                .frame(minHeight: 44)
             }
         }
-        .font(BQDesign.Typography.caption)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    var celebrantDisplayName: String {
+        event.occasion?.celebrantName ?? "The \(celebrantLabel)"
+    }
+
+    func celebrantBanner(_ message: String, icon: String, tint: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.sm) {
+            Image(systemName: icon)
+                .font(BQDesign.Typography.caption)
+                .foregroundColor(tint)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(BQDesign.Typography.caption)
+                .foregroundColor(BQDesign.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+
+    /// Shared by the two one-shot reads on this screen. Both are single attempts with no
+    /// second snapshot coming, so neither may end in a message without a way forward.
+    func adminInlineFailure(_ message: String, retry: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(BQDesign.Typography.caption)
+                    .foregroundColor(BQDesign.Colors.error)
+                    .accessibilityHidden(true)
+                Text(message)
+                    .font(BQDesign.Typography.caption)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message)
+
+            Button("Try again", action: retry)
+                .font(BQDesign.Typography.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(BQDesign.Colors.primaryPurple)
+                .frame(minHeight: 44)
+        }
     }
 }
 
@@ -421,13 +590,30 @@ private extension AdminControlsView {
         .adminCard()
     }
 
+    /// Switches on `rosterState`, not on `otherParticipants.isEmpty`.
+    ///
+    /// Those two are not the same question, and conflating them is what made a refused or
+    /// offline read render "Nobody else has joined yet" — an authoritative statement about a
+    /// roster the app had never seen, complete with an instruction to go share a link the
+    /// host may well have already shared successfully.
+    @ViewBuilder
     var rosterCard: some View {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
             adminSectionHeader("Who's Here", icon: "person.2.fill")
 
-            if viewModel.otherParticipants.isEmpty {
+            switch viewModel.rosterState {
+            case .loading:
+                adminEmptyState("Checking who has joined…")
+
+            case .failed(let message):
+                adminInlineFailure(message) {
+                    Task { await viewModel.loadRoster() }
+                }
+
+            case .empty:
                 adminEmptyState("Nobody else has joined yet. Share your invite link.")
-            } else {
+
+            case .ready:
                 VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
                     ForEach(viewModel.otherParticipants) { participant in
                         HStack(spacing: BQDesign.Spacing.sm) {
@@ -496,9 +682,14 @@ private extension AdminControlsView {
                     color: BQDesign.Colors.secretAccent
                 ) {
                     Task {
-                        if await viewModel.setOpen(!isOpen) {
-                            await event.refreshOccasion()
-                        }
+                        guard await viewModel.setOpen(!isOpen) else { return }
+                        // Two caches hold this occasion, and both render `isOpen`. This
+                        // screen's label reads `EventSession.occasion`; the Active/Past split
+                        // on `OccasionListView` reads `AppSession.occasions`. Refreshing only
+                        // the first left the list claiming a closed occasion was still open
+                        // until something else happened to reload it.
+                        await event.refreshOccasion()
+                        await session.refreshOccasions()
                     }
                 }
             }

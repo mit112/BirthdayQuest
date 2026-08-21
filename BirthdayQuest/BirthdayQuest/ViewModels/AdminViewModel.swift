@@ -12,6 +12,25 @@ struct AdminActionResult: Identifiable {
     let isError: Bool
 }
 
+// MARK: - Celebrant Presence
+
+/// Whether the guest of honour has joined — including the case where we could not find out.
+///
+/// This replaced a `Bool`, which had no way to say "the read failed". A refused or offline
+/// roster read left it `false`, and the host panel rendered the spec's most important warning
+/// — "they haven't joined yet" — as settled fact about a roster it had never seen. The host's
+/// correct response to that warning is to chase the celebrant, so the lie costs them a real
+/// conversation; and the same failure could equally be hiding a celebrant who *had* joined.
+///
+/// `unknown` is not a nicety. There is deliberately no handover mode, so this banner is the
+/// entire mitigation for the spec's #1 risk, and a mitigation that fabricates its input is
+/// worse than none.
+nonisolated enum CelebrantPresence: Equatable {
+    case unknown
+    case joined
+    case notJoined
+}
+
 // MARK: - Admin View Model
 
 @MainActor
@@ -22,11 +41,18 @@ final class AdminViewModel: ObservableObject {
     @Published var challenges: [Challenge] = []
     @Published var rewards: [Reward] = []
     @Published var participants: [Participant] = []
+    /// Whether the roster read has landed, and what to render if it has not.
+    ///
+    /// `failed` and `empty` are separate cases of one enum precisely so the view cannot show
+    /// both, and so a test can assert the branch the view will take. See `ContentState`.
+    @Published private(set) var rosterState: ContentState = .loading
     /// The occasion's invite codes. Loaded here rather than read off `EventSession.occasion`
     /// because they no longer live on the event document — they live at
     /// `events/{id}/private/codes`, which only the host can read. This view model is the host
     /// panel, so this is the one place in the app entitled to them.
     @Published var inviteCodes: InviteCodes?
+    /// Whether the invite-code read has landed. See `loadInviteCodes()`.
+    @Published private(set) var codesState: ContentState = .loading
     @Published var actionResult: AdminActionResult?
     @Published var isPerformingAction = false
     
@@ -68,8 +94,16 @@ final class AdminViewModel: ObservableObject {
     /// Whether anyone with `mode == .celebrant` has joined yet. There is no handover mode,
     /// so an occasion whose celebrant never installs the app cannot be rescued on the day —
     /// this has to be checked from the moment the occasion is created, not discovered late.
-    var celebrantHasJoined: Bool {
-        participants.contains { $0.isCelebrant }
+    ///
+    /// Derived from `rosterState` rather than from `participants` alone, so an unread roster
+    /// cannot masquerade as an empty one.
+    var celebrantPresence: CelebrantPresence {
+        switch rosterState {
+        case .loading, .failed:
+            return .unknown
+        case .empty, .ready:
+            return participants.contains { $0.isCelebrant } ? .joined : .notJoined
+        }
     }
     
     // MARK: - Listener Lifecycle
@@ -107,7 +141,7 @@ final class AdminViewModel: ObservableObject {
             }
         }
 
-        Task { await loadParticipants() }
+        Task { await loadRoster() }
         Task { await loadInviteCodes() }
     }
     
@@ -130,22 +164,44 @@ final class AdminViewModel: ObservableObject {
 
     /// The roster is a one-shot read, not a listener: participants change when someone
     /// joins, which is rare enough that a live subscription would cost more than it earns.
-    private func loadParticipants() async {
+    ///
+    /// Being one-shot is also why the failure needs a retry the host can reach: there is no
+    /// second snapshot coming to quietly correct it.
+    func loadRoster() async {
+        rosterState = .loading
         do {
             participants = try await service.fetchParticipants(eventId: eventId)
+            rosterState = otherParticipants.isEmpty ? .empty : .ready
         } catch {
             logger.error("Loading the roster failed: \(error.localizedDescription)")
+            // Cleared, not left stale. A retry that fails must not leave the previous read's
+            // names on screen under a failure message.
+            participants = []
+            rosterState = .failed("Couldn't check who has joined.")
         }
     }
 
     /// Also one-shot: codes only change if the host rotates them, and the host is the person
-    /// looking at this screen. A failure leaves `inviteCodes` nil, and the view renders the
-    /// share rows as unavailable rather than offering a link built from nothing.
-    private func loadInviteCodes() async {
+    /// looking at this screen.
+    ///
+    /// Carries its own state for the same reason the roster does. A failure used to leave
+    /// `inviteCodes` nil, which is indistinguishable from "not loaded yet" — so the card sat
+    /// on "Loading your invite links…" permanently, with no spinner ever resolving and no way
+    /// to retry. A one-shot read has no second chance to arrive.
+    func loadInviteCodes() async {
+        codesState = .loading
         do {
             inviteCodes = try await service.fetchInviteCodes(eventId: eventId)
+            // A nil result without an error means the document is missing, which for a host
+            // should not happen — phase 2 of occasion creation writes it. Reported as a
+            // failure rather than as an empty state: there is nothing legitimate to show.
+            codesState = inviteCodes == nil
+                ? .failed("Couldn't find this occasion's invite codes.")
+                : .ready
         } catch {
             logger.error("Loading the invite codes failed: \(error.localizedDescription)")
+            inviteCodes = nil
+            codesState = .failed("Couldn't load your invite links.")
         }
     }
     
