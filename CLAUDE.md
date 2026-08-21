@@ -87,6 +87,21 @@ anywhere else — inject the protocol instead, so tests can pass `MockGameBacken
 ### Design System
 All UI tokens live in `DesignSystem.swift` under the `BQDesign` namespace (colors, typography, spacing, radius, shadows, animations). Use these instead of hardcoded values.
 
+Three invariants now hold there, and all are easy to break by accident:
+- **Every typography token is a semantic text style, never `Font.system(size:)`.** A fixed size
+  ignores the user's content size category and they cannot override it. For a glyph — an SF Symbol
+  or a decorative emoji — use `@ScaledMetric` instead, which scales a *dimension*; do not reach for
+  a fixed size just because the thing is not prose.
+- **Perpetual animation is gated in exactly one place.** `MotionLevel`, read via
+  `@Environment(\.bqMotionLevel)`, resolves a fixed one-way order: Reduce Motion wins outright,
+  Low Power Mode only gets a vote if it passed. Ask `allowsPerpetual`; never re-derive the rule and
+  never read `accessibilityReduceMotion` directly. For an imperative `withAnimation`, *guard* it —
+  passing a nil animation snaps the flag to its animated end value and leaves the view stuck in the
+  "on" pose. One-shot entrance animations are out of scope and stay ungated.
+- **The palette records its own contrast ratios.** `textTertiary`, `gold` and `success` are not
+  text colours on a light surface; `goldText` exists for exactly that case. Check the comment on a
+  token before putting a sentence in it.
+
 ### Collections
 All event content lives under `events/{eventId}` subcollections. Isolation is by **path**, not by
 query discipline — a client cannot express a query reaching another occasion, because the path does
@@ -164,8 +179,12 @@ Two tiers, and both must stay green:
 - **Any member can rewrite `state/main` (point balances) and flip `rewards.isUnlocked`.** The rules
   gate those on membership only. This is the pre-existing no-Functions trust model, not a
   regression — but it is now a stranger-facing assumption rather than a family one.
-- Near-zero accessibility: a few `accessibilityLabel`s were added on the new occasion surfaces, but
-  there is no Dynamic Type or reduce-motion handling against ~10 `repeatForever` animations.
+- Accessibility: Dynamic Type, Reduce Motion and AA contrast are now handled (see the Design
+  System section). What is **not** done is any visual confirmation of reflow at the largest
+  accessibility sizes — no snapshot tests exist and the unit suite cannot catch clipping or
+  overlap. `xcrun simctl ui booted content_size accessibility-extra-extra-extra-large` is the
+  command; it needs a live Firebase project, because the app cannot get past launch without the
+  Anonymous provider.
 - `fetchMyOccasions` fans out **concurrently** (`withTaskGroup`, `@MainActor` children so nothing
   crosses an isolation boundary). Its **skip-on-failure is load-bearing and has no test**: each
   child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
@@ -188,17 +207,23 @@ Two tiers, and both must stay green:
 - **`JoinOccasionViewModel` reaches for `FirestoreErrorDomain` directly.** It is the one deliberate
   exception to the `GameBackend` seam: offline classification stays Firestore-specific. Testability
   is unaffected — all its tests drive it through `MockGameBackend`.
-- **Accessibility is the largest unowned risk.** There is no Dynamic Type support anywhere: all 11
-  `BQDesign.Typography` tokens are fixed `Font.system(size:)`, and there are ~84 further ad-hoc
-  `.system(size:)` call sites outside `DesignSystem.swift`, so the token indirection does *not* give
-  a single-point fix. Zero `accessibilityReduceMotion` handling against **17** `repeatForever`
-  animations across 11 files. Two palette tokens fail WCAG AA for body text on white:
-  `Colors.error` at 3.83:1 and `textSecondary` at 3.34:1 — the *tokens* are unchanged, but the
-  error rows on the occasion list, create, join and host-panel surfaces now put the colour on an
-  icon and leave the sentence at `textPrimary`. Copy that split rather than tinting body text.
-  Dark mode is pinned off
+- ~~Accessibility is the largest unowned risk.~~ **Largely closed.** All 11 typography tokens are
+  semantic text styles, all 87 ad-hoc `.system(size:)` call sites are converted, all 17
+  `repeatForever` animations are gated, and no text sits on a token that fails AA. Two things
+  remain: **reflow is visually unverified** (above), and a correction worth keeping — the earlier
+  claim that "two palette tokens fail AA" was measured against **white**, but the app background is
+  `#FBF7F4`, and against it **seven of nine** text-capable tokens failed. `textTertiary` was the
+  significant one at 1.88:1, carrying real text in ~8 places including an error message and the
+  timeline empty state. It is still deliberately light, because that is what makes it right for a
+  15%-opacity skeleton fill — its *text* uses moved to `textSecondary`. `Colors.error` at 3.59:1 is
+  unchanged and still large-text-only: the error rows put the colour on an icon and leave the
+  sentence at `textPrimary`, and that split is the pattern to copy.
+  Dark mode is still pinned off
   (`.preferredColorScheme(.light)`) because every colour is a fixed hex with no dark variant — a
-  real dark theme means dark variants for every token.
+  real dark theme means dark variants for every token. Note darkening `textSecondary` *lowered* its
+  contrast on the dark secret surfaces (5.11:1 to 3.18:1); that is currently harmless only because
+  no dark-themed view uses the token, which was verified rather than assumed. A dark theme has to
+  revisit it.
 - **Reward and proof media are reachable by anyone holding the URL.** The Storage rules gate the
   *objects* on event membership, but the app stores long-lived Firebase **download URLs**
   (`?alt=media&token=…`) in Firestore, and those bypass Storage rules by design. So revoking
@@ -252,8 +277,15 @@ from `progress.md`. Both tiers and SwiftLint were verified green on the branch t
 to the earlier handoff, both confirmed against the tree rather than assumed: the celebrant
 `ShareLink` was **already** fixed by `debeaa7` (`celebrantLink` is nil for a consumed code), and
 `main` at `b05a22b` had **1** SwiftLint violation, not 0 — `orphaned_doc_comment` in
-`RewardContentSheet.swift`, now fixed. Still open and untouched: accessibility (needs a named
-owner) and the CI caching items.
+`RewardContentSheet.swift`, now fixed.
+
+**Session 5 added two more commits and closed the last two ranked follow-ups.** `ba0cd1a` is the
+accessibility pass — Dynamic Type across all 214 font call sites, Reduce Motion gating for all 17
+perpetual animations, and AA contrast — and `9fb040f` is the CI housekeeping. Both tiers were
+verified on the tip: **173 Swift test cases** (up from 166) with `** TEST SUCCEEDED **`, and
+SwiftLint clean at `--strict` across 58 files. The rules suite was **not** re-run, deliberately: no
+rules file was touched, and this project gates that suite on rules changes. So the ranked list from
+`progress.md` is now exhausted, and the next work is subsystem #2 host authoring.
 
 - Design: `docs/superpowers/specs/2026-08-20-multi-tenant-occasions-design.md`
 - Plan: `docs/superpowers/plans/2026-08-20-event-scoping-and-identity.md`
