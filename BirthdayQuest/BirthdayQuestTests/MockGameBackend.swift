@@ -164,6 +164,15 @@ final class MockGameBackend: GameBackend {
         openStateChanges.append((eventId, isOpen))
     }
 
+    func fetchInviteCodes(eventId: String) async throws -> InviteCodes? {
+        record("fetchInviteCodes", eventId: eventId)
+        try throwIfNeeded()
+        return stubbedInviteCodes
+    }
+
+    /// Stub for `fetchInviteCodes`. Defaults to nil, which is what a non-host actually gets.
+    var stubbedInviteCodes: InviteCodes?
+
     func resolveInviteCode(_ code: String) async throws -> (eventId: String, kind: String)? {
         calls.append("resolveInviteCode")
         resolvedCodes.append(code)

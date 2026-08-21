@@ -24,14 +24,23 @@ service firebase.storage {
              && firestore.get(participantPath(eventId)).data.mode == 'celebrant';
     }
 
-    // SVG excluded even though it matches image/.*: it is script-bearing, not just pixels.
+    // SVG excluded even though it matches image/.*: it is script-bearing, not just pixels,
+    // and reward media and challenge proofs are both served back to every member.
     // Anchored pattern, not equality: bare equality misses parameterised variants like
     // "image/svg+xml; charset=utf-8" and unsuffixed "image/svg".
+    //
+    // Defined once and used by BOTH media paths. It was previously duplicated — the rewards
+    // clause and the proofs clause were independently maintained copies of the same
+    // exclusion, which is a drift trap: deleting one of them failed no test.
+    function isSafeImage() {
+      return request.resource.contentType.matches('image/.*')
+             && !request.resource.contentType.matches('image/svg.*');
+    }
+
     function isPlayableMedia() {
       return request.resource.contentType.matches('video/.*')
              || request.resource.contentType.matches('audio/.*')
-             || (request.resource.contentType.matches('image/.*')
-                 && !request.resource.contentType.matches('image/svg.*'));
+             || isSafeImage();
     }
 
     // Reward media. Written by contributors, read by members, deleted by the celebrant
@@ -59,8 +68,7 @@ service firebase.storage {
                      : resource == null
                        && isMember(eventId)
                        && request.resource.size < 10 * 1024 * 1024
-                       && request.resource.contentType.matches('image/.*')
-                       && !request.resource.contentType.matches('image/svg.*');
+                       && isSafeImage();
     }
 
     match /{allPaths=**} {

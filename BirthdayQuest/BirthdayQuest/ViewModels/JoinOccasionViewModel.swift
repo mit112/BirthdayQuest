@@ -34,15 +34,27 @@ final class JoinOccasionViewModel: ObservableObject {
     /// cannot resolve an event id from a code by enumeration, which is what stops codes
     /// being harvested. The link does not carry `kind` — call `resolveCode()` afterward to
     /// learn whether it is a contributor or celebrant invite.
+    /// Validates both parameters rather than merely requiring them to be non-empty. Now that
+    /// the URL scheme is registered, anyone who can send this user a link can put anything in
+    /// `e` and `c` — and an event id containing `//` reaches Firestore's `document(_:)` as a
+    /// malformed *path*, which aborts the process from Objective-C where no `catch` can reach
+    /// it. Refusing here keeps the hostile value out of the view model's state entirely.
     func parse(link: URL) -> Bool {
-        guard link.scheme == "birthdayquest", link.host == "join",
-              let items = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems,
-              let event = items.first(where: { $0.name == "e" })?.value, !event.isEmpty,
-              let inviteCode = items.first(where: { $0.name == "c" })?.value, !inviteCode.isEmpty
-        else { return false }
+        guard link.scheme == "birthdayquest", link.host == "join" else { return false }
+
+        guard let items = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems,
+              let event = items.first(where: { $0.name == "e" })?.value,
+              EventID.isValid(event),
+              let inviteCode = items.first(where: { $0.name == "c" })?.value,
+              let normalized = InviteCode.normalized(inviteCode)
+        else {
+            logger.error("Rejected a malformed join link")
+            errorMessage = "That invite link isn't valid. Ask your host to send it again."
+            return false
+        }
 
         eventId = event
-        code = inviteCode.uppercased()
+        code = normalized
         return true
     }
 
@@ -57,9 +69,15 @@ final class JoinOccasionViewModel: ObservableObject {
     /// The lookup itself lives behind `GameBackend.resolveInviteCode(_:)` so this — the
     /// only thing that decides whether a link is a celebrant invite — is drivable from a
     /// test rather than only against a live Firestore.
+    /// Normalisation and validation both live in `InviteCode`, and the backend re-checks
+    /// before it builds a path — a malformed code is a crash, not an error, if it reaches
+    /// `document(_:)`, so it is refused at both ends rather than trusted from either.
     func resolveCode() async {
-        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !normalized.isEmpty else { return }
+        guard let normalized = InviteCode.normalized(code) else {
+            errorMessage = "That doesn't look like an invite code. "
+                + "Codes are \(InviteCode.length) letters and numbers."
+            return
+        }
 
         isResolvingCode = true
         errorMessage = nil
@@ -73,6 +91,11 @@ final class JoinOccasionViewModel: ObservableObject {
             code = normalized
             eventId = resolved.eventId
             mode = resolved.kind == ParticipantMode.celebrant.rawValue ? .celebrant : .contributor
+        } catch let error as BackendError {
+            // Malformed code, or a code whose stored eventId is not a usable one. Both are
+            // "this invite is not real", not "the network failed".
+            logger.error("Code lookup rejected: \(error.localizedDescription)")
+            errorMessage = error.errorDescription
         } catch {
             logger.error("Code lookup failed: \(error.localizedDescription)")
             errorMessage = "Couldn't check that code. Check your connection and try again."
@@ -121,6 +144,11 @@ final class JoinOccasionViewModel: ObservableObject {
         } catch BackendError.invalidCode {
             errorMessage = "That invite doesn't work. The code may be wrong or already used, "
                 + "or the host may have closed this occasion to new joins."
+            return false
+        } catch let error as BackendError {
+            // A malformed event id, or not signed in. Both carry their own copy.
+            logger.error("Join rejected: \(error.localizedDescription)")
+            errorMessage = error.errorDescription
             return false
         } catch let error as NSError where isOffline(error) {
             errorMessage = "You're offline. Check your connection and try again."

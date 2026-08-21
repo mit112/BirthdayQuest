@@ -25,32 +25,56 @@ final class FirestoreService: GameBackend {
 
     // MARK: - Path Helpers
 
-    private func eventRef(_ eventId: String) -> DocumentReference {
-        db.collection(Collections.events).document(eventId)
+    /// The single choke point for every event-scoped path, and the reason it throws.
+    ///
+    /// `CollectionReference.document(_:)` treats its argument as a *path*, not an id. A `//`
+    /// or an odd final segment count raises an Objective-C `NSException` from the Firestore
+    /// C++ core (`resource_path.cc` / `document_reference.cc`, thrown via
+    /// `exception_apple.mm`), which Swift `do/catch` cannot intercept: the process aborts.
+    /// Event ids arrive from a `birthdayquest://join` deep link and from the client-writable
+    /// `inviteCodes.eventId` field, so "anyone who can send this user a link" could crash
+    /// their app on tap. Validating here rather than in a view model is what makes it
+    /// unbypassable — no path in this file can be built without going through it.
+    private func eventRef(_ eventId: String) throws -> DocumentReference {
+        guard EventID.isValid(eventId) else {
+            logger.error("Rejected a malformed event id before building a path")
+            throw BackendError.invalidEventId
+        }
+        return db.collection(Collections.events).document(eventId)
     }
 
-    private func challengesRef(_ eventId: String) -> CollectionReference {
-        eventRef(eventId).collection(Collections.challenges)
+    private func challengesRef(_ eventId: String) throws -> CollectionReference {
+        try eventRef(eventId).collection(Collections.challenges)
     }
 
-    private func rewardsRef(_ eventId: String) -> CollectionReference {
-        eventRef(eventId).collection(Collections.rewards)
+    private func rewardsRef(_ eventId: String) throws -> CollectionReference {
+        try eventRef(eventId).collection(Collections.rewards)
     }
 
-    private func timelineRef(_ eventId: String) -> CollectionReference {
-        eventRef(eventId).collection(Collections.timeline)
+    private func timelineRef(_ eventId: String) throws -> CollectionReference {
+        try eventRef(eventId).collection(Collections.timeline)
     }
 
-    private func participantsRef(_ eventId: String) -> CollectionReference {
-        eventRef(eventId).collection(Collections.participants)
+    private func participantsRef(_ eventId: String) throws -> CollectionReference {
+        try eventRef(eventId).collection(Collections.participants)
     }
 
-    private func stateRef(_ eventId: String) -> DocumentReference {
-        eventRef(eventId).collection(Collections.state).document(Collections.stateDoc)
+    private func stateRef(_ eventId: String) throws -> DocumentReference {
+        try eventRef(eventId).collection(Collections.state).document(Collections.stateDoc)
     }
 
-    private func membershipRef(uid: String, eventId: String) -> DocumentReference {
-        db.collection(Collections.memberships).document(uid)
+    /// The invite codes. Host-readable only, which is why they are not on the event document.
+    private func codesRef(_ eventId: String) throws -> DocumentReference {
+        try eventRef(eventId)
+            .collection(Collections.privateData).document(Collections.codesDoc)
+    }
+
+    private func membershipRef(uid: String, eventId: String) throws -> DocumentReference {
+        guard EventID.isValid(eventId) else {
+            logger.error("Rejected a malformed event id before building a membership path")
+            throw BackendError.invalidEventId
+        }
+        return db.collection(Collections.memberships).document(uid)
             .collection(Collections.events).document(eventId)
     }
 
@@ -96,6 +120,11 @@ final class FirestoreService: GameBackend {
         // Phase 1: the event document, written once and complete. Rules validating the
         // host's participant document call get() on this event, and a batched write cannot
         // see its own siblings — so it must be committed before phase 2.
+        //
+        // The invite codes are deliberately NOT on this document. Every member can read it,
+        // and an invite code is a bearer secret: a member who could read the celebrant code
+        // could hand it to a fresh anonymous uid, which would then claim celebrant and be
+        // allowed to delete every gift. They go in phase 2, at private/codes.
         try await newEventRef.setData([
             "name": name,
             "occasionType": occasionType.rawValue,
@@ -103,20 +132,22 @@ final class FirestoreService: GameBackend {
             "hostUid": uid,
             "occasionDate": Timestamp(date: occasionDate),
             "isOpen": true,
-            "createdAt": Timestamp(date: Date()),
-            "contributorCode": contributorCode,
-            "celebrantCode": celebrantCode
+            "createdAt": Timestamp(date: Date())
         ])
 
-        // Phase 2: host participant, initial game state, membership mirror. All three rules
-        // gate on the event's hostUid rather than on membership, precisely so this can be
-        // one batch — batched writes are evaluated against committed state, and the
-        // participant document that a membership check would look for is created here.
+        // Phase 2: host participant, invite codes, initial game state, membership mirror.
+        // All four rules gate on the event's hostUid rather than on membership, precisely so
+        // this can be one batch — batched writes are evaluated against committed state, and
+        // the participant document that a membership check would look for is created here.
         //
         // If this fails the event document is orphaned — unreadable by every client,
         // because the membership check finds no participant — so it is invisible rather
         // than corrupt.
         let now = Timestamp(date: Date())
+        let hostParticipantRef = try participantsRef(eventId).document(uid)
+        let newCodesRef = try codesRef(eventId)
+        let newStateRef = try stateRef(eventId)
+        let newMembershipRef = try membershipRef(uid: uid, eventId: eventId)
         let batch = db.batch()
 
         batch.setData([
@@ -127,7 +158,12 @@ final class FirestoreService: GameBackend {
             // Inert for the host: the host branch of the participant rule authorises on
             // hostUid, never on the code.
             "usedCode": contributorCode
-        ], forDocument: participantsRef(eventId).document(uid))
+        ], forDocument: hostParticipantRef)
+
+        batch.setData([
+            "contributorCode": contributorCode,
+            "celebrantCode": celebrantCode
+        ], forDocument: newCodesRef)
 
         batch.setData([
             "totalPointsEarned": 0, "totalPointsSpent": 0, "currentPoints": 0,
@@ -138,13 +174,13 @@ final class FirestoreService: GameBackend {
             "currentDay": 1,
             "gameStartedAt": now,
             "updatedAt": now
-        ], forDocument: stateRef(eventId))
+        ], forDocument: newStateRef)
 
         batch.setData([
             "role": hostMode.rawValue,
             "isHost": true,
             "joinedAt": now
-        ], forDocument: membershipRef(uid: uid, eventId: eventId))
+        ], forDocument: newMembershipRef)
 
         try await batch.commit()
         logger.info("Created occasion \(eventId)")
@@ -181,10 +217,17 @@ final class FirestoreService: GameBackend {
         mode: ParticipantMode
     ) async throws {
         let uid = try currentUid()
-        let normalized = code.uppercased().trimmingCharacters(in: .whitespaces)
+
+        // Checked, not merely tidied. A code becomes nothing here, but the same string is a
+        // document id in `resolveInviteCode`, and refusing malformed input at every entrance
+        // is cheaper than remembering which entrances are dangerous.
+        guard let normalized = InviteCode.normalized(code) else {
+            throw BackendError.invalidCode
+        }
+        let participantDoc = try participantsRef(eventId).document(uid)
 
         do {
-            try await participantsRef(eventId).document(uid).setData([
+            try await participantDoc.setData([
                 "name": name,
                 "avatarId": avatarId,
                 "mode": mode.rawValue,
@@ -259,13 +302,30 @@ final class FirestoreService: GameBackend {
         try await eventRef(eventId).updateData(["isOpen": isOpen])
     }
 
+    /// Only the host can read this. Everyone else gets permission-denied, which is the
+    /// point — see the note on `codesRef`.
+    func fetchInviteCodes(eventId: String) async throws -> InviteCodes? {
+        let doc = try await codesRef(eventId).getDocument()
+        return InviteCodes(eventId: eventId, data: doc.data())
+    }
+
+    /// A field update on `private/codes`, not on the event document. The celebrant is allowed
+    /// to write exactly this one field to exactly the empty string, and cannot read the
+    /// document at all — `diff()` is evaluated server-side, so the rule does not need them to.
     func consumeCelebrantCode(eventId: String) async throws {
-        try await eventRef(eventId).updateData(["celebrantCode": ""])
+        try await codesRef(eventId).updateData(["celebrantCode": ""])
     }
 
     func resolveInviteCode(_ code: String) async throws -> (eventId: String, kind: String)? {
-        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !normalized.isEmpty else { return nil }
+        // The code becomes a document id, and `document(_:)` takes a PATH: a `/` makes the
+        // segment count odd and a `//` is rejected, and both abort the process with an
+        // Objective-C exception no `catch` can see. Pasting a whole invite URL into the code
+        // field — the documented workaround while the URL scheme was unregistered — contains
+        // `//`. So validate before building the reference, and never try to catch it.
+        guard let normalized = InviteCode.normalized(code) else {
+            logger.error("Rejected a malformed invite code before building a path")
+            throw BackendError.invalidCode
+        }
 
         let snapshot = try await db.collection(Collections.inviteCodes)
             .document(normalized).getDocument()
@@ -274,6 +334,14 @@ final class FirestoreService: GameBackend {
               let eventId = data["eventId"] as? String,
               let kind = data["kind"] as? String
         else { return nil }
+
+        // `inviteCodes` is client-writable by design, so this field is attacker-controlled:
+        // anyone may mint a code pointing at "a//b" and share it. Reject it here rather than
+        // letting the caller interpolate it into a path.
+        guard EventID.isValid(eventId) else {
+            logger.error("Invite code \(normalized) resolved to a malformed event id")
+            throw BackendError.invalidEventId
+        }
 
         return (eventId, kind)
     }
@@ -288,7 +356,15 @@ final class FirestoreService: GameBackend {
         let key = listenerKey
         removeListener(forKey: key)
 
-        listeners[key] = rewardsRef(eventId)
+        let collection: CollectionReference
+        do {
+            collection = try rewardsRef(eventId)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        listeners[key] = collection
             .order(by: "sortOrder")
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -313,8 +389,11 @@ final class FirestoreService: GameBackend {
         pointCost: Int,
         timelineEvent: TimelineEvent
     ) async throws {
-        let gsRef = stateRef(eventId)
-        let rewardRef = rewardsRef(eventId).document(rewardId)
+        let gsRef = try stateRef(eventId)
+        let rewardRef = try rewardsRef(eventId).document(rewardId)
+        // Built here rather than inside the transaction body: it is a path, not a read, and
+        // `runTransaction`'s closure cannot throw.
+        let newTimelineRef = try timelineRef(eventId).document()
         let now = Timestamp(date: Date())
 
         // Transaction: read balance → verify → write everything atomically
@@ -370,7 +449,6 @@ final class FirestoreService: GameBackend {
             ], forDocument: rewardRef)
 
             // 3. Add timeline event
-            let newTimelineRef = self.timelineRef(eventId).document()
             do {
                 try transaction.setData(from: timelineEvent, forDocument: newTimelineRef)
             } catch let error as NSError {
@@ -394,7 +472,15 @@ final class FirestoreService: GameBackend {
         let key = listenerKey
         removeListener(forKey: key)
 
-        listeners[key] = challengesRef(eventId)
+        let collection: CollectionReference
+        do {
+            collection = try challengesRef(eventId)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        listeners[key] = collection
             .order(by: "pointValue")
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -424,8 +510,9 @@ final class FirestoreService: GameBackend {
         proofText: String?,
         timelineEvent: TimelineEvent
     ) async throws {
-        let challengeRef = challengesRef(eventId).document(challengeId)
-        let gsRef = stateRef(eventId)
+        let challengeRef = try challengesRef(eventId).document(challengeId)
+        let gsRef = try stateRef(eventId)
+        let newTimelineRef = try timelineRef(eventId).document()
         let now = Timestamp(date: Date())
 
         _ = try await db.runTransaction { [self] transaction, errorPointer in
@@ -468,7 +555,6 @@ final class FirestoreService: GameBackend {
             transaction.updateData(gsData, forDocument: gsRef)
 
             // 3. Add timeline event
-            let newTimelineRef = self.timelineRef(eventId).document()
             do {
                 try transaction.setData(from: timelineEvent, forDocument: newTimelineRef)
             } catch let error as NSError {
@@ -502,7 +588,15 @@ final class FirestoreService: GameBackend {
         let key = ListenerKey.timeline(eventId)
         removeListener(forKey: key)
 
-        listeners[key] = timelineRef(eventId)
+        let collection: CollectionReference
+        do {
+            collection = try timelineRef(eventId)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        listeners[key] = collection
             .order(by: "timestamp", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -532,7 +626,15 @@ final class FirestoreService: GameBackend {
         let key = ListenerKey.gameState(eventId)
         removeListener(forKey: key)
 
-        listeners[key] = stateRef(eventId).addSnapshotListener { snapshot, error in
+        let document: DocumentReference
+        do {
+            document = try stateRef(eventId)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        listeners[key] = document.addSnapshotListener { snapshot, error in
             if let error {
                 self.logger.error("GameState listener error: \(error.localizedDescription)")
                 completion(.failure(error))
@@ -671,8 +773,9 @@ final class FirestoreService: GameBackend {
         deductPoints: Bool,
         timelineEvent: TimelineEvent
     ) async throws {
-        let rewardRef = rewardsRef(eventId).document(rewardId)
-        let gsRef = stateRef(eventId)
+        let rewardRef = try rewardsRef(eventId).document(rewardId)
+        let gsRef = try stateRef(eventId)
+        let newTimelineRef = try timelineRef(eventId).document()
         let now = Timestamp(date: Date())
 
         _ = try await db.runTransaction { [self] transaction, errorPointer in
@@ -716,7 +819,6 @@ final class FirestoreService: GameBackend {
             transaction.updateData(gsUpdate, forDocument: gsRef)
 
             // 3. Add timeline event
-            let newTimelineRef = self.timelineRef(eventId).document()
             do {
                 try transaction.setData(from: timelineEvent, forDocument: newTimelineRef)
             } catch let error as NSError {

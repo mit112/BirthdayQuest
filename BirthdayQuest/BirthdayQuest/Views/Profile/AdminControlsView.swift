@@ -139,30 +139,48 @@ struct AdminControlsView: View {
 
 private extension AdminControlsView {
 
+    var celebrantLabel: String {
+        event.occasion?.occasionType.celebrantLabel ?? "guest of honour"
+    }
+
+    /// The codes come from `viewModel.inviteCodes`, not from `event.occasion`: they live at
+    /// `events/{id}/private/codes`, which only the host can read, because a member who could
+    /// read the celebrant code could hand it to anyone and have them claim the celebrant role.
     var inviteCard: some View {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
             adminSectionHeader("Invite", icon: "square.and.arrow.up")
 
-            if let link = event.occasion?.contributorLink {
-                VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
-                    ShareLink(item: link) {
-                        adminLinkRow("Share the friend link", icon: "person.2.fill")
+            if let codes = viewModel.inviteCodes {
+                if let link = codes.contributorLink {
+                    VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+                        ShareLink(item: link) {
+                            adminLinkRow("Share the friend link", icon: "person.2.fill")
+                        }
+                        Text(codes.contributorCode)
+                            .font(BQDesign.Typography.captionSmall.monospaced())
+                            .foregroundColor(BQDesign.Colors.textSecondary)
                     }
-                    Text(event.occasion?.contributorCode ?? "")
-                        .font(BQDesign.Typography.captionSmall.monospaced())
+                }
+
+                Divider()
+
+                // A consumed celebrant code is blank, so there is no link left to build. Say
+                // that, rather than silently rendering nothing: the code is single-use by
+                // design and "the row vanished" is not an explanation.
+                if let link = codes.celebrantLink {
+                    ShareLink(item: link) {
+                        adminLinkRow("Share the \(celebrantLabel) link", icon: "gift.fill")
+                    }
+                } else {
+                    Text("The \(celebrantLabel) link has already been used — it only works once.")
+                        .font(BQDesign.Typography.caption)
                         .foregroundColor(BQDesign.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-
-            Divider()
-
-            if let link = event.occasion?.celebrantLink {
-                ShareLink(item: link) {
-                    adminLinkRow(
-                        "Share the \(event.occasion?.occasionType.celebrantLabel ?? "guest of honour") link",
-                        icon: "gift.fill"
-                    )
-                }
+            } else {
+                Text("Loading your invite links…")
+                    .font(BQDesign.Typography.caption)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
             }
 
             celebrantStatusBanner

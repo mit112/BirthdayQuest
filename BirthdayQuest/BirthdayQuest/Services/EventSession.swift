@@ -73,7 +73,14 @@ final class EventSession: ObservableObject {
     @Published var occasion: Occasion?
     @Published var participant: Participant?
     @Published var gameState: GameState = .empty
+    /// Set only when `start()` cannot open the occasion at all. Nothing is loaded behind
+    /// it, so `EventContainerView` renders it as a full-screen takeover.
     @Published var errorMessage: String?
+    /// Set when the game-state listener dies, and deliberately *not* `errorMessage`: the
+    /// occasion is loaded and still usable, so this renders as a persistent banner instead
+    /// of replacing the screen. Points and progress have stopped updating, and staying
+    /// silent would leave the last values on display reading as current.
+    @Published var connectionMessage: String?
     @Published var isLoading = true
 
     /// Tab selection lives here rather than in each tab view so that "check out your
@@ -118,9 +125,11 @@ final class EventSession: ObservableObject {
                 switch result {
                 case .success(let state):
                     self.gameState = state
+                    self.connectionMessage = nil
                 case .failure(let error):
                     self.logger.error("Game state listener: \(error.localizedDescription)")
-                    self.errorMessage = "Lost the connection to this occasion."
+                    self.connectionMessage =
+                        "Live updates stopped. Your points and progress may be out of date."
                 }
             }
         }
@@ -149,12 +158,20 @@ final class EventSession: ObservableObject {
     /// Consuming the celebrant code cannot share a transaction with the join that earns the
     /// right to do it, so it is a separate write that can fail on a dropped connection while
     /// the join itself succeeded. Left there, a live celebrant link would stay replayable
-    /// forever. Opening the occasion is the one moment we know the caller is the celebrant
-    /// and the code is still set, so the retry belongs here rather than in the join screen
-    /// the celebrant has already dismissed. Idempotent, and silent on failure — the occasion
-    /// is perfectly usable either way.
+    /// forever. Opening the occasion is the one moment we know the caller is the celebrant,
+    /// so the retry belongs here rather than in the join screen they have already dismissed.
+    ///
+    /// Unconditional, not conditional on the code still being set: the codes now live at
+    /// `events/{id}/private/codes`, which the celebrant is allowed to write but **not** to
+    /// read — that asymmetry is exactly what keeps the code out of member-readable storage.
+    /// So the celebrant cannot check whether the first attempt landed, and the honest move is
+    /// to re-clear every time. The rule accepts it: re-clearing an already-empty field
+    /// produces an empty diff, which `hasOnly(['celebrantCode'])` permits. The cost is one
+    /// small write per occasion open, for the celebrant only.
+    ///
+    /// Silent on failure — the occasion is perfectly usable either way.
     private func retireCelebrantCodeIfNeeded() async {
-        guard let occasion, isCelebrant, !occasion.celebrantCode.isEmpty else { return }
+        guard isCelebrant else { return }
         do {
             try await service.consumeCelebrantCode(eventId: eventId)
             logger.info("Retired the celebrant invite code")

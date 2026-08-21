@@ -48,8 +48,8 @@ protocol GameBackend: AnyObject {
     ///
     /// Takes `eventId` *and* `code` because `inviteCodes` cannot be listed: a client cannot
     /// enumerate its way to one, which is what prevents codes being harvested. The host
-    /// shares both in one deep link. `mode` must match the code recorded on the event
-    /// document or the rules reject the write.
+    /// shares both in one deep link. `mode` must match the code recorded in the occasion's
+    /// `private/codes` document or the rules reject the write.
     func joinOccasion(
         eventId: String,
         code: String,
@@ -64,12 +64,24 @@ protocol GameBackend: AnyObject {
     func fetchMyParticipant(eventId: String) async throws -> Participant?
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws
 
-    /// Blanks `celebrantCode` on the event document so the celebrant invite cannot be
-    /// replayed. Deliberately a standalone write, not part of the join batch: the rule that
-    /// permits it `get()`s the caller's participant document, and Firestore evaluates
-    /// batched writes against committed state, so the participant must already exist.
-    /// Idempotent — clearing an already-empty code is a no-op, which is what lets the
-    /// celebrant's next app open retry a first attempt that failed.
+    /// The occasion's two invite codes, read from `events/{eventId}/private/codes`.
+    ///
+    /// A method of its own rather than two more fields on `Occasion`, because only the host
+    /// can read that document and only the host ever needs it. Folding it into
+    /// `fetchOccasion` would spend a second read on every member opening any occasion, and
+    /// that read would be denied for all of them.
+    ///
+    /// Returns nil when the caller is not the host or the document is missing.
+    func fetchInviteCodes(eventId: String) async throws -> InviteCodes?
+
+    /// Blanks `celebrantCode` in `events/{eventId}/private/codes` so the celebrant invite
+    /// cannot be replayed. Deliberately a standalone write, not part of the join batch: the
+    /// rule that permits it `get()`s the caller's participant document, and Firestore
+    /// evaluates batched writes against committed state, so the participant must already
+    /// exist. Idempotent — re-clearing an already-empty code produces an empty diff, which
+    /// the rule accepts, which is what lets the celebrant's next app open retry a first
+    /// attempt that failed. The celebrant cannot *read* that document, so retrying
+    /// unconditionally is the only option available to them.
     func consumeCelebrantCode(eventId: String) async throws
 
     /// Resolves an invite code to the occasion it belongs to and the mode it authorises.
@@ -222,12 +234,18 @@ enum BackendError: LocalizedError {
     case notSignedIn
     case invalidCode
     case couldNotReserveCode
+    /// An event id that cannot legally be a Firestore document id. Thrown rather than used,
+    /// because using it means interpolating it into a path, and the SDK answers a malformed
+    /// path with an Objective-C exception that kills the process instead of an error a
+    /// `catch` can see.
+    case invalidEventId
 
     var errorDescription: String? {
         switch self {
         case .notSignedIn:         return "You're not signed in yet."
         case .invalidCode:         return "That invite code doesn't match this occasion."
         case .couldNotReserveCode: return "Couldn't create an invite code. Try again."
+        case .invalidEventId:      return "That invite link doesn't point to a real occasion."
         }
     }
 }

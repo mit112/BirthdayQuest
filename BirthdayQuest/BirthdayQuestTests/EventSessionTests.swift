@@ -2,17 +2,22 @@ import Testing
 import Foundation
 @testable import BirthdayQuest
 
+/// The game-state listener callback hops through `Task { @MainActor in … }`, so its effect
+/// lands a turn or two after the call that started it. Matches the helper in
+/// `ViewModelTests` and `HostInviteTests`, which are each file-private.
+@MainActor
+private func settle(turns: Int = 8) async {
+    for _ in 0..<turns { await Task.yield() }
+}
+
 @Suite("EventSession")
 @MainActor
 struct EventSessionTests {
 
-    private func occasion(
-        id: String = "evt_1", celebrantCode: String = "EFGH6789"
-    ) -> Occasion {
+    private func occasion(id: String = "evt_1") -> Occasion {
         Occasion(
             id: id, name: "Alex's 30th", occasionType: .birthday, celebrantName: "Alex",
-            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date(),
-            contributorCode: "ABCD2345", celebrantCode: celebrantCode
+            hostUid: "uid_host", occasionDate: Date(), isOpen: true, createdAt: Date()
         )
     }
 
@@ -88,28 +93,23 @@ struct EventSessionTests {
         #expect(mock.removedListenerKeys.count == 1)
     }
 
-    @Test("a celebrant reopening the occasion retries the code consumption that failed")
+    /// The retry is deliberately unconditional. The codes moved to
+    /// `events/{id}/private/codes`, which the celebrant may write but not read — that
+    /// asymmetry is what keeps the code out of member-readable storage — so the celebrant
+    /// has no way to check whether the first clear landed. Re-clearing is a permitted no-op
+    /// in the rules (an empty diff satisfies `hasOnly(['celebrantCode'])`), so attempting it
+    /// every open is correct, and gating it on a local copy of the code would be the bug.
+    @Test("a celebrant reopening the occasion retries the clear without reading the code")
     func celebrantCodeRetried() async {
         let mock = MockGameBackend()
-        mock.stubbedOccasion = occasion(celebrantCode: "EFGH6789")
+        mock.stubbedOccasion = occasion()
         mock.stubbedParticipant = participant(mode: .celebrant)
         let session = EventSession(eventId: "evt_1", service: mock)
 
         await session.start()
 
         #expect(mock.consumedCelebrantCodes == ["evt_1"])
-    }
-
-    @Test("an already-consumed celebrant code is not written again")
-    func celebrantCodeNotRewritten() async {
-        let mock = MockGameBackend()
-        mock.stubbedOccasion = occasion(celebrantCode: "")
-        mock.stubbedParticipant = participant(mode: .celebrant)
-        let session = EventSession(eventId: "evt_1", service: mock)
-
-        await session.start()
-
-        #expect(mock.consumedCelebrantCodes.isEmpty)
+        #expect(mock.called("fetchInviteCodes") == false)
     }
 
     @Test("a contributor never touches the celebrant code")
@@ -159,7 +159,7 @@ struct EventSessionTests {
         #expect(contributor.contributorTab == .timeline)
     }
 
-    @Test("a game state listener failure reports the loss of connection")
+    @Test("a game state listener failure banners the loss without hijacking the occasion")
     func listenerFailureSurfaces() async {
         let mock = MockGameBackend()
         mock.stubbedOccasion = occasion()
@@ -168,9 +168,49 @@ struct EventSessionTests {
         let session = EventSession(eventId: "evt_1", service: mock)
 
         await session.start()
-        await Task.yield()
+        await settle()
 
+        // The old assertion was `errorMessage != nil`, which passed while the message was
+        // unrenderable: `EventContainerView` gated it on `participant == nil`, and by the
+        // time a listener fails the participant is loaded. These two assertions are the
+        // ones that can fail if the message goes back to having nowhere to render.
+        #expect(session.connectionMessage != nil, "a frozen points display must say so")
+        #expect(session.participant != nil, "this is exactly the case the old gate excluded")
+        #expect(
+            session.errorMessage == nil,
+            "the occasion is still readable — a takeover would hide tabs the user may still use"
+        )
+    }
+
+    @Test("a later game state snapshot clears the banner")
+    func listenerRecoveryClearsTheBanner() async {
+        let mock = MockGameBackend()
+        mock.stubbedOccasion = occasion()
+        mock.stubbedParticipant = participant()
+        mock.listenerFailure = NSError(domain: "FIRFirestoreErrorDomain", code: 7)
+        let session = EventSession(eventId: "evt_1", service: mock)
+
+        await session.start()
+        await settle()
+        mock.emitGameState(.empty)
+        await settle()
+
+        #expect(session.connectionMessage == nil)
+    }
+
+    @Test("a failed open is the only thing that takes the whole screen")
+    func failedOpenIsTheOnlyTakeover() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let session = EventSession(eventId: "evt_1", service: mock)
+
+        await session.start()
+
+        // `EventContainerView` no longer re-derives "nothing is loaded" from the participant,
+        // so this invariant is what keeps that takeover honest.
         #expect(session.errorMessage != nil)
+        #expect(session.participant == nil, "the takeover must only fire when there is nothing behind it")
+        #expect(session.connectionMessage == nil)
     }
 
     @Test("two sessions on different occasions register and release distinct keys")

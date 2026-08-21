@@ -9,10 +9,19 @@ rules_version = '2';
 // a document at events/{eventId}/participants/{uid}. A client cannot express a query that
 // reaches another occasion's data, because the path does not exist for them.
 //
-// Joins are authorised against the EVENT document, never against inviteCodes. Only the host
-// can write the event document, so only the host can set the codes. inviteCodes is a
-// uniqueness registry plus a code -> eventId lookup; anyone may mint an entry there, and a
-// forged one buys nothing.
+// Joins are authorised against events/{eventId}/private/codes, which ONLY the host can read.
+// That location is the whole point: an invite code is a bearer secret, and a secret every
+// member can read is not an authorisation factor. Codes used to live on the event document,
+// which is member-readable — so any contributor could read the celebrant code, hand it to a
+// fresh anonymous uid, and have that impostor claim celebrant and delete every gift. The
+// rules below never compare a secret a requester is allowed to read.
+//
+// Rules-internal get() is PRIVILEGED: it is not subject to these rules. That is what lets a
+// joiner's create be validated against a document the joiner cannot read. Pinned by
+// 'authorises a join against a document the joiner cannot read' in the test suite.
+//
+// inviteCodes is a uniqueness registry plus a code -> eventId lookup; anyone may mint an
+// entry there, and a forged one buys nothing.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -37,6 +46,11 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(eventId)).data;
     }
 
+    // The invite codes, read here rather than off the member-readable event document.
+    function codesData(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)/private/codes).data;
+    }
+
     // Code uniqueness registry and code -> eventId lookup. `get` so a typed code can be
     // resolved to an occasion; `list` never, so codes cannot be enumerated. Nothing here
     // authorises anything — see the participants create rule.
@@ -56,11 +70,17 @@ service cloud.firestore {
     // Create also accepts the event's hostUid, not just membership: occasion creation
     // commits the participant doc and this doc in the same batch, and batched writes are
     // evaluated against committed state, so isMember() is still false at that point.
+    //
+    // Update is allowed for the owner because the client writes this row with setData, which
+    // is an update whenever the row already exists — which it does for anyone the host
+    // removed and then re-invited, since no rule lets the host delete the mirror. Denying
+    // update bricked rejoin: the participant create succeeded and the mirror write then
+    // failed with permission-denied, leaving a member who is told their invite is invalid.
     match /memberships/{uid}/events/{eventId} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create: if signedIn() && request.auth.uid == uid
                     && (isMember(eventId) || eventData(eventId).hostUid == request.auth.uid);
-      allow update: if false;
+      allow update: if signedIn() && request.auth.uid == uid;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
@@ -69,33 +89,60 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.hostUid == request.auth.uid;
       allow delete: if false;
 
-      // hostUid is the root of authority — participant, state and membership creation all
-      // resolve it — so it is immutable. Host transfer is not a feature.
+      // hostUid is the root of authority — participant, state, codes and membership creation
+      // all resolve it — so it is immutable. Host transfer is not a feature.
       //
-      // The host may otherwise edit freely. The one write a non-host may make is the
-      // celebrant consuming their own invite code by clearing it, which is what makes that
-      // code single-use: the field lives on the document only the host can write.
-      allow update: if request.resource.data.hostUid == resource.data.hostUid
-                    && (
-                      isHost(eventId)
+      // Host-only, with nothing carved out. The celebrant's one write is to
+      // events/{id}/private/codes, not here: keeping every non-host write off this document
+      // is what stops a "clear the code" carve-out being aimed at any other field.
+      allow update: if isHost(eventId)
+                    && request.resource.data.hostUid == resource.data.hostUid;
+
+      // The two invite codes. Host-readable only — this is the fix for the escalation
+      // described at the top of this file. A member cannot read this document, so a member
+      // cannot harvest the celebrant code; the join rule below compares against it with a
+      // privileged rules-internal get() instead.
+      match /private/{docId} {
+        allow read: if isHost(eventId);
+
+        // Same shape and same gate as state/main: written in the phase-2 batch alongside the
+        // host's own participant document, so it cannot depend on membership.
+        allow create: if signedIn() && docId == 'codes'
+                      && eventData(eventId).hostUid == request.auth.uid;
+
+        // The host may rotate the codes. The one write a non-host may make is the celebrant
+        // consuming their own invite by clearing it, which is what makes that code
+        // single-use. The celebrant needs `update` but never `read`: diff() is evaluated
+        // server-side and does not require the caller to be able to read the document.
+        allow update: if (isHost(eventId) && docId == 'codes')
                       || (
                         signedIn()
+                        && docId == 'codes'
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['celebrantCode'])
                         && request.resource.data.celebrantCode == ''
                         && get(participantPath(eventId)).data.mode == 'celebrant'
-                      )
-                    );
+                      );
+
+        allow delete: if false;
+      }
 
       // Self-registration. Two legitimate paths, and nothing else:
       //   1. the host bootstrapping their own participant doc right after creating the event
-      //   2. an invited joiner presenting a code that matches the one on THIS event document
-      // The code is checked against the event, not against inviteCodes, because inviteCodes
-      // is client-writable. An empty code never matches, so a consumed code cannot be
-      // replayed by presenting ''.
+      //   2. an invited joiner presenting a code that matches the one in private/codes
+      // The code is checked against private/codes, not against inviteCodes (client-writable)
+      // and not against the event document (member-readable). An empty code never matches,
+      // so a consumed code cannot be replayed by presenting ''.
       // Rules for batched writes evaluate against committed state, which is why occasion
       // creation is two-phase — see the plan's "Deviations from the spec".
       match /participants/{uid} {
-        allow read: if isMember(eventId);
+        // Every participant document carries `usedCode` — the invite code its owner
+        // presented. Letting members read each other's rows would therefore re-open the
+        // exact escalation private/codes closes, one door along: a contributor reads the
+        // celebrant's row and harvests the celebrant code from it. So: your own row, or the
+        // host's, who holds both codes anyway. The roster is host-only functionality
+        // (`AdminViewModel.loadParticipants`), so nothing else needs it.
+        allow get: if (signedIn() && request.auth.uid == uid) || isHost(eventId);
+        allow list: if isHost(eventId);
 
         allow create: if signedIn() && request.auth.uid == uid && (
           (
@@ -109,10 +156,10 @@ service cloud.firestore {
             && (
               (
                 request.resource.data.mode == 'contributor'
-                && eventData(eventId).contributorCode == request.resource.data.usedCode
+                && codesData(eventId).contributorCode == request.resource.data.usedCode
               ) || (
                 request.resource.data.mode == 'celebrant'
-                && eventData(eventId).celebrantCode == request.resource.data.usedCode
+                && codesData(eventId).celebrantCode == request.resource.data.usedCode
               )
             )
           )

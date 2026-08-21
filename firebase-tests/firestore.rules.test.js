@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { beforeAll, afterAll, beforeEach, describe, it } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import {
   initializeTestEnvironment,
   assertFails,
@@ -44,9 +44,13 @@ const CODE2 = 'RSTU2345';
 async function seed() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+    // No codes on the event document: it is member-readable, and an invite code is a bearer
+    // secret. They live in events/{id}/private/codes, which only the host can read.
     await setDoc(doc(db, `events/${EVENT}`), {
       name: "Alex's 30th", occasionType: 'birthday', celebrantName: 'Alex',
       hostUid: HOST, occasionDate: new Date(), isOpen: true, createdAt: new Date(),
+    });
+    await setDoc(doc(db, `events/${EVENT}/private/codes`), {
       contributorCode: CODE, celebrantCode: CELEB_CODE,
     });
     await setDoc(doc(db, `events/${EVENT}/participants/${HOST}`), {
@@ -62,11 +66,23 @@ async function seed() {
       isUnlocked: false, sortOrder: 0, badgeIllustration: 'b', createdAt: new Date(),
       fetchedBy: [],
     });
+    await setDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      title: 'Sing', description: 'x', pointValue: 50, isSecret: false, isCompleted: false,
+    });
+    await setDoc(doc(db, `events/${EVENT}/timeline/t1`), {
+      type: 'reward_unlocked', referenceId: 'r1', title: 'x', subtitle: 'y',
+      badgeType: 'reward', badgeAsset: 'b', timestamp: new Date(),
+    });
+    await setDoc(doc(db, `events/${EVENT}/state/main`), {
+      currentPoints: 100, totalPointsEarned: 100, totalPointsSpent: 0, updatedAt: new Date(),
+    });
 
     // A completely unrelated stranger's occasion. Nobody from evt_1 belongs to it.
     await setDoc(doc(db, `events/${EVENT2}`), {
       name: "Someone else's wedding", occasionType: 'wedding', celebrantName: 'Kim',
       hostUid: HOST2, occasionDate: new Date(), isOpen: true, createdAt: new Date(),
+    });
+    await setDoc(doc(db, `events/${EVENT2}/private/codes`), {
       contributorCode: CODE2, celebrantCode: 'VWXY6789',
     });
     await setDoc(doc(db, `events/${EVENT2}/participants/${HOST2}`), {
@@ -165,6 +181,14 @@ describe('event scoping', () => {
     }));
   });
 
+  it('denies switching your own play mode to celebrant', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/participants/${GUEST}`), {
+      mode: 'celebrant',
+    }));
+  });
+
   it('denies a non-host creating a reward', async () => {
     await joinAsContributor(GUEST);
     const db = testEnv.authenticatedContext(GUEST).firestore();
@@ -176,14 +200,108 @@ describe('event scoping', () => {
   });
 
   it('denies editing the timeline once written', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), `events/${EVENT}/timeline/t1`), {
-        type: 'reward_unlocked', referenceId: 'r1', title: 'x', subtitle: 'y',
-        badgeType: 'reward', badgeAsset: 'b', timestamp: new Date(),
-      });
-    });
     const db = testEnv.authenticatedContext(HOST).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/timeline/t1`), { title: 'tampered' }));
+  });
+});
+
+// Positive coverage for the three content collections. Every assertion about them used to be
+// assertFails, which meant a one-character typo in `match /rewards/{rewardId}` routed the
+// whole block to the catch-all deny, left the suite green, and 403'd the entire gift feature
+// in production. Mutation-tested: renaming any of the three match blocks fails a test here.
+describe('content collections are reachable', () => {
+  beforeEach(seed);
+
+  it('lets a member read a challenge', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/challenges/c1`)));
+  });
+
+  it('lets a member list challenges', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDocs(collection(db, `events/${EVENT}/challenges`)));
+  });
+
+  it('lets a member create a secret challenge', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/challenges/c2`), {
+      title: 'Secret dare', description: 'x', pointValue: 50, isSecret: true,
+      isCompleted: false,
+    }));
+  });
+
+  it('lets a member complete a challenge', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      isCompleted: true,
+    }));
+  });
+
+  it('lets the host delete a challenge', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(deleteDoc(doc(db, `events/${EVENT}/challenges/c1`)));
+  });
+
+  it('lets a member read a reward', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/rewards/r1`)));
+  });
+
+  it('lets a member list rewards', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDocs(collection(db, `events/${EVENT}/rewards`)));
+  });
+
+  it('lets the host create a reward', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/rewards/r2`), {
+      fromName: 'Sam', title: 'x', pointCost: 50, contentType: 'video',
+      isUnlocked: false, sortOrder: 1, badgeIllustration: 'b', createdAt: new Date(),
+      fetchedBy: [],
+    }));
+  });
+
+  it('lets a member unlock a reward', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      isUnlocked: true,
+    }));
+  });
+
+  it('lets the host delete a reward', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(deleteDoc(doc(db, `events/${EVENT}/rewards/r1`)));
+  });
+
+  it('lets a member read the timeline', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDocs(collection(db, `events/${EVENT}/timeline`)));
+  });
+
+  it('lets a member append to the timeline', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/timeline/t2`), {
+      type: 'challenge_completed', referenceId: 'c1', title: 'x', subtitle: 'y',
+      badgeType: 'challenge', badgeAsset: 'b', timestamp: new Date(),
+    }));
+  });
+
+  it('lets a member read and update the game state', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/state/main`)));
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/state/main`), {
+      currentPoints: 150,
+    }));
   });
 });
 
@@ -214,10 +332,146 @@ describe('cross-event isolation', () => {
     const db = testEnv.authenticatedContext(HOST).firestore();
     await assertFails(getDoc(doc(db, `events/${EVENT2}/participants/${HOST2}`)));
   });
+
+  it("denies the host of one event reading another event's invite codes", async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT2}/private/codes`)));
+  });
+});
+
+// THE fix. An invite code is a bearer secret: whoever holds the celebrant code can claim
+// celebrant, and the celebrant can delete every gift in Storage. The contributor link is
+// designed to be reusable and broadly shared, so "every member" is "every recipient of a
+// group-chat link". Codes therefore cannot live anywhere a member can read.
+describe('invite codes are host-only', () => {
+  beforeEach(seed);
+
+  it('lets the host read the invite codes', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+  });
+
+  it('denies a contributor reading the invite codes', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+  });
+
+  it('denies the celebrant reading the invite codes', async () => {
+    const db = testEnv.authenticatedContext(CELEBRANT).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+  });
+
+  it('denies a non-member reading the invite codes', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+  });
+
+  it('denies a member enumerating the private subcollection', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDocs(collection(db, `events/${EVENT}/private`)));
+  });
+
+  it('carries no codes on the member-readable event document', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    const snap = await getDoc(doc(db, `events/${EVENT}`));
+    expect(snap.data().contributorCode).toBeUndefined();
+    expect(snap.data().celebrantCode).toBeUndefined();
+  });
+
+  it('denies a member writing the invite codes', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      contributorCode: 'MINE2345',
+    }));
+  });
+
+  it('lets the host rotate the invite codes', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      contributorCode: 'NEWC2345',
+    }));
+  });
+
+  it('denies deleting the codes document outright', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/private/codes`)));
+  });
+
+  it('denies squatting a second document in the private subcollection', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/private/notcodes`), { x: 1 }));
+  });
+
+  // Pins the `docId == 'codes'` clause on update, which the create rule alone cannot: an
+  // update only fires on a document that exists, and only 'codes' can be created. Seeded
+  // out of band so the clause is testable rather than merely plausible.
+  it('denies writing any other document in the private subcollection', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/private/notcodes`), { x: 1 });
+    });
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/notcodes`), { x: 2 }));
+  });
+
+  // The enabling fact this whole design rests on. Rules-internal get() is PRIVILEGED: it is
+  // not itself subject to these rules. So the participant-create rule can compare the
+  // presented code against a document the joiner is explicitly denied read access to. If
+  // that were false, the fix would be impossible and this test would fail.
+  it('authorises a join against a document the joiner cannot read', async () => {
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/participants/${GUEST}`), {
+      name: 'Jordan', avatarId: 'a2', mode: 'contributor', isHost: false, usedCode: CODE,
+    }));
+  });
+});
+
+// Second harvest door, same secret. Every participant document carries `usedCode`, the code
+// its owner presented — so a member-readable roster leaks the celebrant code out of the
+// celebrant's own row. The roster is host-only functionality, so read is host-or-self.
+describe('the roster is host-only', () => {
+  beforeEach(seed);
+
+  it('lets the host list the roster', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(getDocs(collection(db, `events/${EVENT}/participants`)));
+  });
+
+  it('lets the host read one participant', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/participants/${CELEBRANT}`)));
+  });
+
+  it('lets a member read their own participant document', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(getDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  it('denies a contributor listing the roster', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDocs(collection(db, `events/${EVENT}/participants`)));
+  });
+
+  it("denies a contributor reading the celebrant's row, which carries their invite code", async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/participants/${CELEBRANT}`)));
+  });
+
+  it('denies a non-member reading any participant', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/participants/${HOST}`)));
+  });
 });
 
 // inviteCodes has exactly one job: guarantee code uniqueness and let a client turn a code it
 // already holds into an eventId. Resolution is a single-document get; enumeration is not.
+// Authorisation never flows through here.
 describe('invite code resolution', () => {
   beforeEach(seed);
 
@@ -253,10 +507,10 @@ describe('invite code resolution', () => {
   });
 });
 
-// Codes are authorised against the event document, which only the host can write. Minting an
-// inviteCodes doc is deliberately open (Task 7 mints codes before the event exists), so a
-// forged one must buy nothing. The invite deep link publishes the eventId in plaintext, so
-// assume every contributor knows it.
+// Codes are authorised against events/{id}/private/codes, which only the host can write.
+// Minting an inviteCodes doc is deliberately open (codes are minted before the event exists),
+// so a forged one must buy nothing. The invite deep link publishes the eventId in plaintext,
+// so assume every contributor knows it.
 describe('forged invite codes buy nothing', () => {
   beforeEach(seed);
 
@@ -280,10 +534,10 @@ describe('forged invite codes buy nothing', () => {
 });
 
 // Occasion creation is two-phase: the event document commits alone, then a single batch
-// writes the host participant, the state doc, and the membership index. Firestore evaluates
-// every write in a batch against COMMITTED state, so nothing in that batch may depend on the
-// participant document the same batch is creating. State and membership creation are
-// therefore gated on the event's hostUid, not on membership.
+// writes the host participant, the codes document, the state doc, and the membership index.
+// Firestore evaluates every write in a batch against COMMITTED state, so nothing in that
+// batch may depend on the participant document the same batch is creating. Codes, state and
+// membership creation are therefore gated on the event's hostUid, not on membership.
 describe('two-phase occasion creation', () => {
   beforeEach(seed);
 
@@ -292,7 +546,6 @@ describe('two-phase occasion creation', () => {
     await assertSucceeds(setDoc(doc(db, 'events/evt_new'), {
       name: 'A party', occasionType: 'birthday', celebrantName: 'Kim',
       hostUid: GUEST, occasionDate: new Date(), isOpen: true, createdAt: new Date(),
-      contributorCode: 'IJKL2345', celebrantCode: 'MNPQ6789',
     }));
   });
 
@@ -301,14 +554,15 @@ describe('two-phase occasion creation', () => {
     await assertFails(setDoc(doc(db, 'events/evt_new'), {
       name: 'A party', occasionType: 'birthday', celebrantName: 'Kim',
       hostUid: OUTSIDER, occasionDate: new Date(), isOpen: true, createdAt: new Date(),
-      contributorCode: 'IJKL2345', celebrantCode: 'MNPQ6789',
     }));
   });
 
   it('lets the host commit phase two as one batch against a bare event document', async () => {
-    // Phase 1 committed the event and nothing else — no participant document yet.
+    // Phase 1 committed the event and nothing else — no participant document, no codes.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await deleteDoc(doc(ctx.firestore(), `events/${EVENT}/participants/${HOST}`));
+      await deleteDoc(doc(ctx.firestore(), `events/${EVENT}/private/codes`));
+      await deleteDoc(doc(ctx.firestore(), `events/${EVENT}/state/main`));
     });
 
     const db = testEnv.authenticatedContext(HOST).firestore();
@@ -316,17 +570,35 @@ describe('two-phase occasion creation', () => {
     batch.set(doc(db, `events/${EVENT}/participants/${HOST}`), {
       name: 'Sam', avatarId: 'a1', mode: 'contributor', isHost: true, usedCode: CODE,
     });
+    batch.set(doc(db, `events/${EVENT}/private/codes`), {
+      contributorCode: CODE, celebrantCode: CELEB_CODE,
+    });
     batch.set(doc(db, `events/${EVENT}/state/main`), {
       totalPoints: 0, completedChallengeIds: [], unlockedRewardIds: [], updatedAt: new Date(),
     });
     batch.set(doc(db, `memberships/${HOST}/events/${EVENT}`), {
-      eventId: EVENT, name: "Alex's 30th", occasionType: 'birthday', joinedAt: new Date(),
+      role: 'contributor', isHost: true, joinedAt: new Date(),
     });
     await assertSucceeds(batch.commit());
   });
 
+  it('denies a signed-in non-host creating the codes document', async () => {
+    // Join first: joining resolves the codes document, so it has to still exist for that.
+    await joinAsContributor(GUEST);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), `events/${EVENT}/private/codes`));
+    });
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/private/codes`), {
+      contributorCode: 'MINE2345', celebrantCode: 'MINE6789',
+    }));
+  });
+
   it('denies a signed-in non-host creating the state document', async () => {
     await joinAsContributor(GUEST);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), `events/${EVENT}/state/main`));
+    });
     const db = testEnv.authenticatedContext(GUEST).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/state/main`), {
       totalPoints: 0, completedChallengeIds: [], unlockedRewardIds: [], updatedAt: new Date(),
@@ -350,13 +622,44 @@ describe('membership index', () => {
   it("denies writing into another user's membership index", async () => {
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
     await assertFails(setDoc(doc(db, `memberships/${HOST}/events/${EVENT}`), {
-      eventId: EVENT, name: 'injected', occasionType: 'birthday', joinedAt: new Date(),
+      role: 'contributor', isHost: false, joinedAt: new Date(),
+    }));
+  });
+
+  // Rejoin after removal. The client writes this row with setData unconditionally, which is
+  // an UPDATE whenever the row already exists — and it does for anyone the host removed and
+  // then re-invited, because no rule lets the host delete the mirror. `allow update: if
+  // false` therefore bricked rejoin: the participant create succeeded, this write threw raw
+  // permission-denied, and the user was told their invite was invalid while already being a
+  // member in Firestore.
+  it('lets the owner rewrite their own membership row when rejoining', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `memberships/${GUEST}/events/${EVENT}`), {
+      role: 'contributor', isHost: false, joinedAt: new Date(),
+    }));
+    // Second write, same path: this is the update that used to be denied.
+    await assertSucceeds(setDoc(doc(db, `memberships/${GUEST}/events/${EVENT}`), {
+      role: 'contributor', isHost: false, joinedAt: new Date(),
+    }));
+  });
+
+  it("denies another user updating an existing membership row", async () => {
+    await joinAsContributor(GUEST);
+    const guestDb = testEnv.authenticatedContext(GUEST).firestore();
+    await setDoc(doc(guestDb, `memberships/${GUEST}/events/${EVENT}`), {
+      role: 'contributor', isHost: false, joinedAt: new Date(),
+    });
+
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(updateDoc(doc(db, `memberships/${GUEST}/events/${EVENT}`), {
+      isHost: true,
     }));
   });
 });
 
-// hostUid is the root of authority: participant-create, state-create and membership-create all
-// resolve it. A host who could rewrite it could mint a second host.
+// hostUid is the root of authority: participant-create, codes-create, state-create and
+// membership-create all resolve it. A host who could rewrite it could mint a second host.
 describe('hostUid is immutable', () => {
   beforeEach(seed);
 
@@ -376,50 +679,94 @@ describe('hostUid is immutable', () => {
       name: 'Renamed', hostUid: OUTSIDER,
     }));
   });
+
+  it('denies a non-host member editing the event document at all', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { name: 'Hijacked' }));
+  });
+
+  it('denies the celebrant editing the event document', async () => {
+    const db = testEnv.authenticatedContext(CELEBRANT).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { isOpen: false }));
+  });
 });
 
-// The celebrant code is single-use, and the claim is consumed on the event document — the one
-// place only the host can otherwise write. Clearing the field is the only write a non-host
-// member is allowed to make to the event.
+// The celebrant code is single-use, and the claim is consumed on the codes document — the one
+// write a non-host member is allowed to make there. Note the celebrant can UPDATE that
+// document but cannot READ it: diff() is evaluated server-side.
 describe('single-use celebrant code', () => {
   beforeEach(seed);
 
   it('lets the celebrant consume the code by clearing it', async () => {
     const db = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: '' }));
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
+  });
+
+  // The client retries this on every occasion open, because it cannot read the document to
+  // find out whether the first attempt landed. Re-clearing an already-empty code produces an
+  // empty diff, which hasOnly() accepts — so the retry is a permitted no-op rather than a
+  // permission-denied the client would log as a failure forever.
+  it('lets the celebrant re-clear an already-consumed code', async () => {
+    const db = testEnv.authenticatedContext(CELEBRANT).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
   });
 
   it('denies a contributor clearing the celebrant code', async () => {
     await joinAsContributor(GUEST);
     const db = testEnv.authenticatedContext(GUEST).firestore();
-    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: '' }));
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
   });
 
   it('denies a non-member clearing the celebrant code', async () => {
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
-    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: '' }));
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
   });
 
-  it('denies the celebrant editing any other field', async () => {
+  it('denies the celebrant editing the contributor code under cover of consuming theirs', async () => {
     const db = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { name: 'Hijacked' }));
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '', contributorCode: 'MINE2345',
+    }));
   });
 
-  it('denies the celebrant closing the occasion under cover of consuming the code', async () => {
+  // The celebrant branch is scoped to the 'codes' document too, not just the host branch.
+  // Unreachable while only 'codes' can be created, but "unreachable today" is exactly the
+  // assumption this whole change exists to stop trusting — so it is pinned rather than
+  // reasoned about. Seeded out of band, since the create rule refuses to make the decoy.
+  it('denies the celebrant clearing a celebrantCode on any other private document', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/private/decoy`), {
+        celebrantCode: CELEB_CODE,
+      });
+    });
     const db = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await assertFails(updateDoc(doc(db, `events/${EVENT}`), {
-      celebrantCode: '', isOpen: false,
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/decoy`), {
+      celebrantCode: '',
     }));
   });
 
   it('denies the celebrant rewriting the code to a value of their choosing', async () => {
     const db = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: 'MINE2345' }));
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: 'MINE2345',
+    }));
   });
 
   it('denies a second claim once the code is consumed', async () => {
     const celebrantDb = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await updateDoc(doc(celebrantDb, `events/${EVENT}`), { celebrantCode: '' });
+    await updateDoc(doc(celebrantDb, `events/${EVENT}/private/codes`), { celebrantCode: '' });
 
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/participants/${OUTSIDER}`), {
@@ -429,11 +776,69 @@ describe('single-use celebrant code', () => {
 
   it('denies claiming celebrant with an empty code once consumed', async () => {
     const celebrantDb = testEnv.authenticatedContext(CELEBRANT).firestore();
-    await updateDoc(doc(celebrantDb, `events/${EVENT}`), { celebrantCode: '' });
+    await updateDoc(doc(celebrantDb, `events/${EVENT}/private/codes`), { celebrantCode: '' });
 
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/participants/${OUTSIDER}`), {
       name: 'Mallory', avatarId: 'a5', mode: 'celebrant', isHost: false, usedCode: '',
     }));
+  });
+});
+
+// The privilege-escalation chain this whole change exists to break, replayed step by step.
+// Originally: a contributor read the celebrant code off the event document, handed it to a
+// fresh anonymous uid, and that impostor claimed celebrant — from where the Storage rules let
+// it delete every gift and every proof photo, and clear the code so the real celebrant's
+// single-use link was dead. The contributor link is meant to be reusable and broadly shared,
+// so "a contributor" is "anyone in the group chat".
+describe('privilege escalation chain is broken', () => {
+  beforeEach(seed);
+
+  it('step 1: a member reading the event obtains no code', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    const snap = await getDoc(doc(db, `events/${EVENT}`));
+    expect(snap.exists()).toBe(true);
+    expect(snap.data().celebrantCode).toBeUndefined();
+    expect(snap.data().contributorCode).toBeUndefined();
+    await assertFails(getDoc(doc(db, `events/${EVENT}/private/codes`)));
+    await assertFails(getDoc(doc(db, `events/${EVENT}/participants/${CELEBRANT}`)));
+  });
+
+  it('step 2: a member cannot promote their own row to celebrant', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/participants/${GUEST}`), {
+      mode: 'celebrant',
+    }));
+  });
+
+  it('step 3: a fresh uid guessing the celebrant code cannot claim celebrant', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/participants/${OUTSIDER}`), {
+      name: 'Mallory', avatarId: 'a5', mode: 'celebrant', isHost: false, usedCode: 'GUESS234',
+    }));
+  });
+
+  it('step 4: a member who is not the celebrant cannot become one to reach the media', async () => {
+    // Storage's isCelebrant() reads participants/{uid}.mode, and mode is immutable after
+    // create (step 2) and only settable to 'celebrant' with the celebrant code (step 3).
+    // So the media-delete privilege is unreachable without the code itself.
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    const own = await getDoc(doc(db, `events/${EVENT}/participants/${GUEST}`));
+    expect(own.data().mode).toBe('contributor');
+    await assertFails(setDoc(doc(db, `events/${EVENT}/participants/${GUEST}`), {
+      name: 'Jordan', avatarId: 'a2', mode: 'celebrant', isHost: false, usedCode: CELEB_CODE,
+    }));
+  });
+
+  it("step 5: a member cannot clear the celebrant code and kill the real celebrant's link", async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/private/codes`), {
+      celebrantCode: '',
+    }));
+    await assertFails(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: '' }));
   });
 });

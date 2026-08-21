@@ -22,6 +22,11 @@ final class AdminViewModel: ObservableObject {
     @Published var challenges: [Challenge] = []
     @Published var rewards: [Reward] = []
     @Published var participants: [Participant] = []
+    /// The occasion's invite codes. Loaded here rather than read off `EventSession.occasion`
+    /// because they no longer live on the event document — they live at
+    /// `events/{id}/private/codes`, which only the host can read. This view model is the host
+    /// panel, so this is the one place in the app entitled to them.
+    @Published var inviteCodes: InviteCodes?
     @Published var actionResult: AdminActionResult?
     @Published var isPerformingAction = false
     
@@ -103,6 +108,7 @@ final class AdminViewModel: ObservableObject {
         }
 
         Task { await loadParticipants() }
+        Task { await loadInviteCodes() }
     }
     
     func stopListening() {
@@ -129,6 +135,17 @@ final class AdminViewModel: ObservableObject {
             participants = try await service.fetchParticipants(eventId: eventId)
         } catch {
             logger.error("Loading the roster failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Also one-shot: codes only change if the host rotates them, and the host is the person
+    /// looking at this screen. A failure leaves `inviteCodes` nil, and the view renders the
+    /// share rows as unavailable rather than offering a link built from nothing.
+    private func loadInviteCodes() async {
+        do {
+            inviteCodes = try await service.fetchInviteCodes(eventId: eventId)
+        } catch {
+            logger.error("Loading the invite codes failed: \(error.localizedDescription)")
         }
     }
     

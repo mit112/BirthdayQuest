@@ -131,6 +131,38 @@ describe('storage membership gate', () => {
     );
   });
 
+  // The proofs path applies the same SVG exclusion, and used to do so through an
+  // independently maintained copy of the clause — deleting it failed zero tests. It is the
+  // clause stopping a member uploading a script-bearing SVG as a challenge proof, which the
+  // read rule then serves to every member. Both paths now share isSafeImage(); these pin the
+  // proofs side of it so the two cannot silently drift apart again.
+  it('denies an SVG proof upload even though it matches image/.*', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/proofs/c1/proof.svg`), IMG, {
+        contentType: 'image/svg+xml',
+      })
+    );
+  });
+
+  it('denies an SVG proof upload with a charset parameter (bare equality would miss this)', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/proofs/c1/proof2.svg`), IMG, {
+        contentType: 'image/svg+xml; charset=utf-8',
+      })
+    );
+  });
+
+  it('denies an unsuffixed image/svg proof upload (bare equality would miss this)', async () => {
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertFails(
+      uploadBytes(ref(s, `events/${EVENT}/proofs/c1/proof3.svg`), IMG, {
+        contentType: 'image/svg',
+      })
+    );
+  });
+
   // Sanity: the svg exclusion pattern must not over-match legitimate image/video/audio types.
   it('still lets a member upload a PNG reward', async () => {
     const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();

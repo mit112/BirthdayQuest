@@ -35,12 +35,66 @@ struct JoinOccasionTests {
         #expect(mock.joinedOccasions.first?.code == "ABCD2345")
     }
 
+    /// The crash case. `"birthdayquest://join?e=…".uppercased()` contains `//`, and pasting
+    /// the whole invite URL into the code field was the documented workaround while the URL
+    /// scheme was unregistered. That string reaches `document(_:)` as a PATH, and Firestore
+    /// answers a malformed path by throwing an Objective-C `NSException` from its C++ core —
+    /// which `do/catch` cannot intercept, so the process aborts. The only fix is to refuse it
+    /// before a reference is built; asserting the error is what proves the guard is what
+    /// stopped it, rather than luck.
+    @Test("a pasted invite URL in the code field is refused before any lookup")
+    func pastedUrlNeverReachesTheBackend() async {
+        let mock = MockGameBackend()
+        let vm = JoinOccasionViewModel(service: mock)
+
+        vm.code = "birthdayquest://join?e=evt_1&c=ABCD2345"
+        await vm.resolveCode()
+
+        #expect(mock.called("resolveInviteCode") == false)
+        #expect(mock.resolvedCodes.isEmpty)
+        #expect(vm.errorMessage != nil)
+        #expect(vm.eventId.isEmpty)
+        #expect(vm.isResolvingCode == false)
+    }
+
+    @Test("a code containing a slash is refused before any lookup")
+    func slashInCodeNeverReachesTheBackend() async {
+        let mock = MockGameBackend()
+        let vm = JoinOccasionViewModel(service: mock)
+
+        // Eight characters, so a length-only check would have passed it through, and
+        // `inviteCodes/ABC/1234` is an odd segment count — the second abort shape.
+        vm.code = "ABC/1234"
+        await vm.resolveCode()
+
+        #expect(mock.called("resolveInviteCode") == false)
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("a link whose event id could not be a document id is refused")
+    func malformedEventIdInLinkIsRefused() {
+        let vm = JoinOccasionViewModel(service: MockGameBackend())
+
+        #expect(vm.parse(link: URL(string: "birthdayquest://join?e=a%2F%2Fb&c=ABCD2345")!) == false)
+        #expect(vm.eventId.isEmpty)
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("a link whose code could not be a code is refused")
+    func malformedCodeInLinkIsRefused() {
+        let vm = JoinOccasionViewModel(service: MockGameBackend())
+
+        #expect(vm.parse(link: URL(string: "birthdayquest://join?e=evt_1&c=ABC")!) == false)
+        #expect(vm.parse(link: URL(string: "birthdayquest://join?e=evt_1&c=AB%2F%2F2345")!) == false)
+        #expect(vm.eventId.isEmpty)
+    }
+
     @Test("a rejected code surfaces a specific message, not a generic failure")
     func invalidCodeMessage() async {
         let mock = MockGameBackend()
         mock.errorToThrow = BackendError.invalidCode
         let vm = JoinOccasionViewModel(service: mock)
-        vm.eventId = "evt_1"; vm.code = "WRONG123"; vm.name = "Jordan"
+        vm.eventId = "evt_1"; vm.code = "ZZZZ2345"; vm.name = "Jordan"
 
         #expect(await vm.join() == false)
         #expect(vm.errorMessage?.contains("invite") == true)
@@ -116,7 +170,7 @@ struct InviteCodeResolutionTests {
         mock.stubbedCodeResolution = nil
         let vm = JoinOccasionViewModel(service: mock)
 
-        vm.code = "NOTACODE"
+        vm.code = "ZZZZ2345"
         await vm.resolveCode()
 
         #expect(vm.eventId.isEmpty)
