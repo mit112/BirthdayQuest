@@ -355,9 +355,15 @@ test passes just as happily against an implementation that never reads one of it
 why the original `GameState` wire-parser bug was invisible, and why R74 exists. A rules suite nobody
 has mutated is a suite nobody has tested.
 
-**Swift.** View-model tests through `MockGameBackend` for each new method, and — the assertion that
-actually matters — that create and delete move the counter. Model round-trips decode through
-Firestore's decoder (R49, R51).
+**Swift.** View-model tests through `MockGameBackend` for each new method. Model round-trips
+decode through Firestore's decoder (R49, R51).
+
+**And one thing the Swift tier structurally cannot prove: that the counter actually moves.** The
+increment is batched inside `FirestoreService`, and every Swift test substitutes `MockGameBackend`
+for exactly that type — so a test can assert the view model asked for a create, and cannot assert
+the batch carried an increment. This is the same limitation that leaves the three atomic
+transactions uncovered (R30), and it has the same fix: a Swift-to-emulator integration harness that
+does not exist. Do not paper over it with a mock that pretends to count.
 
 Both tiers must be green, and the rules suite must be re-run because rules change:
 
