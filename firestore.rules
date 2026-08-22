@@ -51,6 +51,23 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(eventId)/private/codes).data;
     }
 
+    // Content vs gameplay, used by both challenges and rewards below.
+    //
+    // `hasOnly` is what makes a field immutable: any key absent from every allow-list
+    // cannot be written at all, so isSecret / createdByUserId / fromUserId / createdAt are
+    // pinned without a clause of their own.
+    function affects(allowed) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    // Author identity is the hinge the whole content/gameplay split turns on. `.get(k, '')`
+    // rather than direct access, because documents written before this rule existed carry
+    // no author field and direct access on a missing key errors out rather than returning
+    // false — which would deny the host too.
+    function isAuthorOf(field) {
+      return resource.data.get(field, '') == request.auth.uid;
+    }
+
     // Code uniqueness registry and code -> eventId lookup. `get` so a typed code can be
     // resolved to an occasion; `list` never, so codes cannot be enumerated. Nothing here
     // authorises anything — see the participants create rule.
@@ -174,10 +191,41 @@ service cloud.firestore {
         allow delete: if isHost(eventId);
       }
 
+      // Split into a gameplay half and a content half. The gameplay list is verbatim the
+      // field set `completeChallengeAtomically` writes, and stays open to any member: the two
+      // tests that exercise it do so as an ordinary contributor, and narrowing it to the
+      // celebrant would break the dare flow. The content half is the host or the challenge's
+      // own author, which is what lets a contributor edit their dare and nobody else's.
       match /challenges/{challengeId} {
         allow read: if isMember(eventId);
-        allow create: if isMember(eventId);
-        allow update: if isMember(eventId);
+
+        // A member may author a secret dare, in their own name only. The host may author
+        // either kind. Both stamp themselves as the author, because the update rule above
+        // trusts that field.
+        allow create: if isMember(eventId)
+                      && request.resource.data.createdByUserId == request.auth.uid
+                      && (isHost(eventId) || request.resource.data.isSecret == true)
+                      && request.resource.data.title is string
+                      && request.resource.data.title.size() > 0
+                      && request.resource.data.title.size() <= 120
+                      && request.resource.data.description is string
+                      && request.resource.data.description.size() <= 2000
+                      && request.resource.data.pointValue is int
+                      && request.resource.data.pointValue >= 0
+                      && request.resource.data.pointValue <= 1000;
+
+        allow update: if isMember(eventId) && (
+                        affects(['isCompleted', 'completedAt', 'proofUrl', 'proofType', 'proofText'])
+                        || (
+                          (isHost(eventId) || isAuthorOf('createdByUserId'))
+                          && affects([
+                            'title', 'description', 'pointValue', 'difficulty', 'category',
+                            'illustrationAsset', 'isDelivered',
+                            'optionBTitle', 'optionBDescription'
+                          ])
+                        )
+                      );
+
         allow delete: if isHost(eventId);
       }
 

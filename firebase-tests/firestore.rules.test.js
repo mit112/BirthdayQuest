@@ -229,7 +229,7 @@ describe('content collections are reachable', () => {
     const db = testEnv.authenticatedContext(GUEST).firestore();
     await assertSucceeds(setDoc(doc(db, `events/${EVENT}/challenges/c2`), {
       title: 'Secret dare', description: 'x', pointValue: 50, isSecret: true,
-      isCompleted: false,
+      isCompleted: false, createdByUserId: GUEST,
     }));
   });
 
@@ -301,6 +301,132 @@ describe('content collections are reachable', () => {
     await assertSucceeds(getDoc(doc(db, `events/${EVENT}/state/main`)));
     await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/state/main`), {
       currentPoints: 150,
+    }));
+  });
+});
+
+// The content/gameplay split. Before this, `challenges` and `rewards` were the only
+// collections in the file with no field validation at all: any member could rewrite any
+// challenge's point value or any gift's price. Both directions are asserted for every
+// clause, because a deny-all baseline passes every assertFails for the wrong reason.
+describe('content is author-scoped, gameplay is member-scoped', () => {
+  beforeEach(seed);
+
+  // Gives GUEST a challenge they actually authored, so the author branch has something
+  // to match against. Written with rules disabled: the point is to test editing, not
+  // creating.
+  async function seedGuestChallenge() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/challenges/c_guest`), {
+        title: 'Guest dare', description: 'x', pointValue: 30, isSecret: true,
+        isCompleted: false, isDelivered: false, createdByUserId: GUEST,
+        createdAt: new Date(),
+      });
+    });
+  }
+
+  it('lets the author edit their own challenge content', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestChallenge();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/challenges/c_guest`), {
+      title: 'A better dare', pointValue: 40,
+    }));
+  });
+
+  it('denies a member editing a challenge they did not author', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    // c1 is seeded with no createdByUserId at all, so nobody is its author.
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      pointValue: 9999,
+    }));
+  });
+
+  it('lets the host edit any challenge content', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      title: 'Host rewrote this', pointValue: 75,
+    }));
+  });
+
+  it('still lets any member complete a challenge they did not author', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      isCompleted: true, completedAt: new Date(), proofText: 'done',
+    }));
+  });
+
+  it('denies smuggling a content field inside a gameplay write', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      isCompleted: true, pointValue: 9999,
+    }));
+  });
+
+  it('denies reassigning a challenge\'s author', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestChallenge();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c_guest`), {
+      createdByUserId: HOST,
+    }));
+  });
+
+  it('denies flipping a challenge\'s secrecy after the fact', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      isSecret: true,
+    }));
+  });
+
+  it('denies creating a challenge in someone else\'s name', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c3`), {
+      title: 'Framed', description: 'x', pointValue: 10, isSecret: true,
+      isCompleted: false, isDelivered: false, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a member creating a NON-secret challenge', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c4`), {
+      title: 'Not my job', description: 'x', pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: false, createdByUserId: GUEST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('lets the host create a non-secret challenge', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/challenges/c5`), {
+      title: 'Sing in public', description: 'Somewhere busy', pointValue: 50,
+      difficulty: 'medium', category: 'social', illustrationAsset: 'music.mic',
+      isSecret: false, isCompleted: false, isDelivered: true,
+      createdByUserId: HOST, createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge with an empty title', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c6`), {
+      title: '', description: 'x', pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge with an absurd point value', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c7`), {
+      title: 'Cheat', description: 'x', pointValue: 999999, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
     }));
   });
 });
