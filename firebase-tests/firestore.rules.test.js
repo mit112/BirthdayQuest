@@ -594,6 +594,68 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
       createdAt: new Date(), fetchedBy: [],
     }));
   });
+
+  // The remaining rewards create-validation clauses, one test each. The helper guarantees the
+  // payload is legal in every respect except the single overridden field, so when a clause is
+  // deleted and the suite stays green it is that clause, and nothing incidental, that went
+  // uncovered.
+  //
+  // Wrong values are chosen against the mutation rather than against the rule. A list still
+  // answers size() and a double still answers >=, so deleting the type check ALLOWS these
+  // writes. A wrong-typed scalar (title: 123) would deny either way — via an evaluation error
+  // rather than the rule — and would prove nothing.
+  function giftFrom(uid, overrides) {
+    return {
+      fromUserId: uid, fromName: 'Jordan', title: 'A letter', teaser: 'Open me',
+      pointCost: 0, contentType: 'text', contentText: 'Dear Alex...',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'envelope.fill',
+      createdAt: new Date(), fetchedBy: [], ...overrides,
+    };
+  }
+
+  async function assertGiftRejected(docId, overrides) {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(
+      doc(db, `events/${EVENT}/rewards/${docId}`), giftFrom(GUEST, overrides),
+    ));
+  }
+
+  it('denies a gift whose title is not a string', async () => {
+    await assertGiftRejected('r_v1', { title: ['x'] });
+  });
+
+  it('denies a gift with an empty title', async () => {
+    await assertGiftRejected('r_v2', { title: '' });
+  });
+
+  it('denies a gift with an over-long title', async () => {
+    await assertGiftRejected('r_v3', { title: 'x'.repeat(121) });
+  });
+
+  it('denies a gift whose sender name is not a string', async () => {
+    await assertGiftRejected('r_v4', { fromName: ['Jordan'] });
+  });
+
+  it('denies a gift with an empty sender name', async () => {
+    await assertGiftRejected('r_v5', { fromName: '' });
+  });
+
+  it('denies a gift with a fractional price', async () => {
+    await assertGiftRejected('r_v6', { pointCost: 10.5 });
+  });
+
+  it('denies a gift with a negative price', async () => {
+    await assertGiftRejected('r_v7', { pointCost: -5 });
+  });
+
+  it('denies a gift with an absurd price', async () => {
+    await assertGiftRejected('r_v8', { pointCost: 10001 });
+  });
+
+  it('denies a gift with a fractional sort order', async () => {
+    await assertGiftRejected('r_v9', { sortOrder: 1.5 });
+  });
 });
 
 // The architectural claim the whole subcollection layout rests on: belonging to one occasion
