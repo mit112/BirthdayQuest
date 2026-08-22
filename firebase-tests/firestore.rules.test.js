@@ -189,16 +189,6 @@ describe('event scoping', () => {
     }));
   });
 
-  it('denies a non-host creating a reward', async () => {
-    await joinAsContributor(GUEST);
-    const db = testEnv.authenticatedContext(GUEST).firestore();
-    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r2`), {
-      fromName: 'Jordan', title: 'x', pointCost: 50, contentType: 'video',
-      isUnlocked: false, sortOrder: 1, badgeIllustration: 'b', createdAt: new Date(),
-      fetchedBy: [],
-    }));
-  });
-
   it('denies editing the timeline once written', async () => {
     const db = testEnv.authenticatedContext(HOST).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/timeline/t1`), { title: 'tampered' }));
@@ -427,6 +417,181 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
       title: 'Cheat', description: 'x', pointValue: 999999, isSecret: false,
       isCompleted: false, isDelivered: true, createdByUserId: HOST,
       createdAt: new Date(),
+    }));
+  });
+
+  // The remaining five create-validation clauses. Each payload is legal in every respect
+  // except the one clause under test, and each wrong value is chosen so that deleting that
+  // clause lets the write through rather than erroring: a list still answers size(), and a
+  // double still answers >=. A string-typed near-miss would deny either way and prove nothing.
+  it('denies a challenge with an over-long title', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c8`), {
+      title: 'x'.repeat(121), description: 'x', pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge whose description is not a string', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c9`), {
+      title: 'Typed wrong', description: ['x'], pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge with an over-long description', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c10`), {
+      title: 'Wordy', description: 'x'.repeat(2001), pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge with a fractional point value', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c11`), {
+      title: 'Half a point', description: 'x', pointValue: 10.5, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  it('denies a challenge with a negative point value', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c12`), {
+      title: 'Debt', description: 'x', pointValue: -5, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
+  async function seedGuestGift() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/rewards/r_guest`), {
+        fromUserId: GUEST, fromName: 'Jordan', title: 'A letter', teaser: 'Open me',
+        pointCost: 40, contentType: 'text', contentText: 'Dear Alex...',
+        isUnlocked: false, sortOrder: 2, badgeIllustration: 'envelope.fill',
+        createdAt: new Date(), fetchedBy: [],
+      });
+    });
+  }
+
+  it('lets a member create the gift that is from them', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/rewards/r_new`), {
+      fromUserId: GUEST, fromName: 'Jordan', title: 'A letter', teaser: 'Open me',
+      pointCost: 0, contentType: 'text', contentText: 'Dear Alex...',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'envelope.fill',
+      createdAt: new Date(), fetchedBy: [],
+    }));
+  });
+
+  it('denies a member creating a gift in someone else\'s name', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r_forged`), {
+      fromUserId: CELEBRANT, fromName: 'Alex', title: 'Not mine', teaser: 't',
+      pointCost: 0, contentType: 'text', contentText: 'x',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'b',
+      createdAt: new Date(), fetchedBy: [],
+    }));
+  });
+
+  // Create just widened from host-only to any member, so membership is now the only thing
+  // standing between a stranger and the gift list. The test this replaces asserted a
+  // contributor could not create at all; nothing else asserts a non-member cannot.
+  it('denies a non-member creating a gift, even in their own name', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r_stranger`), {
+      fromUserId: OUTSIDER, fromName: 'Nobody', title: 'Uninvited', teaser: 't',
+      pointCost: 0, contentType: 'text', contentText: 'x',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'b',
+      createdAt: new Date(), fetchedBy: [],
+    }));
+  });
+
+  it('lets the author edit their own gift\'s text', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      contentText: 'Dear Alex, actually...', title: 'A better letter',
+    }));
+  });
+
+  it('denies the author repricing their own gift', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      pointCost: 1,
+    }));
+  });
+
+  it('lets the host reprice and reorder any gift', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      pointCost: 120, sortOrder: 5,
+    }));
+  });
+
+  it('denies a member editing a gift they did not write', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    // r1 is seeded with no fromUserId, so nobody is its author.
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      contentText: 'tampered',
+    }));
+  });
+
+  it('still lets any member unlock a gift', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      isUnlocked: true, unlockedAt: new Date(),
+    }));
+  });
+
+  it('still lets any member record a fetch, for the media purge', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      fetchedBy: [GUEST],
+    }));
+  });
+
+  it('denies smuggling a price change inside an unlock', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      isUnlocked: true, pointCost: 0,
+    }));
+  });
+
+  it('denies reassigning a gift\'s author', async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      fromUserId: HOST,
+    }));
+  });
+
+  it('denies a gift with an unknown content type', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r_bad`), {
+      fromUserId: GUEST, fromName: 'Jordan', title: 'x', teaser: 't',
+      pointCost: 0, contentType: 'executable', contentText: 'x',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'b',
+      createdAt: new Date(), fetchedBy: [],
     }));
   });
 });

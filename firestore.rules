@@ -229,10 +229,45 @@ service cloud.firestore {
         allow delete: if isHost(eventId);
       }
 
+      // Three tiers, not two. Gameplay stays any-member (R39's parked trust model, inherited
+      // not relitigated). Content belongs to whoever wrote the gift. But pointCost and
+      // sortOrder are the economy, and the host curates that alone — a contributor pricing
+      // their own gift can trivially make the whole board free.
+      //
+      // `fetchedBy` is in the gameplay list although nothing writes it yet, so the media
+      // pipeline does not need a second rules change to record a download.
       match /rewards/{rewardId} {
         allow read: if isMember(eventId);
-        allow create: if isHost(eventId);
-        allow update: if isMember(eventId);
+
+        // The host may create a gift for anyone; a member may create only the gift that is
+        // from them. This is what the model always said - fromUserId, fromName, "Sam's gift" -
+        // and what storage.rules already assumed when it let contributors upload gift media.
+        allow create: if isMember(eventId)
+                      && (isHost(eventId)
+                          || request.resource.data.get('fromUserId', '') == request.auth.uid)
+                      && request.resource.data.title is string
+                      && request.resource.data.title.size() > 0
+                      && request.resource.data.title.size() <= 120
+                      && request.resource.data.fromName is string
+                      && request.resource.data.fromName.size() > 0
+                      && request.resource.data.pointCost is int
+                      && request.resource.data.pointCost >= 0
+                      && request.resource.data.pointCost <= 10000
+                      && request.resource.data.sortOrder is int
+                      && request.resource.data.contentType in ['video', 'audio', 'text', 'image'];
+
+        allow update: if isMember(eventId) && (
+                        affects(['isUnlocked', 'unlockedAt', 'fetchedBy'])
+                        || (isHost(eventId) && affects(['pointCost', 'sortOrder']))
+                        || (
+                          (isHost(eventId) || isAuthorOf('fromUserId'))
+                          && affects([
+                            'title', 'teaser', 'contentText', 'contentType',
+                            'contentUrl', 'contentUrls', 'badgeIllustration'
+                          ])
+                        )
+                      );
+
         allow delete: if isHost(eventId);
       }
 
