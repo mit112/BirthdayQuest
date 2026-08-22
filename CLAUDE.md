@@ -259,7 +259,39 @@ assumption they needed the media pipeline. They did not:
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
-## Direction (as of 2026-08-21)
+## Direction (as of 2026-08-22)
+
+### Subsystem #2 is IN PROGRESS on `feat/content-authoring` — read this before touching rules
+
+Branched from `fix/risk-1-cluster-and-followups`. **Tasks 1-6 of 13 are done; 7-13 are not.**
+Execution stopped mid-loop: Tasks 5+6's fix round is committed and green, but its scoped re-review
+was never dispatched. The full record — every ruling, every parked finding, and the exact next
+action — is in `.superpowers/sdd/2026-08-22-content-authoring/progress.md` (git-ignored). Read it
+before resuming; do not re-dispatch a completed task.
+
+Two things on that branch change rules you may otherwise assume:
+
+- **`challenges` and `rewards` are now field-scoped.** `update` splits into a gameplay half (any
+  member — unchanged, so the dare and unlock flows keep working), a content half (host or the
+  document's own author), and for rewards a curation half (`pointCost`/`sortOrder`, host only).
+  `isSecret`, `createdByUserId`, `fromUserId` and `createdAt` are immutable **by omission** from
+  every allow-list — `affects()` uses `hasOnly`, so a key in no list cannot be written. Do not add
+  a separate immutability clause; it would be dead.
+- **A single `updateData` must not mix tiers.** The rules reject a write whose changed keys span
+  two allow-lists, and it fails only at runtime, as permission-denied.
+- Reward `create` **widened**: a member may now create the gift that is from them. It was host-only.
+- `createSecretChallenge`/`updateSecretChallenge` are now `createChallenge`/`updateChallenge`, and
+  both partial-update methods take `fields:`.
+- `totalChallenges`/`totalRewards` now move with the content, batched inside `FirestoreService`.
+  **The decrement is not idempotent** — `deleteDocument` on an absent doc succeeds while
+  `increment(-1)` does not, so a re-issued delete drives the counter negative and
+  `checkFinalBadge`'s `totalRewards > 0` then fails forever. Tasks 8 and 12 owe an in-flight guard
+  and a reconciliation; neither exists yet.
+
+Task 13 owns reconciling the rest of this file (the Collections table, Known Gaps, README). It has
+not run, so those sections still describe the pre-subsystem-#2 state.
+
+## Direction — subsystem #1 (as of 2026-08-21)
 
 The app is multi-tenant. Subsystem #1 (event scoping + identity) is **complete — all 16 tasks, plus
 the final whole-branch review and its remediation — and merged into `main`** (fast-forward, so
