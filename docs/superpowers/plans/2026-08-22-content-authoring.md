@@ -73,7 +73,7 @@
 The spec flags one thing that must be measured, not reasoned about: whether Firestore's encoder **omits** nil optionals or writes them as null. `Challenge` has six nil optionals at create time. If they arrive as explicit nulls, a `hasOnly` create rule that does not list them rejects every create — and the failure would surface only against a live project, where no test runs.
 
 **Files:**
-- Test: `firebase-tests/firestore.rules.test.js` (temporary probe, deleted in Step 4)
+- Create: `BirthdayQuest/BirthdayQuestTests/AuthoringTests.swift`
 - Create: `.superpowers/sdd/2026-08-22-content-authoring/wire-shape.md` (git-ignored record)
 
 **Interfaces:**
@@ -847,76 +847,12 @@ does not exist. Say so rather than implying coverage.
 
 **Note on id validation:** `eventRef` validates the event id because it arrives from a deep link and from the client-writable `inviteCodes.eventId`. Challenge and reward ids do **not** get the same treatment, and should not: they only ever come from `@DocumentID` on a document Firestore itself returned. Follow the existing `updateChallenge` precedent — `challengesRef(eventId).document(challengeId)` with no extra guard.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Note that this task's tests live in Task 8**
 
-Append to `BirthdayQuest/BirthdayQuestTests/AuthoringTests.swift`:
-
-```swift
-@MainActor
-@Suite("Authoring keeps the occasion's counters honest")
-struct AuthoringCounterTests {
-
-    @Test("creating a challenge is recorded with its author stamp")
-    func createStampsAuthor() async throws {
-        let mock = MockGameBackend()
-        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
-        vm.beginCreating()
-        vm.draft.title = "Sing in public"
-        vm.draft.description = "Somewhere busy"
-        vm.draft.pointValue = 50
-
-        await vm.save(authorUid: "uid_host")
-
-        #expect(mock.called("createChallenge"))
-        #expect(mock.createdChallenges.first?.createdByUserId == "uid_host")
-        #expect(mock.createdChallenges.first?.isSecret == false)
-    }
-
-    @Test("deleting a challenge asks the backend to delete it")
-    func deleteCallsBackend() async {
-        let mock = MockGameBackend()
-        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
-
-        await vm.delete(.fixture(id: "c9"))
-
-        #expect(mock.deletedChallengeIds == ["c9"])
-    }
-
-    @Test("an edit sends only content fields, never a gameplay field")
-    func editSendsOnlyContent() async {
-        let mock = MockGameBackend()
-        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
-        vm.beginEditing(.fixture(id: "c1", title: "Old"))
-        vm.draft.title = "New"
-
-        await vm.save(authorUid: "uid_host")
-
-        let sent = Set(mock.updatedChallenges.first?.data.keys ?? [:].keys)
-        let gameplay: Set<String> = [
-            "isCompleted", "completedAt", "proofUrl", "proofType", "proofText",
-        ]
-        #expect(sent.isDisjoint(with: gameplay), "the rules reject a mixed write")
-        #expect(sent.contains("title"))
-    }
-
-    @Test("a failed write is reported, not swallowed")
-    func failureIsReported() async {
-        let mock = MockGameBackend()
-        mock.errorToThrow = MockGameBackend.StubbedError()
-        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
-        vm.beginCreating()
-        vm.draft.title = "X"
-        vm.draft.description = "Y"
-
-        await vm.save(authorUid: "uid_host")
-
-        #expect(vm.actionResult?.isError == true)
-        #expect(vm.isPerformingAction == false)
-    }
-}
-```
-
-These will not compile yet — `ChallengeAuthoringViewModel` arrives in Task 8. That is deliberate: this task delivers the backend they need, and Task 8 makes them run. If you prefer a compiling tree at every commit, move this Step to Task 8 and verify this task with Steps 2-4 only.
+The suite exercising these methods (`AuthoringCounterTests`) needs `ChallengeAuthoringViewModel`,
+which Task 8 creates. Writing it here would leave the test target non-compiling, and **Task 6's gate
+is a full test-suite run** — it would fail for a reason that has nothing to do with Task 6. So this
+task's gate is a build, and Task 8 carries the tests.
 
 - [ ] **Step 2: Add `deleteChallenge` to the protocol**
 
@@ -1630,7 +1566,79 @@ final class ChallengeAuthoringViewModel: ObservableObject {
 }
 ```
 
-- [ ] **Step 3: Run the suite from Task 5, which now compiles**
+- [ ] **Step 3: Add the suite deferred from Task 5**
+
+These exercise the backend methods Tasks 4-6 added, through the view model that owns them. They were
+deferred to here because they cannot compile without it.
+
+Append to `BirthdayQuest/BirthdayQuestTests/AuthoringTests.swift`:
+
+```swift
+@MainActor
+@Suite("Authoring keeps the occasion's counters honest")
+struct AuthoringCounterTests {
+
+    @Test("creating a challenge is recorded with its author stamp")
+    func createStampsAuthor() async throws {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginCreating()
+        vm.draft.title = "Sing in public"
+        vm.draft.description = "Somewhere busy"
+        vm.draft.pointValue = 50
+
+        await vm.save(authorUid: "uid_host")
+
+        #expect(mock.called("createChallenge"))
+        #expect(mock.createdChallenges.first?.createdByUserId == "uid_host")
+        #expect(mock.createdChallenges.first?.isSecret == false)
+    }
+
+    @Test("deleting a challenge asks the backend to delete it")
+    func deleteCallsBackend() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        await vm.delete(.fixture(id: "c9"))
+
+        #expect(mock.deletedChallengeIds == ["c9"])
+    }
+
+    @Test("an edit sends only content fields, never a gameplay field")
+    func editSendsOnlyContent() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginEditing(.fixture(id: "c1", title: "Old"))
+        vm.draft.title = "New"
+
+        await vm.save(authorUid: "uid_host")
+
+        let sent = Set(mock.updatedChallenges.first?.data.keys ?? [:].keys)
+        let gameplay: Set<String> = [
+            "isCompleted", "completedAt", "proofUrl", "proofType", "proofText",
+        ]
+        #expect(sent.isDisjoint(with: gameplay), "the rules reject a mixed write")
+        #expect(sent.contains("title"))
+    }
+
+    @Test("a failed write is reported, not swallowed")
+    func failureIsReported() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginCreating()
+        vm.draft.title = "X"
+        vm.draft.description = "Y"
+
+        await vm.save(authorUid: "uid_host")
+
+        #expect(vm.actionResult?.isError == true)
+        #expect(vm.isPerformingAction == false)
+    }
+}
+```
+
+- [ ] **Step 3b: Run the whole suite**
 
 ```bash
 cd BirthdayQuest && xcodebuild -scheme BirthdayQuest \
@@ -1639,7 +1647,7 @@ cd BirthdayQuest && xcodebuild -scheme BirthdayQuest \
 /usr/bin/grep -c 'TEST SUCCEEDED' /tmp/t8.log
 ```
 
-Expected: `1`, with `AuthoringCounterTests` now running.
+Expected: `1`, with `AuthoringCounterTests` running for the first time.
 
 - [ ] **Step 4: Add the two `ContentState` tests this screen needs**
 
@@ -2121,16 +2129,7 @@ private extension AdminControlsView {
                 )
             }
 
-            NavigationLink {
-                GiftCurationView(eventId: event.eventId)
-                    .environmentObject(event)
-            } label: {
-                authoringRow(
-                    "Gifts",
-                    subtitle: "\(viewModel.rewards.count) from your guests",
-                    icon: "gift.fill"
-                )
-            }
+            // Task 12 adds the Gifts link here, once GiftCurationView exists.
         }
         .adminCard()
     }
@@ -3113,7 +3112,23 @@ struct GiftCurationView: View {
 }
 ```
 
-- [ ] **Step 4: Restore the host-panel link if Task 9 stubbed it**
+- [ ] **Step 4: Add the Gifts row to the host panel**
+
+In `AdminControlsView.swift`, inside `authoringCard`, replace the placeholder comment Task 9 left
+with the second link:
+
+```swift
+            NavigationLink {
+                GiftCurationView(eventId: event.eventId)
+                    .environmentObject(event)
+            } label: {
+                authoringRow(
+                    "Gifts",
+                    subtitle: "\(viewModel.rewards.count) from your guests",
+                    icon: "gift.fill"
+                )
+            }
+```
 
 - [ ] **Step 5: Run, lint, commit**
 
@@ -3261,6 +3276,6 @@ That last row is not optional theatre. These are the densest forms in the app, t
   inside `FirestoreService`, which every Swift test replaces with `MockGameBackend`; the emulator
   suite tests rules, not the Swift client. So Task 5 and Task 6 prove the view model asked for a
   create, not that the batch carried an increment. Same structural gap as R30, same missing fix: a
-  Swift-to-emulator harness. **Do not add a mock that fakes a counter** � it would test the mock.
+  Swift-to-emulator harness. **Do not add a mock that fakes a counter** — it would test the mock.
 - **The three atomic transactions** remain untested (R30). Unchanged by this work.
 - **`fetchMyOccasions`' skip-on-failure** still has no test and still cannot get one (R9).
