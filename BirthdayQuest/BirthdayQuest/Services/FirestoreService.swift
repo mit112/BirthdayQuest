@@ -517,6 +517,7 @@ final class FirestoreService: GameBackend {
             "updatedAt": Timestamp(date: Date())
         ], forDocument: state)
         try await batch.commit()
+        logger.info("Deleted reward \(rewardId)")
     }
 
     /// One batch, one write per gift. A Firestore batch caps at 500 writes; an occasion has
@@ -529,6 +530,7 @@ final class FirestoreService: GameBackend {
             batch.updateData(["sortOrder": index], forDocument: rewards.document(rewardId))
         }
         try await batch.commit()
+        logger.info("Reordered \(orderedRewardIds.count) rewards")
     }
 
     // MARK: - Challenges
@@ -640,11 +642,12 @@ final class FirestoreService: GameBackend {
     /// Creates a challenge and moves the occasion's counter in the same batch.
     ///
     /// The counter is not decoration. `GameState.challengeProgress` divides by
-    /// `totalChallenges`, and `checkFinalBadge` refuses to fire while `totalRewards == 0` —
-    /// both were seeded to 0 and incremented nowhere, so an occasion filled in by hand (which
-    /// is what the README told hosts to do) could never be finished. Batching the increment
-    /// with the write is what stops that coming back: a caller cannot forget what it is never
-    /// asked to remember.
+    /// `totalChallenges`, which was seeded to 0 at occasion creation and incremented nowhere,
+    /// so an occasion filled in by hand (which is what the README told hosts to do) could
+    /// never converge past whatever fraction it started at. `createReward` carries the sibling
+    /// case — `checkFinalBadge` refuses to fire while `totalRewards == 0` — mentioned here only
+    /// because both counters were broken the same way. Batching the increment with the write is
+    /// what stops that coming back: a caller cannot forget what it is never asked to remember.
     ///
     /// `increment` rather than a recomputed count because contributors add gifts
     /// concurrently, and a recompute races. Neither rule reads the other document, so the
@@ -666,9 +669,9 @@ final class FirestoreService: GameBackend {
     func updateChallenge(
         eventId: String,
         challengeId: String,
-        data: [String: Any]
+        fields: [String: Any]
     ) async throws {
-        try await challengesRef(eventId).document(challengeId).updateData(data)
+        try await challengesRef(eventId).document(challengeId).updateData(fields)
     }
 
     func deleteChallenge(eventId: String, challengeId: String) async throws {
@@ -681,6 +684,7 @@ final class FirestoreService: GameBackend {
             "updatedAt": Timestamp(date: Date())
         ], forDocument: state)
         try await batch.commit()
+        logger.info("Deleted challenge \(challengeId)")
     }
 
     // MARK: - Timeline Events

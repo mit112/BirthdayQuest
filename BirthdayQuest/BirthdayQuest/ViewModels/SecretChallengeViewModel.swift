@@ -124,7 +124,7 @@ final class SecretChallengeViewModel: ObservableObject {
                 try await service.updateChallenge(
                     eventId: eventId,
                     challengeId: id,
-                    data: [
+                    fields: [
                         "title": title.trimmingCharacters(in: .whitespaces),
                         "description": description.trimmingCharacters(in: .whitespaces),
                         "pointValue": pointValue
@@ -178,7 +178,7 @@ final class SecretChallengeViewModel: ObservableObject {
             try await service.updateChallenge(
                 eventId: eventId,
                 challengeId: id,
-                data: ["isDelivered": true]
+                fields: ["isDelivered": true]
             )
             BQDesign.Haptics.success()
         } catch {

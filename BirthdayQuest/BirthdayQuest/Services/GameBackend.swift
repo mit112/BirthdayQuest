@@ -10,7 +10,7 @@ import Foundation
 ///
 /// Deliberately expresses no Firestore types — only Swift primitives and app models. That is
 /// what makes it substitutable. The one leak is `updateGameState(eventId:fields:)` and
-/// `updateChallenge(eventId:challengeId:data:)`, which take `[String: Any]` dictionaries
+/// `updateChallenge(eventId:challengeId:fields:)`, which take `[String: Any]` dictionaries
 /// that in practice contain `FieldValue.increment(...)` sentinels. A mock can record those
 /// calls but cannot evaluate them.
 ///
@@ -125,10 +125,19 @@ protocol GameBackend: AnyObject {
     func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws
 
     /// Deletes a gift and decrements the counter in one batch. Host-only at the rules layer.
+    ///
+    /// The decrement is relative, not idempotent: Firestore's delete on an already-missing
+    /// document succeeds silently, but the paired decrement does not, so a repeated delete of
+    /// the same id decrements `totalRewards` again. Callers must not re-issue a delete for an
+    /// id they have already deleted.
     func deleteReward(eventId: String, rewardId: String) async throws
 
     /// Rewrites `sortOrder` across the whole list to match the given order, in one batch.
     /// Host-only at the rules layer, because `sortOrder` is host-only.
+    ///
+    /// The caller must pass every gift id in the occasion, in the intended order. This writes
+    /// index 0...n-1 only for the ids given, so passing a subset assigns those rows 0...n-1
+    /// and collides with whatever gift was left out.
     func setRewardOrder(eventId: String, orderedRewardIds: [String]) async throws
 
     // MARK: Challenges
@@ -156,7 +165,7 @@ protocol GameBackend: AnyObject {
     /// content-edit rule reads to decide who may edit this challenge later.
     func createChallenge(eventId: String, challenge: Challenge) async throws -> String
 
-    /// Partial edit. `data` must contain only content fields (`title`, `description`,
+    /// Partial edit. `fields` must contain only content fields (`title`, `description`,
     /// `pointValue`, `difficulty`, `category`, `illustrationAsset`, `isDelivered`,
     /// `optionBTitle`, `optionBDescription`) or only gameplay fields — the rules reject a
     /// mixture, because a gameplay write that also carries a point value is how a member
@@ -164,11 +173,16 @@ protocol GameBackend: AnyObject {
     func updateChallenge(
         eventId: String,
         challengeId: String,
-        data: [String: Any]
+        fields: [String: Any]
     ) async throws
 
     /// Deletes a challenge and decrements the occasion's challenge counter in one batch.
     /// Host-only at the rules layer.
+    ///
+    /// The decrement is relative, not idempotent: Firestore's delete on an already-missing
+    /// document succeeds silently, but the paired decrement does not, so a repeated delete of
+    /// the same id decrements `totalChallenges` again. Callers must not re-issue a delete for
+    /// an id they have already deleted.
     func deleteChallenge(eventId: String, challengeId: String) async throws
 
     // MARK: Timeline

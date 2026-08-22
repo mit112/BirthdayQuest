@@ -237,6 +237,9 @@ final class MockGameBackend: GameBackend {
     }
 
     var stubbedCreatedRewardId = "gift-1"
+    /// Every reward a create was attempted for, recorded before `throwIfNeeded()`, so a
+    /// stubbed failure still leaves this non-empty. Assert on view-model state for the
+    /// failure path, not on this array's absence.
     private(set) var createdRewards: [Reward] = []
 
     func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws {
@@ -245,6 +248,9 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    /// Every edit attempted, recorded before `throwIfNeeded()`, so a stubbed failure still
+    /// leaves this non-empty. Assert on view-model state for the failure path, not on this
+    /// array's absence.
     private(set) var updatedRewards: [(id: String, fields: [String: Any])] = []
 
     func deleteReward(eventId: String, rewardId: String) async throws {
@@ -253,6 +259,9 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    /// Every id a delete was attempted for, recorded before `throwIfNeeded()`, so a stubbed
+    /// failure still leaves this non-empty. Assert on view-model state for the failure path,
+    /// not on this array's absence.
     private(set) var deletedRewardIds: [String] = []
 
     func setRewardOrder(eventId: String, orderedRewardIds: [String]) async throws {
@@ -262,7 +271,9 @@ final class MockGameBackend: GameBackend {
     }
 
     /// Every reorder the caller asked for, so a test can assert the resulting sequence
-    /// rather than merely that a reorder happened.
+    /// rather than merely that a reorder happened. Recorded before `throwIfNeeded()`, so a
+    /// stubbed failure still leaves this non-empty — assert on view-model state for the
+    /// failure path, not on this array's absence.
     private(set) var rewardOrders: [[String]] = []
 
     // MARK: - GameBackend: Challenges
@@ -317,16 +328,18 @@ final class MockGameBackend: GameBackend {
     func updateChallenge(
         eventId: String,
         challengeId: String,
-        data: [String: Any]
+        fields: [String: Any]
     ) async throws {
         record("updateChallenge", eventId: eventId)
-        updatedChallenges.append((challengeId, data))
+        updatedChallenges.append((challengeId, fields))
         try throwIfNeeded()
     }
 
     /// Recorded so a test can prove an edit sent only content fields — the rules reject a
-    /// write that mixes content and gameplay keys.
-    private(set) var updatedChallenges: [(id: String, data: [String: Any])] = []
+    /// write that mixes content and gameplay keys. Recorded before `throwIfNeeded()`, so this
+    /// captures every attempted update, not just the ones that succeeded — assert on
+    /// view-model state for the failure path, not on this array's absence.
+    private(set) var updatedChallenges: [(id: String, fields: [String: Any])] = []
 
     func deleteChallenge(eventId: String, challengeId: String) async throws {
         record("deleteChallenge", eventId: eventId)
@@ -334,6 +347,9 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    /// Every id a delete was attempted for, recorded before `throwIfNeeded()`, so a stubbed
+    /// failure still leaves this non-empty. Assert on view-model state for the failure path,
+    /// not on this array's absence.
     private(set) var deletedChallengeIds: [String] = []
 
     // MARK: - GameBackend: Timeline
