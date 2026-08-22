@@ -229,6 +229,42 @@ final class MockGameBackend: GameBackend {
         unlockedRewardIds.append(rewardId)
     }
 
+    func createReward(eventId: String, reward: Reward) async throws -> String {
+        record("createReward", eventId: eventId)
+        createdRewards.append(reward)
+        try throwIfNeeded()
+        return stubbedCreatedRewardId
+    }
+
+    var stubbedCreatedRewardId = "gift-1"
+    private(set) var createdRewards: [Reward] = []
+
+    func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws {
+        record("updateReward", eventId: eventId)
+        updatedRewards.append((rewardId, fields))
+        try throwIfNeeded()
+    }
+
+    private(set) var updatedRewards: [(id: String, fields: [String: Any])] = []
+
+    func deleteReward(eventId: String, rewardId: String) async throws {
+        record("deleteReward", eventId: eventId)
+        deletedRewardIds.append(rewardId)
+        try throwIfNeeded()
+    }
+
+    private(set) var deletedRewardIds: [String] = []
+
+    func setRewardOrder(eventId: String, orderedRewardIds: [String]) async throws {
+        record("setRewardOrder", eventId: eventId)
+        rewardOrders.append(orderedRewardIds)
+        try throwIfNeeded()
+    }
+
+    /// Every reorder the caller asked for, so a test can assert the resulting sequence
+    /// rather than merely that a reorder happened.
+    private(set) var rewardOrders: [[String]] = []
+
     // MARK: - GameBackend: Challenges
 
     func listenToChallenges(

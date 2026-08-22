@@ -489,6 +489,48 @@ final class FirestoreService: GameBackend {
         }
     }
 
+    func createReward(eventId: String, reward: Reward) async throws -> String {
+        let ref = try rewardsRef(eventId).document()
+        let state = try stateRef(eventId)
+        let batch = db.batch()
+        try batch.setData(from: reward, forDocument: ref)
+        batch.updateData([
+            "totalRewards": FieldValue.increment(Int64(1)),
+            "updatedAt": Timestamp(date: Date())
+        ], forDocument: state)
+        try await batch.commit()
+        logger.info("Created reward \(ref.documentID)")
+        return ref.documentID
+    }
+
+    func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws {
+        try await rewardsRef(eventId).document(rewardId).updateData(fields)
+    }
+
+    func deleteReward(eventId: String, rewardId: String) async throws {
+        let ref = try rewardsRef(eventId).document(rewardId)
+        let state = try stateRef(eventId)
+        let batch = db.batch()
+        batch.deleteDocument(ref)
+        batch.updateData([
+            "totalRewards": FieldValue.increment(Int64(-1)),
+            "updatedAt": Timestamp(date: Date())
+        ], forDocument: state)
+        try await batch.commit()
+    }
+
+    /// One batch, one write per gift. A Firestore batch caps at 500 writes; an occasion has
+    /// one gift per contributor, so the cap is not reachable in practice and is not guarded
+    /// against — a guard here would be error handling for an impossible case.
+    func setRewardOrder(eventId: String, orderedRewardIds: [String]) async throws {
+        let rewards = try rewardsRef(eventId)
+        let batch = db.batch()
+        for (index, rewardId) in orderedRewardIds.enumerated() {
+            batch.updateData(["sortOrder": index], forDocument: rewards.document(rewardId))
+        }
+        try await batch.commit()
+    }
+
     // MARK: - Challenges
 
     /// Listen to challenges with a unique key per consumer to avoid listener collisions.

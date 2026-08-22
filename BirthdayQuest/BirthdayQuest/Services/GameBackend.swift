@@ -113,6 +113,24 @@ protocol GameBackend: AnyObject {
         timelineEvent: TimelineEvent
     ) async throws
 
+    /// Creates a gift and increments the occasion's gift counter in one batch.
+    ///
+    /// `reward.fromUserId` must be the calling uid unless the caller is the host: it is the
+    /// field the content-edit rule reads to decide who may edit this gift later.
+    func createReward(eventId: String, reward: Reward) async throws -> String
+
+    /// Partial edit. `fields` must contain only content keys, only `pointCost`/`sortOrder`,
+    /// or only gameplay keys — the rules reject a mixture, and the three tiers have
+    /// different audiences.
+    func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws
+
+    /// Deletes a gift and decrements the counter in one batch. Host-only at the rules layer.
+    func deleteReward(eventId: String, rewardId: String) async throws
+
+    /// Rewrites `sortOrder` across the whole list to match the given order, in one batch.
+    /// Host-only at the rules layer, because `sortOrder` is host-only.
+    func setRewardOrder(eventId: String, orderedRewardIds: [String]) async throws
+
     // MARK: Challenges
 
     func listenToChallenges(
