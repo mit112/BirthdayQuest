@@ -74,8 +74,9 @@ service cloud.firestore {
     // `pointValue <= 1000` an author can raise to 9999999 in a second write is decorative.
     //
     // Only fields the content allow-list can actually write are checked. Validating a field
-    // that `affects()` already pins would be a clause no test could reach, and it would also
-    // let a bad value written by another tier lock the author out of editing their own text.
+    // that `affects()` already pins would let a bad value written by a *different* tier lock
+    // the author out of editing their own text — the host curation tier writes pointCost with
+    // no validation of its own, so that is reachable, not hypothetical.
     function validChallengeContent() {
       return request.resource.data.title is string
              && request.resource.data.title.size() > 0

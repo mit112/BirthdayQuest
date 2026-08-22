@@ -328,8 +328,24 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
     await joinAsContributor(GUEST);
     const db = testEnv.authenticatedContext(GUEST).firestore();
     // c1 is seeded with no createdByUserId at all, so nobody is its author.
+    //
+    // 40 is deliberately IN BOUNDS, and must stay that way. This value was 9999, which
+    // validChallengeContent() also rejects — so the write had two independent deniers and the
+    // test pinned neither. Deleting the whole author check left the suite green while any
+    // member could rewrite any other member's dare. Do not make this value "more obviously
+    // bad": the author guard has to be the only thing standing in its way.
     await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
-      pointValue: 9999,
+      pointValue: 40,
+    }));
+  });
+
+  // The challenges twin of `denies a non-member unlocking a gift` below. Identical shape:
+  // branch 1 of the update rule references no auth, and nothing else in the suite has a
+  // non-member update a challenge, so the membership guard was carrying no test either.
+  it('denies a non-member completing a challenge', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c1`), {
+      isCompleted: true,
     }));
   });
 
@@ -512,7 +528,7 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
   });
 
   // The same guard on update, which was equally unpinned. Branch 1 of the update rule
-  // references no auth at all, so without isMember() an unauthenticated client that knew an
+  // references no auth at all, so without isMember() any unaffiliated client that knew an
   // event id could flip isUnlocked on any gift in it. The only other non-member reward
   // assertions are reads, and the cross-event block writes a challenge, never a gift.
   it('denies a non-member unlocking a gift', async () => {
