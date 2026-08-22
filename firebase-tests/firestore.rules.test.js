@@ -1078,6 +1078,57 @@ describe('two-phase occasion creation', () => {
   });
 });
 
+// FirestoreService batches every content create/delete with a totalChallenges/totalRewards
+// counter move on state/main, in the same commit as the content write. If state/main update
+// were ever denied for a caller who is otherwise allowed to create or delete that content, the
+// whole batch fails and content authoring breaks outright for that caller - not drift, a total
+// break, the same shape of risk the two-phase occasion-creation batch above exists to pin.
+describe('authoring batches: content write and counter move commit together', () => {
+  beforeEach(seed);
+
+  it('lets a contributor member batch a challenge create with the state counter', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, `events/${EVENT}/challenges/c_batch`), {
+      title: 'Batched dare', description: 'x', pointValue: 50, isSecret: true,
+      isCompleted: false, createdByUserId: GUEST,
+    });
+    batch.update(doc(db, `events/${EVENT}/state/main`), { totalChallenges: 1 });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('lets a member batch a reward create with the state counter', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, `events/${EVENT}/rewards/r_batch`), {
+      fromUserId: GUEST, fromName: 'Jordan', title: 'A letter', teaser: 'Open me',
+      pointCost: 0, contentType: 'text', contentText: 'Dear Alex...',
+      isUnlocked: false, sortOrder: 0, badgeIllustration: 'envelope.fill',
+      createdAt: new Date(), fetchedBy: [],
+    });
+    batch.update(doc(db, `events/${EVENT}/state/main`), { totalRewards: 1 });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('lets the host batch a challenge delete with the state counter', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, `events/${EVENT}/challenges/c1`));
+    batch.update(doc(db, `events/${EVENT}/state/main`), { totalChallenges: 0 });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('lets the host batch a reward delete with the state counter', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, `events/${EVENT}/rewards/r1`));
+    batch.update(doc(db, `events/${EVENT}/state/main`), { totalRewards: 0 });
+    await assertSucceeds(batch.commit());
+  });
+});
+
 describe('membership index', () => {
   beforeEach(seed);
 
