@@ -10,7 +10,7 @@ import Foundation
 ///
 /// Deliberately expresses no Firestore types — only Swift primitives and app models. That is
 /// what makes it substitutable. The one leak is `updateGameState(eventId:fields:)` and
-/// `updateSecretChallenge(eventId:challengeId:data:)`, which take `[String: Any]` dictionaries
+/// `updateChallenge(eventId:challengeId:data:)`, which take `[String: Any]` dictionaries
 /// that in practice contain `FieldValue.increment(...)` sentinels. A mock can record those
 /// calls but cannot evaluate them.
 ///
@@ -131,8 +131,19 @@ protocol GameBackend: AnyObject {
         proofText: String?,
         timelineEvent: TimelineEvent
     ) async throws
-    func createSecretChallenge(eventId: String, challenge: Challenge) async throws -> String
-    func updateSecretChallenge(
+    /// Creates a challenge. The caller supplies the whole `Challenge`, including `isSecret`
+    /// and `createdByUserId` — this method has never enforced either, and the rules do.
+    ///
+    /// `createdByUserId` must be the calling uid or the write is denied: it is the field the
+    /// content-edit rule reads to decide who may edit this challenge later.
+    func createChallenge(eventId: String, challenge: Challenge) async throws -> String
+
+    /// Partial edit. `data` must contain only content fields (`title`, `description`,
+    /// `pointValue`, `difficulty`, `category`, `illustrationAsset`, `isDelivered`,
+    /// `optionBTitle`, `optionBDescription`) or only gameplay fields — the rules reject a
+    /// mixture, because a gameplay write that also carries a point value is how a member
+    /// would smuggle an edit past the author check.
+    func updateChallenge(
         eventId: String,
         challengeId: String,
         data: [String: Any]

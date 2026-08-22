@@ -595,12 +595,12 @@ final class FirestoreService: GameBackend {
         }
     }
 
-    func createSecretChallenge(eventId: String, challenge: Challenge) async throws -> String {
+    func createChallenge(eventId: String, challenge: Challenge) async throws -> String {
         let ref = try challengesRef(eventId).addDocument(from: challenge)
         return ref.documentID
     }
 
-    func updateSecretChallenge(
+    func updateChallenge(
         eventId: String,
         challengeId: String,
         data: [String: Any]

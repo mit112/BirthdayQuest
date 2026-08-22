@@ -267,20 +267,30 @@ final class MockGameBackend: GameBackend {
         completedChallengeIds.append(challengeId)
     }
 
-    func createSecretChallenge(eventId: String, challenge: Challenge) async throws -> String {
-        record("createSecretChallenge", eventId: eventId)
+    func createChallenge(eventId: String, challenge: Challenge) async throws -> String {
+        record("createChallenge", eventId: eventId)
+        createdChallenges.append(challenge)
         try throwIfNeeded()
         return stubbedSecretChallengeId
     }
 
-    func updateSecretChallenge(
+    /// Every challenge the caller asked to create, so a test can assert what was stamped on
+    /// it — `createdByUserId` in particular, which the rules require to be the caller's uid.
+    private(set) var createdChallenges: [Challenge] = []
+
+    func updateChallenge(
         eventId: String,
         challengeId: String,
         data: [String: Any]
     ) async throws {
-        record("updateSecretChallenge", eventId: eventId)
+        record("updateChallenge", eventId: eventId)
+        updatedChallenges.append((challengeId, data))
         try throwIfNeeded()
     }
+
+    /// Recorded so a test can prove an edit sent only content fields — the rules reject a
+    /// write that mixes content and gameplay keys.
+    private(set) var updatedChallenges: [(id: String, data: [String: Any])] = []
 
     // MARK: - GameBackend: Timeline
 

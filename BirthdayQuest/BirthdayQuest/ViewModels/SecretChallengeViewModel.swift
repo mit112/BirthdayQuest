@@ -121,7 +121,7 @@ final class SecretChallengeViewModel: ObservableObject {
         do {
             if let existing = existingChallenge, let id = existing.id {
                 // Update existing
-                try await service.updateSecretChallenge(
+                try await service.updateChallenge(
                     eventId: eventId,
                     challengeId: id,
                     data: [
@@ -149,7 +149,7 @@ final class SecretChallengeViewModel: ObservableObject {
                     proofText: nil,
                     createdAt: Date()
                 )
-                _ = try await service.createSecretChallenge(eventId: eventId, challenge: challenge)
+                _ = try await service.createChallenge(eventId: eventId, challenge: challenge)
             }
             
             saveSuccess = true
@@ -175,7 +175,7 @@ final class SecretChallengeViewModel: ObservableObject {
         guard let id = existingChallenge?.id else { return }
         
         do {
-            try await service.updateSecretChallenge(
+            try await service.updateChallenge(
                 eventId: eventId,
                 challengeId: id,
                 data: ["isDelivered": true]
