@@ -292,6 +292,14 @@ final class MockGameBackend: GameBackend {
     /// write that mixes content and gameplay keys.
     private(set) var updatedChallenges: [(id: String, data: [String: Any])] = []
 
+    func deleteChallenge(eventId: String, challengeId: String) async throws {
+        record("deleteChallenge", eventId: eventId)
+        deletedChallengeIds.append(challengeId)
+        try throwIfNeeded()
+    }
+
+    private(set) var deletedChallengeIds: [String] = []
+
     // MARK: - GameBackend: Timeline
 
     func listenToTimeline(

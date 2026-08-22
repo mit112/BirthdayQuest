@@ -149,6 +149,10 @@ protocol GameBackend: AnyObject {
         data: [String: Any]
     ) async throws
 
+    /// Deletes a challenge and decrements the occasion's challenge counter in one batch.
+    /// Host-only at the rules layer.
+    func deleteChallenge(eventId: String, challengeId: String) async throws
+
     // MARK: Timeline
 
     func listenToTimeline(

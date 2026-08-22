@@ -595,8 +595,29 @@ final class FirestoreService: GameBackend {
         }
     }
 
+    /// Creates a challenge and moves the occasion's counter in the same batch.
+    ///
+    /// The counter is not decoration. `GameState.challengeProgress` divides by
+    /// `totalChallenges`, and `checkFinalBadge` refuses to fire while `totalRewards == 0` —
+    /// both were seeded to 0 and incremented nowhere, so an occasion filled in by hand (which
+    /// is what the README told hosts to do) could never be finished. Batching the increment
+    /// with the write is what stops that coming back: a caller cannot forget what it is never
+    /// asked to remember.
+    ///
+    /// `increment` rather than a recomputed count because contributors add gifts
+    /// concurrently, and a recompute races. Neither rule reads the other document, so the
+    /// committed-state trap that forced two-phase occasion creation does not apply here.
     func createChallenge(eventId: String, challenge: Challenge) async throws -> String {
-        let ref = try challengesRef(eventId).addDocument(from: challenge)
+        let ref = try challengesRef(eventId).document()
+        let state = try stateRef(eventId)
+        let batch = db.batch()
+        try batch.setData(from: challenge, forDocument: ref)
+        batch.updateData([
+            "totalChallenges": FieldValue.increment(Int64(1)),
+            "updatedAt": Timestamp(date: Date())
+        ], forDocument: state)
+        try await batch.commit()
+        logger.info("Created challenge \(ref.documentID)")
         return ref.documentID
     }
 
@@ -606,6 +627,18 @@ final class FirestoreService: GameBackend {
         data: [String: Any]
     ) async throws {
         try await challengesRef(eventId).document(challengeId).updateData(data)
+    }
+
+    func deleteChallenge(eventId: String, challengeId: String) async throws {
+        let ref = try challengesRef(eventId).document(challengeId)
+        let state = try stateRef(eventId)
+        let batch = db.batch()
+        batch.deleteDocument(ref)
+        batch.updateData([
+            "totalChallenges": FieldValue.increment(Int64(-1)),
+            "updatedAt": Timestamp(date: Date())
+        ], forDocument: state)
+        try await batch.commit()
     }
 
     // MARK: - Timeline Events
