@@ -433,6 +433,15 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
     }));
   });
 
+  it('denies a challenge whose title is not a string', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c13`), {
+      title: ['x'], description: 'x', pointValue: 10, isSecret: false,
+      isCompleted: false, isDelivered: true, createdByUserId: HOST,
+      createdAt: new Date(),
+    }));
+  });
+
   it('denies a challenge whose description is not a string', async () => {
     const db = testEnv.authenticatedContext(HOST).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/challenges/c9`), {
@@ -499,6 +508,17 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
       pointCost: 0, contentType: 'text', contentText: 'x',
       isUnlocked: false, sortOrder: 0, badgeIllustration: 'b',
       createdAt: new Date(), fetchedBy: [],
+    }));
+  });
+
+  // The same guard on update, which was equally unpinned. Branch 1 of the update rule
+  // references no auth at all, so without isMember() an unauthenticated client that knew an
+  // event id could flip isUnlocked on any gift in it. The only other non-member reward
+  // assertions are reads, and the cross-event block writes a challenge, never a gift.
+  it('denies a non-member unlocking a gift', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      isUnlocked: true,
     }));
   });
 
@@ -655,6 +675,89 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
 
   it('denies a gift with a fractional sort order', async () => {
     await assertGiftRejected('r_v9', { sortOrder: 1.5 });
+  });
+
+  // F4: the positive control for the helper itself. Without it, a base payload that drifted
+  // into invalidity would make all nine cases above pass for the wrong reason at once - the
+  // precise failure the helper exists to prevent, one level up.
+  it('accepts the base payload the validation cases mutate', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(
+      doc(db, `events/${EVENT}/rewards/r_base`), giftFrom(GUEST, {}),
+    ));
+  });
+
+  // Content validation is enforced on update as well as create, because otherwise every bound
+  // create enforces is one updateDoc away: author creates a legal gift, then rewrites the
+  // field. Same payload-against-the-mutation discipline - a list answers size(), a double
+  // answers >=, so deleting a clause ALLOWS these writes rather than erroring.
+  //
+  // The positive direction is already covered, and still passes: `lets the author edit their
+  // own gift's text` and `lets the author edit their own challenge content` both run an
+  // ordinary in-range edit through these same branches.
+  async function assertGiftEditRejected(overrides) {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), overrides));
+  }
+
+  async function assertChallengeEditRejected(overrides) {
+    await joinAsContributor(GUEST);
+    await seedGuestChallenge();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/challenges/c_guest`), overrides));
+  }
+
+  it('denies an author retitling their gift to a non-string', async () => {
+    await assertGiftEditRejected({ title: ['x'] });
+  });
+
+  it('denies an author blanking their gift title', async () => {
+    await assertGiftEditRejected({ title: '' });
+  });
+
+  it('denies an author retitling their gift past the length cap', async () => {
+    await assertGiftEditRejected({ title: 'x'.repeat(121) });
+  });
+
+  it('denies an author switching their gift to an unknown content type', async () => {
+    await assertGiftEditRejected({ contentType: 'executable' });
+  });
+
+  it('denies an author retitling their challenge to a non-string', async () => {
+    await assertChallengeEditRejected({ title: ['x'] });
+  });
+
+  it('denies an author blanking their challenge title', async () => {
+    await assertChallengeEditRejected({ title: '' });
+  });
+
+  it('denies an author retitling their challenge past the length cap', async () => {
+    await assertChallengeEditRejected({ title: 'x'.repeat(121) });
+  });
+
+  it('denies an author rewriting their challenge description to a non-string', async () => {
+    await assertChallengeEditRejected({ description: ['x'] });
+  });
+
+  it('denies an author rewriting their challenge description past the length cap', async () => {
+    await assertChallengeEditRejected({ description: 'x'.repeat(2001) });
+  });
+
+  it('denies an author setting a fractional point value on their challenge', async () => {
+    await assertChallengeEditRejected({ pointValue: 10.5 });
+  });
+
+  it('denies an author setting a negative point value on their challenge', async () => {
+    await assertChallengeEditRejected({ pointValue: -5 });
+  });
+
+  // The headline case. Without validation on update, the pointValue <= 1000 clause that
+  // Addition A exists to pin is decorative: create at 1000, then raise it in a second write.
+  it('denies an author raising their challenge past the point cap', async () => {
+    await assertChallengeEditRejected({ pointValue: 9999999 });
   });
 });
 

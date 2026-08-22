@@ -68,6 +68,32 @@ service cloud.firestore {
       return resource.data.get(field, '') == request.auth.uid;
     }
 
+    // Content-field validation, shared by create AND update. It lives in one function because
+    // the two paths had already drifted apart: create validated, update did not, so every
+    // bound create enforced was one updateDoc away from being stepped over. A
+    // `pointValue <= 1000` an author can raise to 9999999 in a second write is decorative.
+    //
+    // Only fields the content allow-list can actually write are checked. Validating a field
+    // that `affects()` already pins would be a clause no test could reach, and it would also
+    // let a bad value written by another tier lock the author out of editing their own text.
+    function validChallengeContent() {
+      return request.resource.data.title is string
+             && request.resource.data.title.size() > 0
+             && request.resource.data.title.size() <= 120
+             && request.resource.data.description is string
+             && request.resource.data.description.size() <= 2000
+             && request.resource.data.pointValue is int
+             && request.resource.data.pointValue >= 0
+             && request.resource.data.pointValue <= 1000;
+    }
+
+    function validRewardContent() {
+      return request.resource.data.title is string
+             && request.resource.data.title.size() > 0
+             && request.resource.data.title.size() <= 120
+             && request.resource.data.contentType in ['video', 'audio', 'text', 'image'];
+    }
+
     // Code uniqueness registry and code -> eventId lookup. `get` so a typed code can be
     // resolved to an occasion; `list` never, so codes cannot be enumerated. Nothing here
     // authorises anything — see the participants create rule.
@@ -205,14 +231,7 @@ service cloud.firestore {
         allow create: if isMember(eventId)
                       && request.resource.data.createdByUserId == request.auth.uid
                       && (isHost(eventId) || request.resource.data.isSecret == true)
-                      && request.resource.data.title is string
-                      && request.resource.data.title.size() > 0
-                      && request.resource.data.title.size() <= 120
-                      && request.resource.data.description is string
-                      && request.resource.data.description.size() <= 2000
-                      && request.resource.data.pointValue is int
-                      && request.resource.data.pointValue >= 0
-                      && request.resource.data.pointValue <= 1000;
+                      && validChallengeContent();
 
         allow update: if isMember(eventId) && (
                         affects(['isCompleted', 'completedAt', 'proofUrl', 'proofType', 'proofText'])
@@ -223,6 +242,7 @@ service cloud.firestore {
                             'illustrationAsset', 'isDelivered',
                             'optionBTitle', 'optionBDescription'
                           ])
+                          && validChallengeContent()
                         )
                       );
 
@@ -230,9 +250,14 @@ service cloud.firestore {
       }
 
       // Three tiers, not two. Gameplay stays any-member (R39's parked trust model, inherited
-      // not relitigated). Content belongs to whoever wrote the gift. But pointCost and
-      // sortOrder are the economy, and the host curates that alone — a contributor pricing
-      // their own gift can trivially make the whole board free.
+      // not relitigated). Content belongs to whoever wrote the gift. pointCost and sortOrder
+      // are the economy, and only the host may *reprice or reorder* an existing gift.
+      //
+      // Note precisely what that does and does not buy. A contributor still chooses the
+      // opening price of their own gift, anywhere in [0, 10000]; create bounds it but does
+      // not fix it, and that is deliberate — a gift priced at zero is unlockable the instant
+      // it appears. What a contributor cannot do is come back and re-price, so the board the
+      // host curates stays curated.
       //
       // `fetchedBy` is in the gameplay list although nothing writes it yet, so the media
       // pipeline does not need a second rules change to record a download.
@@ -245,16 +270,13 @@ service cloud.firestore {
         allow create: if isMember(eventId)
                       && (isHost(eventId)
                           || request.resource.data.get('fromUserId', '') == request.auth.uid)
-                      && request.resource.data.title is string
-                      && request.resource.data.title.size() > 0
-                      && request.resource.data.title.size() <= 120
+                      && validRewardContent()
                       && request.resource.data.fromName is string
                       && request.resource.data.fromName.size() > 0
                       && request.resource.data.pointCost is int
                       && request.resource.data.pointCost >= 0
                       && request.resource.data.pointCost <= 10000
-                      && request.resource.data.sortOrder is int
-                      && request.resource.data.contentType in ['video', 'audio', 'text', 'image'];
+                      && request.resource.data.sortOrder is int;
 
         allow update: if isMember(eventId) && (
                         affects(['isUnlocked', 'unlockedAt', 'fetchedBy'])
@@ -265,6 +287,7 @@ service cloud.firestore {
                             'title', 'teaser', 'contentText', 'contentType',
                             'contentUrl', 'contentUrls', 'badgeIllustration'
                           ])
+                          && validRewardContent()
                         )
                       );
 
