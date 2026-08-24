@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - Contributor Tab Layout
-// 3 tabs: Secret Challenge → Timeline → Profile
+// 4 tabs: Secret Challenge → Gift → Timeline → Profile
 // Secret agent themed — dark, mysterious entry point.
 
 struct ContributorTabView: View {
@@ -18,6 +18,12 @@ struct ContributorTabView: View {
                     )
                 }
                 .tag(ContributorTab.secretChallenge)
+
+            GiftAuthoringView(eventId: event.eventId)
+                .tabItem {
+                    Label(ContributorTab.gift.title, systemImage: ContributorTab.gift.icon)
+                }
+                .tag(ContributorTab.gift)
 
             TimelineView(eventId: event.eventId)
                 .tabItem {

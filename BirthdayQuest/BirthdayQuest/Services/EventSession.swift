@@ -36,10 +36,14 @@ enum ContributorTab: Int, CaseIterable {
     case secretChallenge = 0
     case timeline
     case profile
+    /// Appended, not inserted: raw values are positional and nothing gains from renumbering
+    /// the three that already exist. Tab *order* is set by the TabView body, not by this.
+    case gift
 
     var title: String {
         switch self {
         case .secretChallenge: return "Secret Dare"
+        case .gift:            return "Gift"
         case .timeline:        return "Timeline"
         case .profile:         return "Profile"
         }
@@ -48,6 +52,7 @@ enum ContributorTab: Int, CaseIterable {
     var icon: String {
         switch self {
         case .secretChallenge: return "eye.slash.fill"
+        case .gift:            return "gift.fill"
         case .timeline:        return "safari.fill"
         case .profile:         return "person.crop.circle.fill"
         }
