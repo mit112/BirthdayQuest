@@ -268,6 +268,11 @@ service cloud.firestore {
         // The host may create a gift for anyone; a member may create only the gift that is
         // from them. This is what the model always said - fromUserId, fromName, "Sam's gift" -
         // and what storage.rules already assumed when it let contributors upload gift media.
+        //
+        // Deliberately not constrained here: isUnlocked/unlockedAt. A member could create a
+        // gift already unlocked, but the gameplay tier in `update` below already lets any
+        // member flip isUnlocked on any reward, so a create-time constraint would only be
+        // decorative — same accepted no-Functions trust-model gap, not a new one.
         allow create: if isMember(eventId)
                       && (isHost(eventId)
                           || request.resource.data.get('fromUserId', '') == request.auth.uid)

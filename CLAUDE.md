@@ -181,7 +181,11 @@ Two tiers, and both must stay green:
   integration harness that does not exist.
 - **Any member can rewrite `state/main` (point balances) and flip `rewards.isUnlocked`.** The rules
   gate those on membership only. This is the pre-existing no-Functions trust model, not a
-  regression — but it is now a stranger-facing assumption rather than a family one.
+  regression — but it is now a stranger-facing assumption rather than a family one. The same gap
+  reaches reward *create*, too: `create` does not constrain `isUnlocked`/`unlockedAt`, so a member
+  creating their own gift could set it already unlocked. Not a separate hole — the update gameplay
+  tier already lets any member flip `isUnlocked` on any reward, so closing create alone would be
+  decorative.
 - Accessibility: Dynamic Type, Reduce Motion and AA contrast are now handled (see the Design
   System section). What is **not** done is any visual confirmation of reflow at the largest
   accessibility sizes — no snapshot tests exist and the unit suite cannot catch clipping or
