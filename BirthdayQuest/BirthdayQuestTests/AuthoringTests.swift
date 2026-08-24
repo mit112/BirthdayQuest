@@ -328,3 +328,94 @@ struct GiftAuthoringTests {
         }
     }
 }
+
+@MainActor
+@Suite("Gift curation")
+struct GiftCurationTests {
+
+    @Test("repricing sends only pointCost")
+    func repriceSendsOnlyPrice() async {
+        let mock = MockGameBackend()
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+
+        await vm.setPrice(150, for: .fixture(id: "r1"))
+
+        #expect(mock.updatedRewards.first?.id == "r1")
+        let sent = Set(mock.updatedRewards.first?.fields.keys ?? [:].keys)
+        #expect(sent == ["pointCost"], "the rules deny a write that crosses tiers")
+    }
+
+    @Test("moving a gift rewrites the whole order, in the new sequence")
+    func moveRewritesOrder() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "a", sortOrder: 0), .fixture(id: "b", sortOrder: 1),
+                        .fixture(id: "c", sortOrder: 2)]
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        await vm.move(from: IndexSet(integer: 2), to: 0)
+
+        #expect(mock.rewardOrders.first == ["c", "a", "b"])
+    }
+
+    @Test("deleting a gift asks the backend to delete it")
+    func deleteCallsBackend() async {
+        let mock = MockGameBackend()
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+
+        await vm.delete(.fixture(id: "r7"))
+
+        #expect(mock.deletedRewardIds == ["r7"])
+    }
+
+    @Test("an occasion with no gifts reads as empty, a refused read as failed")
+    func statesAreDistinct() async {
+        let empty = MockGameBackend()
+        empty.rewards = []
+        let emptyVM = GiftCurationViewModel(eventId: "evt_1", service: empty)
+        emptyVM.startListening()
+        for _ in 0..<8 { await Task.yield() }
+        #expect(emptyVM.contentState == .empty)
+
+        let refused = MockGameBackend()
+        refused.listenerFailure = NSError(
+            domain: "FIRFirestoreErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+        )
+        let refusedVM = GiftCurationViewModel(eventId: "evt_1", service: refused)
+        refusedVM.startListening()
+        for _ in 0..<8 { await Task.yield() }
+        guard case .failed = refusedVM.contentState else {
+            Issue.record("expected .failed")
+            return
+        }
+    }
+
+    @Test("reconcile writes the true absolute count on drift")
+    func reconcileWritesTrueCount() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "a"), .fixture(id: "b"), .fixture(id: "c")]
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        await vm.reconcileCounter(storedTotal: 5)
+
+        #expect(mock.called("updateGameState"))
+        #expect(mock.updatedGameStateFields.last?["totalRewards"] as? Int == 3)
+    }
+
+    @Test("reconcile is a no-op when the stored count already matches")
+    func reconcileNoOpWhenMatching() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "a"), .fixture(id: "b"), .fixture(id: "c")]
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        await vm.reconcileCounter(storedTotal: 3)
+
+        #expect(!mock.called("updateGameState"))
+    }
+}

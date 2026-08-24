@@ -729,7 +729,16 @@ private extension AdminControlsView {
                 )
             }
 
-            // Task 12 adds the Gifts link here, once GiftCurationView exists.
+            NavigationLink {
+                GiftCurationView(eventId: event.eventId)
+                    .environmentObject(event)
+            } label: {
+                authoringRow(
+                    "Gifts",
+                    subtitle: "\(viewModel.rewards.count) from your guests",
+                    icon: "gift.fill"
+                )
+            }
         }
         .adminCard()
     }
