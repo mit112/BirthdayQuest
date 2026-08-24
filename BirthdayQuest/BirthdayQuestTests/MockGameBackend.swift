@@ -477,7 +477,7 @@ extension Challenge {
             proofText: nil,
             createdAt: Date(timeIntervalSince1970: 0),
             optionBTitle: optionBTitle,
-            optionBDescription: optionBTitle == nil ? nil : "Option B"
+            optionBDescription: (optionBTitle?.isEmpty ?? true) ? optionBTitle : "Option B"
         )
         challenge.id = id
         return challenge
