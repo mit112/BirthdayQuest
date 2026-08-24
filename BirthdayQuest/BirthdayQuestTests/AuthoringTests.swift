@@ -1,4 +1,5 @@
 import Testing
+import UIKit
 import FirebaseFirestore
 @testable import BirthdayQuest
 
@@ -38,5 +39,33 @@ struct ChallengeWireShapeTests {
             "category", "isSecret", "createdByUserId", "isDelivered", "isCompleted",
             "createdAt",
         ])
+    }
+}
+
+@Suite("Challenge symbols")
+struct ChallengeSymbolCatalogTests {
+
+    @Test("every catalogued symbol is a real SF Symbol")
+    func allSymbolsResolve() {
+        for name in ChallengeSymbolCatalog.all {
+            #expect(UIImage(systemName: name) != nil, "\(name) is not an SF Symbol")
+        }
+    }
+
+    @Test("the fallback is itself catalogued and real")
+    func fallbackIsValid() {
+        #expect(ChallengeSymbolCatalog.all.contains(ChallengeSymbolCatalog.fallback))
+        #expect(UIImage(systemName: ChallengeSymbolCatalog.fallback) != nil)
+    }
+
+    @Test("an uncatalogued name resolves to the fallback rather than rendering nothing")
+    func unknownResolvesToFallback() {
+        #expect(ChallengeSymbolCatalog.resolved("secret_mission") == ChallengeSymbolCatalog.fallback)
+        #expect(ChallengeSymbolCatalog.resolved("music.mic") == "music.mic")
+    }
+
+    @Test("the catalogue has no duplicates")
+    func noDuplicates() {
+        #expect(Set(ChallengeSymbolCatalog.all).count == ChallengeSymbolCatalog.all.count)
     }
 }
