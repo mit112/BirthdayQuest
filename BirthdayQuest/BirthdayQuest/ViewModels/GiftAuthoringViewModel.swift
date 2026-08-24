@@ -116,7 +116,7 @@ final class GiftAuthoringViewModel: ObservableObject {
     // MARK: Save
 
     func save() async {
-        guard !isSaving, let userId else { return }
+        guard !isSaving, isEditable, let userId else { return }
         guard isValid else {
             showValidation = true
             BQDesign.Haptics.error()

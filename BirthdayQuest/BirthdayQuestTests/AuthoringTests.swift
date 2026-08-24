@@ -294,6 +294,23 @@ struct GiftAuthoringTests {
         #expect(sent.contains("contentText"))
     }
 
+    @Test("save is a no-op once the celebrant has already opened the gift")
+    func saveIsNoOpWhenAlreadyUnlocked() async {
+        let mock = MockGameBackend()
+        let mine = Reward.fixture(id: "r_mine", contentType: .text, isUnlocked: true)
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")   // fixture's fromUserId is "u1"
+        for _ in 0..<8 { await Task.yield() }
+        #expect(vm.hasExisting)
+        vm.letter = "changed"
+
+        await vm.save()
+
+        #expect(mock.updatedRewards.isEmpty)
+        #expect(mock.createdRewards.isEmpty)
+    }
+
     @Test("a refused read renders as a failure, not as an invitation to write a gift")
     func refusedReadIsFailed() async {
         let mock = MockGameBackend()
