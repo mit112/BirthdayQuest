@@ -83,6 +83,9 @@ anywhere else — inject the protocol instead, so tests can pass `MockGameBacken
 - **Uploads must send `StorageMetadata` with an explicit `contentType`.** `putData` does not infer
   one from the path; without it the object uploads as `application/octet-stream` and the Storage
   rules reject it.
+- **A single `updateData` on `challenges`/`rewards` must not mix content and gameplay keys.** The
+  rules reject a write whose changed keys span two tiers, and it fails only at runtime, as
+  permission-denied — nothing catches this at compile time.
 
 ### Design System
 All UI tokens live in `DesignSystem.swift` under the `BQDesign` namespace (colors, typography, spacing, radius, shadows, animations). Use these instead of hardcoded values.
@@ -112,8 +115,8 @@ not exist for them. Never reintroduce a root-level content collection.
 | `events/{eventId}` | `name`, `occasionType`, `celebrantName`, `hostUid`, `occasionDate`, `isOpen`, `createdAt`. Member-readable, so it carries **no secrets** — host-only writes. |
 | `events/{id}/private/codes` | `contributorCode`, `celebrantCode`. **Host-read only.** An invite code is a bearer secret and the event document is member-readable, so the codes cannot live there: a contributor could read the celebrant code, hand it to a fresh uid, and have that impostor claim celebrant and delete every gift. Joins compare against this with a rules-internal `get()`, which is privileged. The celebrant may `update` (clear `celebrantCode`) but never `read`. |
 | `events/{id}/participants/{uid}` | `name`, `avatarId`, `mode` (`contributor`\|`celebrant`), `isHost`, `usedCode`. `mode` and `isHost` are separate — "host who is also the celebrant" is representable. **Read is host-or-self, not member:** `usedCode` is the code its owner presented, so a member-readable roster is the same secret leak one door along. |
-| `events/{id}/challenges/{id}` | Includes secret challenges (`isSecret: true`) |
-| `events/{id}/rewards/{id}` | Plus `fetchedBy: [String]?` for media purge tracking |
+| `events/{id}/challenges/{id}` | Includes secret challenges (`isSecret: true`). `update` is field-scoped: gameplay fields (e.g. `isCompleted`, `proofUrl`) are member-writable, content fields (`title`, `pointValue`, etc.) are host-or-author, and `isSecret`/`createdByUserId`/`createdAt` are immutable by omission from every allow-list. |
+| `events/{id}/rewards/{id}` | Plus `fetchedBy: [String]?` for media purge tracking. `update` is field-scoped the same way: gameplay fields are member-writable, content fields are host-or-author, `pointCost`/`sortOrder` are host-only, and `fromUserId`/`createdAt` are immutable by omission. |
 | `events/{id}/timeline/{id}` | Append-only by rule (`allow update, delete: if false`) |
 | `events/{id}/state/main` | GameState. A legitimate singleton now that it is event-scoped. |
 | `memberships/{uid}/events/{id}` | Thin mirror: `role`, `isHost`, `joinedAt`. No denormalized event name/date. Note the key is **`role`**, not `mode` — it holds a `ParticipantMode` raw value but is spelled differently from `participants.mode`, and no rule or query reads it today. |
@@ -192,12 +195,16 @@ Two tiers, and both must stay green:
   `MockGameBackend` for `FirestoreService`, so do not "tidy" that optional into a `throws`.
 - The 3 `BirthdayQuestUITests` were written against the deleted character-select flow. They compile
   but are not run and will need rewriting.
-- **A new occasion is empty.** `createOccasion` writes `totalChallenges: 0, totalRewards: 0` and
-  seeds no content — `DataSeeder` is gone and host authoring is subsystem #2, so the only in-app
-  authoring path is a contributor writing their secret challenge. The old "13 challenges award 715
-  pts, 8 rewards cost 750" figures described the deleted seeder and are not a live invariant. The
-  *design* intent stands: balance a set so challenges cannot quite cover the rewards, and let the
-  secret challenges close the gap.
+- **A new occasion starts empty, but is no longer stuck that way.** `createOccasion` still writes
+  `totalChallenges: 0, totalRewards: 0` and seeds no content, but subsystem #2 slice 1 gave it two
+  in-app authoring paths: the host authors challenges (`ChallengeAuthoringView`), and each
+  contributor authors one text gift (`GiftAuthoringView`); the host then prices, orders, and can
+  delete gifts (`GiftCurationView`) without being able to rewrite their text. `totalChallenges` /
+  `totalRewards` now move with the content, batched inside `FirestoreService`. Media gifts
+  (video/audio/image) still need subsystem #3. The old "13 challenges award 715 pts, 8 rewards cost
+  750" figures described the deleted seeder and are not a live invariant. The *design* intent
+  stands: balance a set so challenges cannot quite cover the rewards, and let the secret challenges
+  close the gap.
 - ~~The `GameState` wire parser is untested.~~ **Closed.** Extracted to `GameState.init(wire:)`
   and covered by `GameStateWireTests`; `birthdayBoyId` and the unused `Codable` conformance are
   gone. Each key is asserted twice — that it reaches its own field, *and* that removing it changes
@@ -261,13 +268,16 @@ assumption they needed the media pipeline. They did not:
 
 ## Direction (as of 2026-08-22)
 
-### Subsystem #2 is IN PROGRESS on `feat/content-authoring` — read this before touching rules
+### Subsystem #2 slice 1 is DONE on `feat/content-authoring`
 
-Branched from `fix/risk-1-cluster-and-followups`. **Tasks 1-6 of 13 are done; 7-13 are not.**
-Execution stopped mid-loop: Tasks 5+6's fix round is committed and green, but its scoped re-review
-was never dispatched. The full record — every ruling, every parked finding, and the exact next
-action — is in `.superpowers/sdd/2026-08-22-content-authoring/progress.md` (git-ignored). Read it
-before resuming; do not re-dispatch a completed task.
+Branched from `fix/risk-1-cluster-and-followups`. The host now authors challenges
+(`ChallengeAuthoringView`), each contributor authors one text gift (`GiftAuthoringView`, a fourth
+tab), and the host prices, orders, and deletes gifts (`GiftCurationView`) without being able to
+rewrite their text. Still out, deferred to later subsystems: **media gifts** (video/audio/image —
+subsystem #3, also needs a `storage.rules` change), **occasion-type templates** (subsystem #4),
+**participant removal**, and **occasion settings beyond `isOpen`**. The full record — every ruling,
+every parked finding — is in `.superpowers/sdd/2026-08-22-content-authoring/progress.md`
+(git-ignored).
 
 Two things on that branch change rules you may otherwise assume:
 
@@ -288,8 +298,8 @@ Two things on that branch change rules you may otherwise assume:
   `checkFinalBadge`'s `totalRewards > 0` then fails forever. Tasks 8 and 12 owe an in-flight guard
   and a reconciliation; neither exists yet.
 
-Task 13 owns reconciling the rest of this file (the Collections table, Known Gaps, README). It has
-not run, so those sections still describe the pre-subsystem-#2 state.
+Task 13 reconciled the rest of this file (the Collections table, Known Gaps, README) against slice
+1 as shipped.
 
 ## Direction — subsystem #1 (as of 2026-08-21)
 

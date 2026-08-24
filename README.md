@@ -52,7 +52,7 @@ Infinite-loop horizontal carousel with three card states: **locked** (frosted gl
 ### Challenge Board
 Challenges carry a point value, one of three difficulty tiers, and one of five categories (physical, social, creative, sentimental, adventure). Any challenge can be **2-in-1** — setting `optionBTitle` makes the detail view present Option A / Option B behind a toggle picker. Submission is universal: every challenge offers Photo, Text, or Done proof options.
 
-A newly created occasion starts with **zero** challenges and **zero** rewards. Host authoring — creating challenges and rewards in-app — is the next subsystem and is not built yet, so for now the only in-app authoring path is a contributor writing their secret challenge. Everything else has to be written straight into Firestore. See [Customization](#customization).
+A newly created occasion starts with **zero** challenges and **zero** rewards. The host authors challenges in-app, and each contributor authors one text gift; the host then prices, orders, and can delete gifts, but cannot rewrite their text. Media gifts (video/audio/image) aren't authorable in-app yet. See [Customization](#customization).
 
 ### Secret Challenges
 Contributors each create one classified dare through a spy-themed dossier interface with scan-line overlays and monospaced typography. The celebrant discovers these through a hidden "???" entry point that reveals a dark, classified sheet. Secret challenges are created, delivered, and completed through Firestore with real-time sync.
@@ -233,22 +233,23 @@ open BirthdayQuest/BirthdayQuest.xcodeproj
    contributor link with friends and the celebrant link with the guest of honour — the host panel
    in the Profile tab has both, and flags it prominently while the celebrant hasn't joined.
 
-> **A new occasion has no challenges and no rewards.** Nothing seeds them, and host authoring isn't
-> built yet, so the board and the carousel are empty until you add documents yourself. That's the
-> next section.
+> **A new occasion has no challenges and no rewards.** Nothing seeds them, so the board and the
+> carousel are empty until the host and contributors author some. That's the next section.
 
 ### Customization
 
 To personalize an occasion:
 
-- **Challenges** — Add documents under `events/{eventId}/challenges` with `title`, `description`,
-  `pointValue`, `difficulty`, `category`, `isSecret: false`, `isDelivered: true`,
-  `isCompleted: false`, and `createdAt`. Set `optionBTitle` / `optionBDescription` to make it 2-in-1
-- **Rewards** — Add documents under `events/{eventId}/rewards` with `fromName`, `title`,
-  `pointCost`, `contentType` (`video` / `audio` / `text` / `image`), and `sortOrder`. Upload media to
-  Storage under `events/{eventId}/rewards/{rewardId}/{filename}`, then paste the HTTPS download URL
-  into `contentUrl`. Image rewards use `contentUrls: [String]` instead; text rewards use
-  `contentText`
+- **Challenges** — The host adds them in-app through the challenge authoring screen: title,
+  description, point value, difficulty, category, and an optional Option B for a 2-in-1 challenge.
+- **Gifts (rewards)** — Each contributor authors one text gift in-app; the host prices it, sets its
+  order, and can delete it, but cannot rewrite its text. Media gifts (video/audio/image) aren't
+  authorable in-app yet — that's subsystem #3.
+- **Bulk setup** — For seeding many challenges or rewards at once, you can still add documents
+  directly under `events/{eventId}/challenges` / `events/{eventId}/rewards` (see
+  `Models/Challenge.swift` / `Models/Reward.swift` for field names). A hand-written document does
+  **not** move `totalChallenges` / `totalRewards` — only the in-app create/delete paths do, so a
+  bulk-seeded occasion needs those counters corrected separately.
 - **Avatars** — Replace the images in `Assets.xcassets/avatar-0{1..5}.imageset` with your own
   illustrations. `AvatarCatalog.all` is the list of valid ids
 - **Occasion types** — `OccasionType` in `Models/Occasion.swift`, including the `celebrantLabel`
@@ -326,8 +327,6 @@ Being upfront, because these will bite you if you deploy it:
   applies to proof photos the app uploads and to any reward media URL you paste in by hand: anyone
   with the URL can view it, forever, with no credential. Don't put anything genuinely private behind
   a reward.
-- **No host authoring yet.** A host can manage an occasion but cannot create challenges or rewards
-  in the app — those have to be written into Firestore by hand.
 - **Sign in with Apple isn't reachable.** Identity is a Firebase anonymous uid. `AuthService` and
   `AppSession` implement linking to an Apple ID in place, preserving the uid, but nothing in the UI
   calls it — so losing the device still means losing every occasion.
@@ -336,12 +335,13 @@ Being upfront, because these will bite you if you deploy it:
   `unlockRewardAtomically`, `completeChallengeAtomically`, and `adminForceUnlockReward` live inside
   `FirestoreService` — the mock replaces that logic rather than verifying it. Proving the balance
   re-check and idempotency guards needs a Swift↔emulator harness that doesn't exist yet.
-- **`birthdayquest://` isn't registered.** Invite links resolve when pasted into the join sheet, but
-  the URL scheme is not declared in the target's Info.plist settings, so tapping a link doesn't open
-  the app.
-- **Near-zero accessibility.** A handful of `accessibilityLabel`s on the occasion screens, and
-  nothing else — no VoiceOver labels on the custom controls, no Dynamic Type, no reduce-motion
-  handling, against roughly ten `repeatForever` animations. Light mode only.
+- **`birthdayquest://` is registered.** `Info.plist` declares `CFBundleURLTypes` for the scheme, so
+  tapping a shared invite link opens the app directly, in addition to pasting it into the join sheet.
+- **Accessibility is largely handled.** All typography is semantic text styles (Dynamic Type
+  reaches every screen), every perpetual animation is gated behind Reduce Motion / Low Power Mode,
+  and text sits only on tokens that pass AA against the app's cream background. Light mode only —
+  every color is a fixed hex with no dark variant. Visual reflow at the largest accessibility text
+  sizes is still unverified; there are no snapshot tests for it.
 - **iOS 26.0 minimum.** Set during development to use the newest SwiftUI APIs; it does limit who
   can build it.
 
