@@ -38,6 +38,11 @@ struct AdminControlsView: View {
                     // everything else.
                     inviteCard
 
+                    // 0b. Authoring. A row that pushes, not a card that expands: this file
+                    // is already the largest view in the app, and R60 forbids a second host
+                    // panel, not a second file.
+                    authoringCard
+
                     // 1. Read-only game state dashboard
                     gameStateCard
                     
@@ -705,10 +710,68 @@ private extension AdminControlsView {
     }
 }
 
+// MARK: - Section 0b: Authoring
+
+private extension AdminControlsView {
+
+    var authoringCard: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
+            adminSectionHeader("Content", icon: "square.and.pencil")
+
+            NavigationLink {
+                ChallengeAuthoringView(eventId: event.eventId)
+                    .environmentObject(event)
+            } label: {
+                authoringRow(
+                    "Challenges",
+                    subtitle: "\(viewModel.challenges.filter { !$0.isSecret }.count) added",
+                    icon: "flag.checkered"
+                )
+            }
+
+            // Task 12 adds the Gifts link here, once GiftCurationView exists.
+        }
+        .adminCard()
+    }
+
+    func authoringRow(_ title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: sectionHeaderIconSize))
+                .foregroundStyle(BQDesign.Colors.primaryPurple)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(BQDesign.Typography.caption)
+                    .foregroundStyle(BQDesign.Colors.textPrimary)
+                Text(subtitle)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+                    .monospacedDigit()
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: chevronIconSize))
+                .foregroundStyle(BQDesign.Colors.textSecondary)
+                .accessibilityHidden(true)
+        }
+        .padding(BQDesign.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: BQDesign.Radius.sm, style: .continuous)
+                .fill(BQDesign.Colors.background)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - Shared Admin UI Components
 
 private extension AdminControlsView {
-    
+
     func adminSectionHeader(_ text: String, icon: String) -> some View {
         HStack(spacing: BQDesign.Spacing.xs) {
             Image(systemName: icon)
