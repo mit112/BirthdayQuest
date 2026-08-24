@@ -97,7 +97,7 @@ struct Challenge: Identifiable, Codable {
     // MARK: - Computed
     
     var isPending: Bool { !isCompleted }
-    var isTwoInOne: Bool { optionBTitle != nil }
+    var isTwoInOne: Bool { !(optionBTitle ?? "").isEmpty }
     
     enum CodingKeys: String, CodingKey {
         case id, title, description, illustrationAsset

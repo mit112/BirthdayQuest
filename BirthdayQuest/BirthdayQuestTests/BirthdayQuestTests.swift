@@ -214,4 +214,10 @@ struct ChallengeModelTests {
             #expect(!t.label.isEmpty)
         }
     }
+
+    @Test("isTwoInOne treats a stored empty optionBTitle as off, not on with a blank option")
+    func isTwoInOneTreatsEmptyAsOff() {
+        #expect(Challenge.fixture(optionBTitle: "").isTwoInOne == false)
+        #expect(Challenge.fixture(optionBTitle: "Sing a duet").isTwoInOne == true)
+    }
 }
