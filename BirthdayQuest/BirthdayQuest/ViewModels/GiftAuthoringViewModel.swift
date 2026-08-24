@@ -159,6 +159,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                 _ = try await service.createReward(eventId: eventId, reward: gift)
             }
 
+            isSaving = false
             saveSuccess = true
             BQDesign.Haptics.success()
             try? await Task.sleep(for: .milliseconds(1500))
