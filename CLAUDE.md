@@ -272,18 +272,24 @@ assumption they needed the media pipeline. They did not:
 
 ## Direction (as of 2026-08-22)
 
-### Subsystem #2 slice 1 is DONE on `feat/content-authoring`
+### Subsystem #2 slice 1 is DONE and merged into `main` (as of 2026-08-24)
 
-Branched from `fix/risk-1-cluster-and-followups`. The host now authors challenges
+Landed on `main` by fast-forward (linear history) at `f13f7de`, together with subsystem #1's
+follow-up cluster; both branches (`feat/content-authoring`, `fix/risk-1-cluster-and-followups`) are
+deleted and the SDD workspace is gone — git history is the record now. **`main` is not pushed**
+(`origin/main` is ~77 commits behind); publishing stays the deliberate step gated on the three manual
+prerequisites in the subsystem-#1 section below. The host authors challenges
 (`ChallengeAuthoringView`), each contributor authors one text gift (`GiftAuthoringView`, a fourth
 tab), and the host prices, orders, and deletes gifts (`GiftCurationView`) without being able to
-rewrite their text. Still out, deferred to later subsystems: **media gifts** (video/audio/image —
-subsystem #3, also needs a `storage.rules` change), **occasion-type templates** (subsystem #4),
-**participant removal**, and **occasion settings beyond `isOpen`**. The full record — every ruling,
-every parked finding — is in `.superpowers/sdd/2026-08-22-content-authoring/progress.md`
-(git-ignored).
+rewrite their text. Landed green — Swift `** TEST SUCCEEDED **`, emulator rules suite passing,
+SwiftLint `--strict` clean; derive the counts (`grep -c '^\s*it(' firebase-tests/*.test.js`) rather
+than trusting a number written here. It was executed subagent-driven with per-task reviews and a
+three-domain whole-branch final review (rules/Swift/UI, no Criticals) plus one fix wave. Still out,
+deferred to later subsystems: **media gifts** (video/audio/image — subsystem #3, also needs a
+`storage.rules` change), **occasion-type templates** (subsystem #4), **participant removal**, and
+**occasion settings beyond `isOpen`**.
 
-Two things on that branch change rules you may otherwise assume:
+Rules and invariants this subsystem established (now on `main`):
 
 - **`challenges` and `rewards` are now field-scoped.** `update` splits into a gameplay half (any
   member — unchanged, so the dare and unlock flows keep working), a content half (host or the
@@ -298,9 +304,14 @@ Two things on that branch change rules you may otherwise assume:
   both partial-update methods take `fields:`.
 - `totalChallenges`/`totalRewards` now move with the content, batched inside `FirestoreService`.
   **The decrement is not idempotent** — `deleteDocument` on an absent doc succeeds while
-  `increment(-1)` does not, so a re-issued delete drives the counter negative and
-  `checkFinalBadge`'s `totalRewards > 0` then fails forever. Tasks 8 and 12 owe an in-flight guard
-  and a reconciliation; neither exists yet.
+  `increment(-1)` does not, so a re-issued delete would drive the counter negative and
+  `checkFinalBadge`'s `totalRewards > 0` then fails forever. This is now defended two ways: a
+  `guard !isPerformingAction` on every authoring delete path, and a self-healing `reconcileCounter`
+  on the authoring screens that writes the **absolute** observed document count (never a delta) when
+  the stored counter disagrees — triggered from the view via `.onChange`, gated on a delivered
+  snapshot, idempotent, and it converges. Note the final celebration gates on `totalRewards` only
+  (`checkFinalBadge`, `unlockRewardAtomically`); `totalChallenges` drift affects
+  `GameState.challengeProgress`, not the badge.
 
 Task 13 reconciled the rest of this file (the Collections table, Known Gaps, README) against slice
 1 as shipped.
@@ -318,9 +329,9 @@ session-5 note below. (Note `xcodebuild`'s "passed on" line count runs higher th
 distinct tests — 182 against `main` — because parameterized cases report once per argument; count
 unique test names if you need to compare.)
 
-**Follow-up work sits on `fix/risk-1-cluster-and-followups`, branched from `main` at `b05a22b` and
-not merged.** **Eight** commits (not seven, as this file previously said) closing the host-panel
-risk-#1 cluster and ranked follow-ups 2–6 and 8 from `progress.md`. Both tiers and SwiftLint were verified green on the branch tip. Two corrections
+**Follow-up work (the host-panel risk-#1 cluster and ranked follow-ups 2–6 and 8) is now merged into
+`main`.** It was on `fix/risk-1-cluster-and-followups` (branched from `main` at `b05a22b`), which
+fast-forwarded into `main` on 2026-08-24 together with subsystem #2 and is now deleted. Both tiers and SwiftLint were verified green. Two corrections
 to the earlier handoff, both confirmed against the tree rather than assumed: the celebrant
 `ShareLink` was **already** fixed by `debeaa7` (`celebrantLink` is nil for a consumed code), and
 `main` at `b05a22b` had **1** SwiftLint violation, not 0 — `orphaned_doc_comment` in
