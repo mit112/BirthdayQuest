@@ -228,11 +228,14 @@ final class ChallengeAuthoringViewModel: ObservableObject {
     }
 
     /// Safety net for the non-idempotent counter. A re-issued delete (double tap, a retry after a
-    /// timeout) drives totalChallenges below the true count, and checkFinalBadge gates on
-    /// totalChallenges > 0, so drift silently kills the final celebration. When the listener holds a
-    /// delivered snapshot and the stored counter disagrees with the observed count, write the correct
-    /// absolute value. Idempotent, and it re-runs on the next snapshot, so a transient wrong value
-    /// self-corrects. Writing state/main does not re-trigger the challenges listener, so there is no loop.
+    /// timeout) drives totalChallenges below the true count. Unlike totalRewards, totalChallenges
+    /// does not gate the final celebration — checkFinalBadge and unlockRewardAtomically key only on
+    /// totalRewards, reconciled by GiftCurationViewModel.reconcileCounter — but drift here still
+    /// corrupts GameState.challengeProgress, which divides by totalChallenges. When the listener
+    /// holds a delivered snapshot and the stored counter disagrees with the observed count, write the
+    /// correct absolute value. Idempotent, and it re-runs on the next snapshot, so a transient wrong
+    /// value self-corrects. Writing state/main does not re-trigger the challenges listener, so there
+    /// is no loop.
     func reconcileCounter(storedTotal: Int) async {
         guard contentState == .ready || contentState == .empty else { return }  // only a delivered snapshot
         let observed = challenges.count
