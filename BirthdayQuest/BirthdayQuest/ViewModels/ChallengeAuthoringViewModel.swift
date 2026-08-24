@@ -31,7 +31,7 @@ struct ChallengeDraft: Equatable {
         difficulty = challenge.difficulty
         category = challenge.category
         symbol = ChallengeSymbolCatalog.resolved(challenge.illustrationAsset)
-        hasOptionB = challenge.optionBTitle != nil
+        hasOptionB = !(challenge.optionBTitle ?? "").isEmpty
         optionBTitle = challenge.optionBTitle ?? ""
         optionBDescription = challenge.optionBDescription ?? ""
     }

@@ -147,6 +147,26 @@ struct AuthoringCounterTests {
         #expect(mock.updatedGameStateFields.last?["totalChallenges"] as? Int == 3)
     }
 
+    @Test("a stored empty optionBTitle round-trips as option B off, not on with blank fields")
+    func emptyOptionBRoundTripsAsOff() {
+        let challenge = Challenge.fixture(id: "c1", optionBTitle: "")
+        let draft = ChallengeDraft(from: challenge)
+
+        #expect(draft.hasOptionB == false)
+        #expect(draft.optionBTitle == "")
+        #expect(draft.optionBDescription == "")
+    }
+
+    @Test("a stored real optionBTitle round-trips as option B on, with its text")
+    func realOptionBRoundTripsAsOn() {
+        let challenge = Challenge.fixture(id: "c1", optionBTitle: "Sing a duet")
+        let draft = ChallengeDraft(from: challenge)
+
+        #expect(draft.hasOptionB == true)
+        #expect(draft.optionBTitle == "Sing a duet")
+        #expect(draft.optionBDescription == "Option B")
+    }
+
     @Test("reconcile is a no-op when the stored counter already matches")
     func reconcileNoOpWhenMatching() async {
         let mock = MockGameBackend()
