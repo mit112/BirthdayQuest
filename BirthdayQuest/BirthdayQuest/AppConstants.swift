@@ -110,6 +110,15 @@ enum ListenerKey {
     static func challenges(_ eventId: String) -> String { scoped("challenges", eventId: eventId) }
     static func timeline(_ eventId: String) -> String { scoped("timeline", eventId: eventId) }
     static func gameState(_ eventId: String) -> String { scoped("gameState", eventId: eventId) }
+    static func authoringChallenges(_ eventId: String) -> String {
+        scoped("authoring_challenges", eventId: eventId)
+    }
+    static func authoringRewards(_ eventId: String) -> String {
+        scoped("authoring_rewards", eventId: eventId)
+    }
+    static func myGift(_ eventId: String) -> String {
+        scoped("my_gift", eventId: eventId)
+    }
 }
 
 // MARK: - Storage Paths

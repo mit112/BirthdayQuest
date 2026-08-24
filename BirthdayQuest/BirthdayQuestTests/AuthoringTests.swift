@@ -69,3 +69,148 @@ struct ChallengeSymbolCatalogTests {
         #expect(Set(ChallengeSymbolCatalog.all).count == ChallengeSymbolCatalog.all.count)
     }
 }
+
+@MainActor
+@Suite("Authoring keeps the occasion's counters honest")
+struct AuthoringCounterTests {
+
+    @Test("creating a challenge is recorded with its author stamp")
+    func createStampsAuthor() async throws {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginCreating()
+        vm.draft.title = "Sing in public"
+        vm.draft.description = "Somewhere busy"
+        vm.draft.pointValue = 50
+
+        await vm.save(authorUid: "uid_host")
+
+        #expect(mock.called("createChallenge"))
+        #expect(mock.createdChallenges.first?.createdByUserId == "uid_host")
+        #expect(mock.createdChallenges.first?.isSecret == false)
+    }
+
+    @Test("deleting a challenge asks the backend to delete it")
+    func deleteCallsBackend() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        await vm.delete(.fixture(id: "c9"))
+
+        #expect(mock.deletedChallengeIds == ["c9"])
+    }
+
+    @Test("an edit sends only content fields, never a gameplay field")
+    func editSendsOnlyContent() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginEditing(.fixture(id: "c1", title: "Old"))
+        vm.draft.title = "New"
+
+        await vm.save(authorUid: "uid_host")
+
+        let sent = Set(mock.updatedChallenges.first?.fields.keys ?? [:].keys)
+        let gameplay: Set<String> = [
+            "isCompleted", "completedAt", "proofUrl", "proofType", "proofText",
+        ]
+        #expect(sent.isDisjoint(with: gameplay), "the rules reject a mixed write")
+        #expect(sent.contains("title"))
+    }
+
+    @Test("a failed write is reported, not swallowed")
+    func failureIsReported() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.beginCreating()
+        vm.draft.title = "X"
+        vm.draft.description = "Y"
+
+        await vm.save(authorUid: "uid_host")
+
+        #expect(vm.actionResult?.isError == true)
+        #expect(vm.isPerformingAction == false)
+    }
+
+    @Test("reconcile writes the true absolute count when the stored counter has drifted")
+    func reconcileWritesTrueCount() async {
+        let mock = MockGameBackend()
+        mock.challenges = [.fixture(id: "c1"), .fixture(id: "c2"), .fixture(id: "c3")]
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        await vm.reconcileCounter(storedTotal: 5)
+
+        #expect(mock.called("updateGameState"))
+        #expect(mock.updatedGameStateFields.last?["totalChallenges"] as? Int == 3)
+    }
+
+    @Test("reconcile is a no-op when the stored counter already matches")
+    func reconcileNoOpWhenMatching() async {
+        let mock = MockGameBackend()
+        mock.challenges = [.fixture(id: "c1"), .fixture(id: "c2"), .fixture(id: "c3")]
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        await vm.reconcileCounter(storedTotal: 3)
+
+        #expect(!mock.called("updateGameState"))
+    }
+}
+
+@MainActor
+@Suite("Challenge authoring renders a refused read as a failure")
+struct ChallengeAuthoringStateTests {
+
+    private func permissionDenied() -> NSError {
+        NSError(
+            domain: "FIRFirestoreErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+        )
+    }
+
+    @Test("a refused read is .failed, never an invitation to start authoring")
+    func refusedReadIsFailed() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = permissionDenied()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        guard case .failed(let message) = vm.contentState else {
+            Issue.record("expected .failed, got \(String(describing: vm.contentState))")
+            return
+        }
+        #expect(message.isEmpty == false)
+    }
+
+    @Test("a genuinely empty occasion still reads as empty")
+    func emptyIsEmpty() async {
+        let mock = MockGameBackend()
+        mock.challenges = []
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        #expect(vm.contentState == .empty)
+    }
+
+    @Test("an occasion holding only secret dares still reads as empty to the host")
+    func onlySecretDaresIsEmpty() async {
+        let mock = MockGameBackend()
+        mock.challenges = [.fixture(id: "s1", isSecret: true)]
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.startListening()
+        for _ in 0..<8 { await Task.yield() }
+
+        #expect(vm.contentState == .empty)
+        #expect(vm.visibleChallenges.isEmpty, "a contributor's dare is not the host's to edit")
+    }
+}
