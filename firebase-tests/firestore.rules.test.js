@@ -611,6 +611,17 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
     }));
   });
 
+  // The host can change pointCost alone (curation tier) and title alone (content tier), but
+  // not both in one write. Both values here are individually legal, so this is not caught by
+  // any field validator — if the tier split's hasOnly() ever regressed to something looser, this
+  // exact write would be allowed. That is what this test pins.
+  it('denies a host mixing a curation key with a content key in one update', async () => {
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r1`), {
+      pointCost: 200, title: 'A new message',
+    }));
+  });
+
   it('denies reassigning a gift\'s author', async () => {
     await joinAsContributor(GUEST);
     await seedGuestGift();
