@@ -234,3 +234,80 @@ struct ChallengeAuthoringStateTests {
         #expect(vm.visibleChallenges.isEmpty, "a contributor's dare is not the host's to edit")
     }
 }
+
+@MainActor
+@Suite("Gift authoring")
+struct GiftAuthoringTests {
+
+    @Test("saving a new gift stamps the author and a non-zero price")
+    func createStampsAuthorAndPrice() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.title = "A letter"
+        vm.teaser = "Open me last"
+        vm.letter = "Dear Alex..."
+
+        await vm.save()
+
+        let created = mock.createdRewards.first
+        #expect(created?.fromUserId == "uid_jo")
+        #expect(created?.fromName == "Jordan")
+        #expect(created?.contentType == .text)
+        #expect(created?.contentText == "Dear Alex...")
+        #expect((created?.pointCost ?? 0) > 0, "a gift created free is instantly unlockable")
+    }
+
+    @Test("a new gift sorts to the end of the existing list")
+    func newGiftSortsLast() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "r1"), .fixture(id: "r2")]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.title = "A letter"; vm.letter = "x"
+
+        await vm.save()
+
+        #expect(mock.createdRewards.first?.sortOrder == 2)
+    }
+
+    @Test("editing an existing gift sends only content fields, never the price")
+    func editSendsOnlyContent() async {
+        let mock = MockGameBackend()
+        // fixture defaults to isUnlocked: false, which is what makes it still editable.
+        let mine = Reward.fixture(id: "r_mine", contentType: .text)
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")   // fixture's fromUserId is "u1"
+        for _ in 0..<8 { await Task.yield() }
+        #expect(vm.hasExisting)
+        vm.letter = "Rewritten"
+
+        await vm.save()
+
+        let sent = Set(mock.updatedRewards.first?.fields.keys ?? [:].keys)
+        #expect(!sent.contains("pointCost"), "pricing is the host's, and a mixed write is denied")
+        #expect(!sent.contains("sortOrder"))
+        #expect(!sent.contains("isUnlocked"))
+        #expect(sent.contains("contentText"))
+    }
+
+    @Test("a refused read renders as a failure, not as an invitation to write a gift")
+    func refusedReadIsFailed() async {
+        let mock = MockGameBackend()
+        mock.listenerFailure = NSError(
+            domain: "FIRFirestoreErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Missing or insufficient permissions."]
+        )
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+
+        guard case .failed = vm.contentState else {
+            Issue.record("expected .failed, got \(String(describing: vm.contentState))")
+            return
+        }
+    }
+}
