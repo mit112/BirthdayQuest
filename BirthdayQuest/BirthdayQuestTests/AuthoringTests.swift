@@ -559,6 +559,45 @@ struct GiftAuthoringTests {
         let sent = mock.updatedRewards.first?.fields ?? [:]
         #expect(sent["contentUrl"] != nil, "the replacement clip's path is written")
     }
+
+    @Test("switching gift type clears a stale over-size video error")
+    func modeSwitchClearsVideoTooLarge() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.acceptVideo(url: tempVideoURL(), sizeBytes: GiftAuthoringViewModel.maxVideoBytes)
+        #expect(vm.videoTooLarge)
+        vm.contentMode = .letter
+        #expect(!vm.videoTooLarge)
+    }
+
+    @Test("picking a replacement clip deletes the previous temp file")
+    func replacingClipDeletesPreviousTempFile() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        let first = tempVideoURL()
+        vm.acceptVideo(url: first, sizeBytes: 10)
+        let second = tempVideoURL()
+        vm.acceptVideo(url: second, sizeBytes: 10)
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(vm.selectedVideoURL == second)
+    }
+
+    @Test("a successful video save deletes the uploaded temp file and clears the selection")
+    func successfulVideoSaveCleansUpTempFile() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .video
+        vm.title = "A video"
+        let url = tempVideoURL()
+        vm.selectedVideoURL = url
+
+        await vm.save()
+
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(vm.selectedVideoURL == nil)
+    }
 }
 
 @MainActor

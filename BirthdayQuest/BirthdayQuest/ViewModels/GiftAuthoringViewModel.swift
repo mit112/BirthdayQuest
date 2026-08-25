@@ -69,7 +69,9 @@ final class GiftAuthoringViewModel: ObservableObject {
     @Published var title = ""
     @Published var teaser = ""
     @Published var letter = ""
-    @Published var contentMode: GiftContentMode = .letter
+    @Published var contentMode: GiftContentMode = .letter {
+        didSet { videoTooLarge = false }
+    }
     @Published var selectedPhotos: [PhotosPickerItem] = [] {
         didSet { Task { await loadPhotoPreviews() } }
     }
@@ -375,6 +377,9 @@ final class GiftAuthoringViewModel: ObservableObject {
             guard let movie = try await item.loadTransferable(type: Movie.self) else { return }
             let size = (try? FileManager.default.attributesOfItem(atPath: movie.url.path))?[.size] as? Int ?? 0
             acceptVideo(url: movie.url, sizeBytes: size)
+            if videoTooLarge {
+                try? FileManager.default.removeItem(at: movie.url)
+            }
         } catch {
             logger.error("Video load error: \(error.localizedDescription)")
         }
@@ -390,6 +395,9 @@ final class GiftAuthoringViewModel: ObservableObject {
             return
         }
         videoTooLarge = false
+        if let previous = selectedVideoURL, previous != url {
+            try? FileManager.default.removeItem(at: previous)
+        }
         selectedVideoURL = url
     }
 
@@ -401,7 +409,8 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// reward is never created empty.
     private func saveVideo(userId: String, title: String, teaser: String) async throws {
         var path: String?
-        if let url = selectedVideoURL {
+        let uploadedURL = selectedVideoURL
+        if let url = uploadedURL {
             let data = try Data(contentsOf: url)
             let group = UUID().uuidString
             path = try await service.uploadRewardMedia(
@@ -432,6 +441,12 @@ final class GiftAuthoringViewModel: ObservableObject {
                 createdAt: Date()
             )
             _ = try await service.createReward(eventId: eventId, reward: gift)
+        }
+
+        // Only after the whole write succeeds — an earlier throw leaves the file for a retry.
+        if let uploadedURL {
+            try? FileManager.default.removeItem(at: uploadedURL)
+            selectedVideoURL = nil
         }
     }
 
