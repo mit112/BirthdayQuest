@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
 
 /// The contributor's gift to the celebrant: a letter they unlock with points.
 ///
@@ -16,6 +17,9 @@ struct GiftAuthoringView: View {
     // icon must observe its @Published isPlaying.
     @StateObject private var reviewPlayer = AudioPlayerController()
     @ScaledMetric private var reviewPlayerIconSize: CGFloat = 28
+    @StateObject private var recorder = AudioRecorderController()
+    @State private var recordingDotOn = false
+    @Environment(\.bqMotionLevel) private var motionLevel
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: GiftAuthoringViewModel(eventId: eventId))
@@ -47,8 +51,15 @@ struct GiftAuthoringView: View {
                 userId: event.participant?.id,
                 name: event.participant?.name ?? "A friend"
             )
+            recorder.onFinish = { url in
+                let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+                viewModel.acceptAudio(url: url, sizeBytes: size)
+            }
         }
-        .onDisappear { viewModel.stopListening() }
+        .onDisappear {
+            viewModel.stopListening()
+            recorder.cancel()
+        }
     }
 
     private var form: some View {
@@ -273,7 +284,28 @@ struct GiftAuthoringView: View {
                     .accessibilityLabel("Teaser")
             }
 
-            // Import path. A record control is added above this button in a later task.
+            if recorder.isRecording {
+                recordingRow
+            } else {
+                Button {
+                    BQDesign.Haptics.light()
+                    recorder.start()
+                } label: {
+                    HStack(spacing: BQDesign.Spacing.sm) {
+                        Image(systemName: "mic.circle.fill")
+                        Text(viewModel.selectedAudioURL == nil ? "Record a voice gift" : "Re-record")
+                            .font(BQDesign.Typography.bodyBold)
+                    }
+                    .foregroundStyle(BQDesign.Colors.primaryPurple)
+                }
+                .accessibilityLabel("Record a voice gift")
+            }
+
+            if recorder.permissionDenied {
+                permissionDeniedRow
+            }
+
+            // Import path.
             Button {
                 isImportingAudio = true
             } label: {
@@ -312,6 +344,55 @@ struct GiftAuthoringView: View {
             }
         }
         .disabled(!viewModel.isEditable)
+    }
+
+    private var recordingRow: some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Circle()
+                .fill(BQDesign.Colors.error)
+                .frame(width: 12, height: 12)
+                .opacity(recordingDotOn ? 1 : 0.3)
+                .animation(
+                    motionLevel.allowsPerpetual
+                        ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true)
+                        : nil,
+                    value: recordingDotOn
+                )
+                .accessibilityHidden(true)
+            Text(recorderTimeString)
+                .font(BQDesign.Typography.body.monospacedDigit())
+                .foregroundStyle(BQDesign.Colors.textPrimary)
+            Spacer()
+            Button("Stop") {
+                BQDesign.Haptics.light()
+                recorder.stop()
+            }
+            .font(BQDesign.Typography.bodyBold)
+            .foregroundStyle(BQDesign.Colors.primaryPurple)
+        }
+        .onAppear { recordingDotOn = true }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Recording, \(recorderTimeString). Double-tap Stop to finish.")
+    }
+
+    private var permissionDeniedRow: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+            Text("Microphone access is off. Turn it on in Settings to record a voice gift.")
+                .font(BQDesign.Typography.captionSmall)
+                .foregroundStyle(BQDesign.Colors.textPrimary)
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .font(BQDesign.Typography.captionSmall)
+            .foregroundStyle(BQDesign.Colors.primaryPurple)
+        }
+    }
+
+    private var recorderTimeString: String {
+        let seconds = Int(recorder.elapsed)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     /// A review row for the selected/recorded clip: play it back before saving. Reuses the
