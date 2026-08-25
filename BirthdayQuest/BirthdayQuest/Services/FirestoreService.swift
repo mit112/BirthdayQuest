@@ -887,6 +887,12 @@ final class FirestoreService: GameBackend {
         }
     }
 
+    func markRewardFetched(eventId: String, rewardId: String, uid: String) async throws {
+        try await rewardsRef(eventId).document(rewardId).updateData([
+            "fetchedBy": FieldValue.arrayUnion([uid])
+        ])
+    }
+
     private func fileExtension(forContentType contentType: String) -> String {
         switch contentType {
         case "image/jpeg": return "jpg"

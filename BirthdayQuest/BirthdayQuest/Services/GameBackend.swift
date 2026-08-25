@@ -231,6 +231,10 @@ protocol GameBackend: AnyObject {
     /// object counts as success (a re-issued or partial curation delete must not throw).
     func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws
 
+    /// Records that `uid` has fetched+persisted this reward's media, for purge tracking.
+    /// `fetchedBy` is in the rules gameplay tier, so any member may write it.
+    func markRewardFetched(eventId: String, rewardId: String, uid: String) async throws
+
     // MARK: Admin
 
     func adminForceUnlockReward(

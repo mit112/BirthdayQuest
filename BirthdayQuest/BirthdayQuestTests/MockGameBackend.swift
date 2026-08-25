@@ -457,6 +457,16 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    /// Every `(rewardId, uid)` a fetch was recorded for, recorded before `throwIfNeeded()`,
+    /// so a stubbed failure still proves the attempt happened.
+    private(set) var markedRewardFetched: [(rewardId: String, uid: String)] = []
+
+    func markRewardFetched(eventId: String, rewardId: String, uid: String) async throws {
+        record("markRewardFetched", eventId: eventId)
+        markedRewardFetched.append((rewardId: rewardId, uid: uid))
+        try throwIfNeeded()
+    }
+
     // MARK: - GameBackend: Admin
 
     func adminForceUnlockReward(
