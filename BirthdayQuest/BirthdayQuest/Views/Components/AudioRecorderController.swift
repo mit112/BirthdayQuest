@@ -48,6 +48,7 @@ final class AudioRecorderController: NSObject, ObservableObject {
             try session.setActive(true)
         } catch {
             logger.error("Audio session setup failed: \(error.localizedDescription)")
+            restoreSession()
             return
         }
 
