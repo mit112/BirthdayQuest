@@ -439,6 +439,126 @@ struct GiftAuthoringTests {
         #expect(!sent.keys.contains("contentUrls"), "no new photos were selected")
         #expect(sent["teaser"] as? String == "Updated teaser")
     }
+
+    /// Writes a few real bytes to a temp file with the given extension and returns its URL —
+    /// enough for `Data(contentsOf:)` to succeed during `save()`. A `PhotosPickerItem` cannot be
+    /// constructed in a test, so `selectedVideoURL` is set directly, mirroring `photoPreviews`.
+    private func tempVideoURL(ext: String = "mov") -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(ext)
+        try? Data([0x00, 0x01, 0x02]).write(to: url)
+        return url
+    }
+
+    @Test("a new video gift uploads once and creates a .video reward with a single contentUrl")
+    func newVideoGiftUploadsThenCreatesOnce() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .video
+        vm.title = "A video"
+        vm.teaser = "For you"
+        vm.selectedVideoURL = tempVideoURL()
+
+        await vm.save()
+
+        #expect(mock.callCount("uploadRewardMedia") == 1)
+        #expect(mock.uploadedRewardMedia.first?.contentType == "video/quicktime")
+        #expect(mock.callCount("createReward") == 1)
+        let created = mock.createdRewards.first
+        #expect(created?.contentType == .video)
+        #expect(created?.contentUrl != nil, "video uses the single contentUrl field")
+        #expect(created?.contentUrls == nil, "video never uses the images array")
+        #expect(created?.contentText == nil)
+    }
+
+    @Test("an .mp4 selection uploads as video/mp4")
+    func mp4SelectionUploadsAsMp4() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .video
+        vm.title = "A video"
+        vm.selectedVideoURL = tempVideoURL(ext: "mp4")
+
+        await vm.save()
+
+        #expect(mock.uploadedRewardMedia.first?.contentType == "video/mp4")
+    }
+
+    @Test("a video at or over the 200MB cap is rejected; one under it is accepted")
+    func oversizedVideoRejected() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.acceptVideo(url: tempVideoURL(), sizeBytes: GiftAuthoringViewModel.maxVideoBytes)
+        #expect(vm.videoTooLarge)
+        #expect(vm.selectedVideoURL == nil)
+
+        vm.acceptVideo(url: tempVideoURL(), sizeBytes: GiftAuthoringViewModel.maxVideoBytes - 1)
+        #expect(!vm.videoTooLarge)
+        #expect(vm.selectedVideoURL != nil)
+    }
+
+    @Test("isValid for video requires a title and a selected (or existing) video")
+    func isValidForVideo() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .video
+
+        #expect(!vm.isValid, "no title, no video")
+        vm.title = "A video"
+        #expect(!vm.isValid, "title alone is not enough")
+        vm.selectedVideoURL = tempVideoURL()
+        #expect(vm.isValid)
+    }
+
+    @Test("an existing video gift locks to video mode and, with no new clip, updates text only")
+    func editExistingVideoGiftWithoutNewClip() async {
+        let mock = MockGameBackend()
+        let mine = Reward.fixture(
+            id: "r_mine", contentType: .video,
+            contentUrl: "events/evt_1/rewards/existing/clip.mov"
+        )
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")   // fixture's fromUserId is "u1"
+        for _ in 0..<8 { await Task.yield() }
+        #expect(vm.contentMode == .video, "an existing video gift locks to video mode")
+        vm.teaser = "Updated teaser"
+
+        await vm.save()
+
+        #expect(!mock.called("uploadRewardMedia"))
+        let sent = mock.updatedRewards.first?.fields ?? [:]
+        #expect(!sent.keys.contains("contentUrl"), "no new clip was selected")
+        #expect(sent["teaser"] as? String == "Updated teaser")
+    }
+
+    @Test("selecting a new clip on an existing video gift sends the new contentUrl")
+    func editExistingVideoGiftWithNewClip() async {
+        let mock = MockGameBackend()
+        let mine = Reward.fixture(
+            id: "r_mine", contentType: .video,
+            contentUrl: "events/evt_1/rewards/existing/clip.mov"
+        )
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.selectedVideoURL = tempVideoURL()
+
+        await vm.save()
+
+        #expect(mock.callCount("uploadRewardMedia") == 1)
+        let sent = mock.updatedRewards.first?.fields ?? [:]
+        #expect(sent["contentUrl"] != nil, "the replacement clip's path is written")
+    }
 }
 
 @MainActor

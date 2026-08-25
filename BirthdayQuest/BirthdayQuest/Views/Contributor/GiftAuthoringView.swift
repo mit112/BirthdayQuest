@@ -58,6 +58,7 @@ struct GiftAuthoringView: View {
                     Picker("Gift type", selection: $viewModel.contentMode) {
                         Text("Letter").tag(GiftAuthoringViewModel.GiftContentMode.letter)
                         Text("Photos").tag(GiftAuthoringViewModel.GiftContentMode.photos)
+                        Text("Video").tag(GiftAuthoringViewModel.GiftContentMode.video)
                     }
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Gift type")
@@ -69,6 +70,8 @@ struct GiftAuthoringView: View {
                 letterSection
             case .photos:
                 photosSection
+            case .video:
+                videoSection
             }
 
             Section {
@@ -185,6 +188,61 @@ struct GiftAuthoringView: View {
                 && viewModel.photoPreviews.isEmpty
                 && (viewModel.existingGiftHasPhotos == nil) {
                 fieldError("Add at least one photo.")
+            }
+        }
+        .disabled(!viewModel.isEditable)
+    }
+
+    private var videoSection: some View {
+        Section("Your video") {
+            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                TextField("", text: $viewModel.title, prompt: Text("A video from me"))
+                    .accessibilityLabel("Title")
+            }
+            if viewModel.showValidation
+                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                fieldError("Give your gift a title.")
+            }
+
+            labelled("Teaser", hint: "One line, shown while it's still locked") {
+                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                    .accessibilityLabel("Teaser")
+            }
+
+            PhotosPicker(selection: $viewModel.selectedVideoItem, matching: .videos) {
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    Image(systemName: "video.badge.plus")
+                    Text(viewModel.selectedVideoURL == nil ? "Add a video" : "Choose a different video")
+                        .font(BQDesign.Typography.bodyBold)
+                }
+                .foregroundStyle(BQDesign.Colors.primaryPurple)
+            }
+            .accessibilityLabel("Add a video")
+
+            if viewModel.selectedVideoURL != nil {
+                HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.xs) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(BQDesign.Colors.success)
+                        .accessibilityHidden(true)
+                    Text("Video selected")
+                        .font(BQDesign.Typography.captionSmall)
+                        .foregroundStyle(BQDesign.Colors.textPrimary)
+                }
+                .accessibilityElement(children: .combine)
+            } else if let existing = viewModel.existingGiftHasVideo {
+                Text(existing)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+            }
+
+            if viewModel.videoTooLarge {
+                fieldError("That video is over 200 MB. Please pick a shorter one.")
+            }
+
+            if viewModel.showValidation
+                && viewModel.selectedVideoURL == nil
+                && (viewModel.existingGiftHasVideo == nil) {
+                fieldError("Add a video.")
             }
         }
         .disabled(!viewModel.isEditable)

@@ -1,8 +1,31 @@
 import Foundation
 import SwiftUI
 import PhotosUI
+import CoreTransferable
+import UniformTypeIdentifiers
 import Combine
 import OSLog
+
+/// A movie picked from the photo library, materialised as a local file URL so its size can be
+/// checked against the 200 MB Storage cap without loading the whole clip into memory. PhotosUI
+/// hands back a file we do not own; the importing closure copies it into our temp dir so the URL
+/// stays valid until `save()` reads it.
+private struct Movie: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { movie in
+            SentTransferredFile(movie.url)
+        } importing: { received in
+            let copy = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(received.file.pathExtension)
+            try? FileManager.default.removeItem(at: copy)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return Movie(url: copy)
+        }
+    }
+}
 
 /// One contributor's gift to the celebrant.
 ///
@@ -16,17 +39,22 @@ import OSLog
 @MainActor
 final class GiftAuthoringViewModel: ObservableObject {
 
-    /// A gift is a letter or a set of photos (video/voice arrive in later slices). For an
+    /// A gift is a letter, a set of photos, or a video (voice arrives in a later slice). For an
     /// existing gift this is locked to its stored `contentType` — switching modes on an
     /// existing gift is a content rewrite and is out of scope.
     enum GiftContentMode {
         case letter
         case photos
+        case video
     }
 
     /// Selecting more than this many photos would make a single gift unreasonably heavy to
     /// upload and to view.
     static let maxPhotoCount = 10
+
+    /// The Storage rules reject an upload of 200 MB or more (`request.resource.size <
+    /// 200 * 1024 * 1024`), so a bigger clip would 403 after a long upload. Reject it up front.
+    static let maxVideoBytes = 200 * 1024 * 1024
 
     enum GiftAuthoringError: LocalizedError {
         case noPhotosUploaded
@@ -49,6 +77,16 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// way `ChallengeSubmissionViewModel.selectedImageData` bypasses `PhotosPickerItem`'s
     /// async load, which cannot be constructed from a unit test.
     @Published var photoPreviews: [UIImage] = []
+    /// The library item the contributor picked. Loading it produces `selectedVideoURL`; tests set
+    /// that directly, since a `PhotosPickerItem` cannot be built outside PhotosUI's live picker.
+    @Published var selectedVideoItem: PhotosPickerItem? {
+        didSet { Task { await loadVideoSelection() } }
+    }
+    /// The loaded, size-checked local file the video was copied to. Settable for tests.
+    @Published var selectedVideoURL: URL?
+    /// Set when the picked video is at or over `maxVideoBytes`; drives the inline error and keeps
+    /// the oversized file out of `selectedVideoURL`.
+    @Published var videoTooLarge = false
     @Published private(set) var existingGift: Reward?
     @Published private(set) var isLoading = true
     @Published var isSaving = false
@@ -100,6 +138,13 @@ final class GiftAuthoringViewModel: ObservableObject {
         return "\(count) photo\(count == 1 ? "" : "s") already saved"
     }
 
+    /// A note that an existing video gift already has a saved clip, or `nil` — explains why Save
+    /// stays valid with nothing newly selected.
+    var existingGiftHasVideo: String? {
+        guard existingGift?.contentType == .video, existingGift?.contentUrl != nil else { return nil }
+        return "A video is already saved"
+    }
+
     var isValid: Bool {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         switch contentMode {
@@ -110,6 +155,8 @@ final class GiftAuthoringViewModel: ObservableObject {
             // actually uploads from, and the only one a unit test can populate directly
             // (a `PhotosPickerItem` cannot be constructed outside `PhotosUI`'s live picker).
             return !photoPreviews.isEmpty || !(existingGift?.contentUrls ?? []).isEmpty
+        case .video:
+            return selectedVideoURL != nil || existingGift?.contentUrl != nil
         }
     }
 
@@ -142,7 +189,11 @@ final class GiftAuthoringViewModel: ObservableObject {
                         self.title = mine.title
                         self.teaser = mine.teaser ?? ""
                         self.letter = mine.contentText ?? ""
-                        self.contentMode = mine.contentType == .image ? .photos : .letter
+                        switch mine.contentType {
+                        case .image: self.contentMode = .photos
+                        case .video: self.contentMode = .video
+                        case .text, .audio: self.contentMode = .letter
+                        }
                     }
                     self.loadFailure = nil
                 case .failure(let error):
@@ -246,6 +297,8 @@ final class GiftAuthoringViewModel: ObservableObject {
                 try await savePhotos(
                     userId: userId, title: trimmedTitle, teaser: trimmedTeaser
                 )
+            case .video:
+                try await saveVideo(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
             }
 
             isSaving = false
@@ -312,5 +365,80 @@ final class GiftAuthoringViewModel: ObservableObject {
             )
             _ = try await service.createReward(eventId: eventId, reward: gift)
         }
+    }
+
+    // MARK: Video selection
+
+    private func loadVideoSelection() async {
+        guard let item = selectedVideoItem else { return }
+        do {
+            guard let movie = try await item.loadTransferable(type: Movie.self) else { return }
+            let size = (try? FileManager.default.attributesOfItem(atPath: movie.url.path))?[.size] as? Int ?? 0
+            acceptVideo(url: movie.url, sizeBytes: size)
+        } catch {
+            logger.error("Video load error: \(error.localizedDescription)")
+        }
+    }
+
+    /// Accepts a picked video only if it is under the Storage cap, so an oversized clip is rejected
+    /// before a doomed upload. Split out from the PhotosUI load so it is unit-testable — a
+    /// `PhotosPickerItem` cannot be constructed in a test.
+    func acceptVideo(url: URL, sizeBytes: Int) {
+        guard sizeBytes < Self.maxVideoBytes else {
+            videoTooLarge = true
+            selectedVideoURL = nil
+            return
+        }
+        videoTooLarge = false
+        selectedVideoURL = url
+    }
+
+    /// Uploads the selected clip (if any) to a client-generated folder, then writes the reward
+    /// once. Mirrors `savePhotos`: the folder is a `UUID`, independent of the eventual document id.
+    /// Video uses the single `contentUrl` field, never `contentUrls`. There is no partial-failure
+    /// path to guard as in `savePhotos` — a single upload either throws (caught by `save`) or
+    /// returns a path — and `isValid` guarantees `selectedVideoURL` for a new gift, so a `.video`
+    /// reward is never created empty.
+    private func saveVideo(userId: String, title: String, teaser: String) async throws {
+        var path: String?
+        if let url = selectedVideoURL {
+            let data = try Data(contentsOf: url)
+            let group = UUID().uuidString
+            path = try await service.uploadRewardMedia(
+                eventId: eventId, rewardId: group, data: data,
+                contentType: videoContentType(for: url)
+            )
+        }
+
+        if let existing = existingGift, let id = existing.id {
+            var fields: [String: Any] = ["title": title, "teaser": teaser]
+            if let path { fields["contentUrl"] = path }
+            try await service.updateReward(eventId: eventId, rewardId: id, fields: fields)
+        } else {
+            let gift = Reward(
+                fromUserId: userId,
+                fromName: authorName,
+                title: title,
+                teaser: teaser,
+                pointCost: Self.defaultPointCost,
+                contentType: .video,
+                contentUrl: path,
+                contentUrls: nil,
+                contentText: nil,
+                isUnlocked: false,
+                unlockedAt: nil,
+                sortOrder: allGifts.count,
+                badgeIllustration: "video.fill",
+                createdAt: Date()
+            )
+            _ = try await service.createReward(eventId: eventId, reward: gift)
+        }
+    }
+
+    /// The clip's MIME type from its file extension. PhotosUI exports `.mov` (QuickTime) most
+    /// often; `.mp4` is the other common case. Both are accepted by `isPlayableMedia` in the
+    /// Storage rules and mapped to an extension by `FirestoreService.fileExtension`.
+    private func videoContentType(for url: URL) -> String {
+        url.pathExtension.lowercased() == "mp4" ? "video/mp4" : "video/quicktime"
     }
 }
