@@ -1405,3 +1405,70 @@ describe('participant deletion (host removal)', () => {
     await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
   });
 });
+
+describe('content reports (Guideline 1.2)', () => {
+  beforeEach(seed);
+
+  it('a member can file a valid report', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {
+      reportedByUserId: GUEST, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+    }));
+  });
+
+  it('a non-member cannot file a report', async () => {
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {
+      reportedByUserId: OUTSIDER, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+    }));
+  });
+
+  it('a member cannot file a report as someone else', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {
+      reportedByUserId: HOST, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+    }));
+  });
+
+  it('a report with an unknown contentType is denied', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {
+      reportedByUserId: GUEST, contentType: 'user', contentId: 'r1', createdAt: new Date(),
+    }));
+  });
+
+  it('the host can read/list reports', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/reports/rep1`), {
+        reportedByUserId: GUEST, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+      });
+    });
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(getDocs(collection(db, `events/${EVENT}/reports`)));
+  });
+
+  it('a non-host member cannot read reports', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/reports/rep1`), {
+        reportedByUserId: GUEST, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+      });
+    });
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(getDocs(collection(db, `events/${EVENT}/reports`)));
+  });
+
+  it('reports are immutable (no update, no delete)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `events/${EVENT}/reports/rep1`), {
+        reportedByUserId: GUEST, contentType: 'reward', contentId: 'r1', createdAt: new Date(),
+      });
+    });
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/reports/rep1`), { contentId: 'r2' }));
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/reports/rep1`)));
+  });
+});

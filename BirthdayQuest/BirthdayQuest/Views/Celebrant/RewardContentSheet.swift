@@ -93,10 +93,16 @@ struct RewardContentSheet: View {
     let eventId: String
     let onDismiss: () -> Void
     var mediaStore: MediaStoring = MediaStore()
+    /// Non-nil enables the low-key "Report this gift" affordance. Left `nil` wherever
+    /// reporting is out of scope (e.g. `TimelineView`'s presentation of this same sheet) so
+    /// the dumb view renders no button at all rather than one with nowhere to send.
+    var onReport: (() async -> String)?
 
     @State private var confettiCounter = 0
     @State private var appeared = false
     @State private var presentation: RewardContentPresentation = .loading
+    @State private var showReportConfirm = false
+    @State private var reportMessage: String?
     @ScaledMetric private var confettiEmojiSize: CGFloat = 50
     @ScaledMetric private var unavailableHeartIconSize: CGFloat = 40
 
@@ -167,7 +173,49 @@ struct RewardContentSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
                         .padding(.horizontal, BQDesign.Spacing.xl)
                 }
-                .padding(.bottom, BQDesign.Spacing.xl)
+
+                // Low-key and subordinate to Done/confetti on purpose — this is a safety
+                // valve, not a feature to promote. Only rendered when a caller actually
+                // wants it (see `onReport`'s doc comment).
+                if let onReport {
+                    Button {
+                        BQDesign.Haptics.light()
+                        showReportConfirm = true
+                    } label: {
+                        Text("Report this gift")
+                            .font(BQDesign.Typography.caption)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
+                            .frame(minHeight: 44)
+                    }
+                    .padding(.bottom, BQDesign.Spacing.md)
+                    .confirmationDialog(
+                        "Report this gift to the host?",
+                        isPresented: $showReportConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Report", role: .destructive) {
+                            Task { reportMessage = await onReport() }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("The host will be able to see and remove it.")
+                    }
+                    // Hosted on the sheet (not the presenting carousel) so it can actually appear
+                    // while this sheet is on screen.
+                    .alert(
+                        "Report",
+                        isPresented: Binding(
+                            get: { reportMessage != nil },
+                            set: { if !$0 { reportMessage = nil } }
+                        )
+                    ) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(reportMessage ?? "")
+                    }
+                } else {
+                    Spacer().frame(height: BQDesign.Spacing.xl)
+                }
             }
             .confettiCannon(
                 trigger: $confettiCounter,

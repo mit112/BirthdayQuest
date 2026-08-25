@@ -316,6 +316,19 @@ service cloud.firestore {
         allow update: if isMember(eventId);
         allow delete: if false;
       }
+
+      // Objectionable-content reports (App Store Guideline 1.2). Any member may file a report; only
+      // the host may read them (to moderate), and the host acts by deleting the reported content via
+      // the existing content-delete rules. Append-only — a report is an audit record, not editable.
+      match /reports/{reportId} {
+        allow read: if isHost(eventId);
+        allow create: if isMember(eventId)
+                      && request.resource.data.reportedByUserId == request.auth.uid
+                      && request.resource.data.contentType in ['reward', 'challenge']
+                      && request.resource.data.contentId is string
+                      && request.resource.data.contentId.size() > 0;
+        allow update, delete: if false;
+      }
     }
 
     match /{document=**} {

@@ -14,6 +14,7 @@ enum Collections {
     static let challenges = "challenges"
     static let rewards = "rewards"
     static let timeline = "timeline"
+    static let reports = "reports"
     static let state = "state"
     static let stateDoc = "main"
     /// Host-only-readable corner of an event. The invite codes live here rather than on the

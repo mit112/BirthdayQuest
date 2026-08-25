@@ -55,6 +55,10 @@ final class FirestoreService: GameBackend {
         try eventRef(eventId).collection(Collections.timeline)
     }
 
+    private func reportsRef(_ eventId: String) throws -> CollectionReference {
+        try eventRef(eventId).collection(Collections.reports)
+    }
+
     private func participantsRef(_ eventId: String) throws -> CollectionReference {
         try eventRef(eventId).collection(Collections.participants)
     }
@@ -729,6 +733,33 @@ final class FirestoreService: GameBackend {
 
     func addTimelineEvent(eventId: String, event: TimelineEvent) async throws {
         try timelineRef(eventId).addDocument(from: event)
+    }
+
+    // MARK: - Reports
+
+    func reportContent(
+        eventId: String,
+        contentType: String,
+        contentId: String,
+        reason: String?
+    ) async throws {
+        let uid = try currentUid()
+        var data: [String: Any] = [
+            "contentType": contentType,
+            "contentId": contentId,
+            "reportedByUserId": uid,
+            "createdAt": Timestamp(date: Date())
+        ]
+        if let reason { data["reason"] = reason }
+        try await reportsRef(eventId).addDocument(data: data)
+        logger.info("Filed a report for \(contentType) \(contentId)")
+    }
+
+    func fetchReports(eventId: String) async throws -> [Report] {
+        let snapshot = try await reportsRef(eventId)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: Report.self) }
     }
 
     // MARK: - Game State

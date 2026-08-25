@@ -33,7 +33,6 @@ final class RewardsViewModel: ObservableObject {
     /// wrong for a read that has been refused and will stay refused — it is dismissed once
     /// and leaves the empty state behind it.
     @Published var loadFailure: String?
-
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Rewards")
 
     // MARK: - Computed
@@ -203,5 +202,27 @@ final class RewardsViewModel: ObservableObject {
         showUnlockedContent = false
         justUnlockedReward = nil
         showTimelinePrompt = true
+    }
+
+    // MARK: - Report
+
+    /// Files a report and RETURNS the user-facing confirmation to show. It returns the message
+    /// rather than setting a published property so the presenting sheet can host the alert itself:
+    /// an alert bound to this view model cannot appear while the gift sheet is presented over it.
+    func reportReward(_ reward: Reward) async -> String {
+        guard let rewardId = reward.id else { return "Couldn't send that report. Try again." }
+
+        do {
+            try await service.reportContent(
+                eventId: eventId,
+                contentType: "reward",
+                contentId: rewardId,
+                reason: nil
+            )
+            return "Reported — the host will review it."
+        } catch {
+            logger.error("Report error: \(error.localizedDescription)")
+            return "Couldn't send that report. Try again."
+        }
     }
 }

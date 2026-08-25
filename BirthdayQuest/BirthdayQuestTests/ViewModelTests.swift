@@ -135,6 +135,33 @@ struct RewardsViewModelTests {
         #expect(vm.contentState == .ready)
         #expect(vm.loadFailure == nil)
     }
+
+    @Test("reporting a gift calls the backend with the reward's content and a thank-you confirmation")
+    func reportRewardSucceeds() async {
+        let mock = MockGameBackend()
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
+
+        let message = await vm.reportReward(.fixture(id: "r9"))
+
+        #expect(mock.reportedContent.count == 1)
+        #expect(mock.reportedContent.first?.eventId == "evt_1")
+        #expect(mock.reportedContent.first?.contentType == "reward")
+        #expect(mock.reportedContent.first?.contentId == "r9")
+        #expect(mock.reportedContent.first?.reason == nil, "no reason-input UI this cut")
+        #expect(message == "Reported — the host will review it.")
+    }
+
+    @Test("a failed report surfaces an error confirmation instead of a thank-you")
+    func reportRewardFailureSurfacesError() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = RewardsViewModel(eventId: "evt_1", service: mock)
+
+        let message = await vm.reportReward(.fixture(id: "r9"))
+
+        #expect(mock.reportedContent.count == 1, "the attempt still happened")
+        #expect(message == "Couldn't send that report. Try again.")
+    }
 }
 
 @MainActor
@@ -495,6 +522,70 @@ struct AdminViewModelListenerTests {
 
         #expect(mock.called("removeParticipant") == false)
         #expect(vm.actionResult == nil, "a silent no-op must not report success or failure")
+    }
+
+    @Test("loading reports populates the published list from the backend")
+    func loadReportsPopulatesReports() async {
+        let mock = MockGameBackend()
+        let report = Report(
+            contentType: "reward", contentId: "r1",
+            reportedByUserId: "u1", reason: nil, createdAt: Date(timeIntervalSince1970: 0)
+        )
+        mock.reportsToReturn = [report]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        await vm.loadReports()
+
+        #expect(vm.reports.count == 1)
+        #expect(vm.reports.first?.contentId == "r1")
+    }
+
+    @Test("a failed reports read leaves the list empty rather than crashing")
+    func loadReportsFailureLeavesEmpty() async {
+        let mock = MockGameBackend()
+        // Pre-seed via a successful load so the failure path has a non-empty list to clear —
+        // otherwise this passes vacuously, since `reports` starts empty.
+        mock.reportsToReturn = [Report(
+            contentType: "reward", contentId: "r1",
+            reportedByUserId: "u1", reason: nil, createdAt: Date(timeIntervalSince1970: 0)
+        )]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+        await vm.loadReports()
+        #expect(!vm.reports.isEmpty, "precondition: the prior successful load populated the list")
+
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        await vm.loadReports()
+
+        #expect(vm.reports.isEmpty, "the failure path must clear the stale list, not keep it")
+    }
+
+    @Test("a report's contentId resolves to the flagged gift's title when it is still loaded")
+    func reportedContentTitleResolvesRewardTitle() async {
+        let mock = MockGameBackend()
+        mock.rewards = [.fixture(id: "r1", fromName: "Sam")]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+        vm.startListening()
+        await settle()
+
+        let report = Report(
+            contentType: "reward", contentId: "r1",
+            reportedByUserId: "u1", reason: nil, createdAt: Date()
+        )
+
+        #expect(vm.reportedContentTitle(report) == "A message from Sam")
+    }
+
+    @Test("a report pointing at content no longer loaded falls back to the raw id")
+    func reportedContentTitleFallsBackToRawId() async {
+        let mock = MockGameBackend()
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        let report = Report(
+            contentType: "reward", contentId: "missing-id",
+            reportedByUserId: "u1", reason: nil, createdAt: Date()
+        )
+
+        #expect(vm.reportedContentTitle(report) == "missing-id")
     }
 }
 

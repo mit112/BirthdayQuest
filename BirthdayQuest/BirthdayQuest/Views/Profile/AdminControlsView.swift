@@ -38,6 +38,13 @@ struct AdminControlsView: View {
                     // everything else.
                     inviteCard
 
+                    // 0a. Flagged content. Shown only when non-empty — most occasions never
+                    // have a report, and an always-visible empty card here would compete
+                    // with the invite/celebrant-status banner for the top of the screen.
+                    if !viewModel.reports.isEmpty {
+                        reportsCard
+                    }
+
                     // 0b. Authoring. A row that pushes, not a card that expands: this file
                     // is already the largest view in the app, and R60 forbids a second host
                     // panel, not a second file.
@@ -762,6 +769,45 @@ private extension AdminControlsView {
                         await event.refreshOccasion()
                         await session.refreshOccasions()
                     }
+                }
+            }
+        }
+        .adminCard()
+    }
+}
+
+// MARK: - Section 0a: Flagged Content
+
+private extension AdminControlsView {
+
+    var reportsCard: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
+            adminSectionHeader("Reports", icon: "flag.fill")
+
+            // Read-only: the host acts on a flagged gift through the existing gift
+            // curation delete flow, not from here.
+            VStack(spacing: BQDesign.Spacing.sm) {
+                ForEach(viewModel.reports) { report in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.reportedContentTitle(report))
+                            .font(BQDesign.Typography.caption)
+                            .foregroundColor(BQDesign.Colors.textPrimary)
+                            .lineLimit(1)
+                        if let reason = report.reason, !reason.isEmpty {
+                            Text(reason)
+                                .font(BQDesign.Typography.captionSmall)
+                                .foregroundColor(BQDesign.Colors.textSecondary)
+                        }
+                        Text(report.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(BQDesign.Typography.captionSmall)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(BQDesign.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: BQDesign.Radius.sm, style: .continuous)
+                            .fill(BQDesign.Colors.background)
+                    )
                 }
             }
         }

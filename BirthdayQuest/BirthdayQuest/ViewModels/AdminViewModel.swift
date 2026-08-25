@@ -41,6 +41,9 @@ final class AdminViewModel: ObservableObject {
     @Published var challenges: [Challenge] = []
     @Published var rewards: [Reward] = []
     @Published var participants: [Participant] = []
+    /// Content flagged by members, host-only by rule. Best-effort like the roster: a failed
+    /// read just leaves this empty rather than blocking the rest of the panel.
+    @Published var reports: [Report] = []
     /// Whether the roster read has landed, and what to render if it has not.
     ///
     /// `failed` and `empty` are separate cases of one enum precisely so the view cannot show
@@ -152,6 +155,7 @@ final class AdminViewModel: ObservableObject {
 
         Task { await loadRoster() }
         Task { await loadInviteCodes() }
+        Task { await loadReports() }
     }
     
     func stopListening() {
@@ -214,6 +218,32 @@ final class AdminViewModel: ObservableObject {
         }
     }
     
+    /// One-shot, like the roster and the invite codes: reports change rarely enough that a
+    /// live subscription would cost more than it earns. Tolerant of failure — a host without
+    /// this list can still moderate via the roster and curation flows, so a failed read just
+    /// leaves `reports` empty rather than surfacing a blocking error.
+    func loadReports() async {
+        do {
+            reports = try await service.fetchReports(eventId: eventId)
+        } catch {
+            logger.error("Loading reports failed: \(error.localizedDescription)")
+            reports = []
+        }
+    }
+
+    /// Resolves a report's `contentId` to a human title against the already-loaded content,
+    /// falling back to the raw id when nothing matches (e.g. the content was already deleted).
+    func reportedContentTitle(_ report: Report) -> String {
+        switch report.contentType {
+        case "reward":
+            return rewards.first { $0.id == report.contentId }?.title ?? report.contentId
+        case "challenge":
+            return challenges.first { $0.id == report.contentId }?.title ?? report.contentId
+        default:
+            return report.contentId
+        }
+    }
+
     // MARK: - Remove Participant
 
     /// Removes a contributor from the occasion. Guarded to only ever act on a removable

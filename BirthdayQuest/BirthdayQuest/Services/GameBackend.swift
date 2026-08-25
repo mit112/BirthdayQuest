@@ -205,6 +205,22 @@ protocol GameBackend: AnyObject {
     )
     func addTimelineEvent(eventId: String, event: TimelineEvent) async throws
 
+    // MARK: Reports
+
+    /// Files a report against a piece of content, for the host to review. `reportedByUserId`
+    /// is the calling uid, stamped server-side by `FirestoreService` — the rules require it
+    /// to match `request.auth.uid`, so a caller cannot file on another member's behalf.
+    func reportContent(
+        eventId: String,
+        contentType: String,
+        contentId: String,
+        reason: String?
+    ) async throws
+
+    /// Every report filed against this occasion's content. Host-only by rule — anyone else's
+    /// read is denied.
+    func fetchReports(eventId: String) async throws -> [Report]
+
     // MARK: Game State
 
     func listenToGameState(eventId: String, completion: @escaping (Result<GameState, Error>) -> Void)

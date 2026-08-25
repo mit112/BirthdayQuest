@@ -381,6 +381,33 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    // MARK: - GameBackend: Reports
+
+    /// Every report attempted, recorded before `throwIfNeeded()`, so a stubbed failure still
+    /// proves the attempt happened.
+    private(set) var reportedContent: [(eventId: String, contentType: String, contentId: String, reason: String?)] = []
+
+    func reportContent(
+        eventId: String,
+        contentType: String,
+        contentId: String,
+        reason: String?
+    ) async throws {
+        record("reportContent", eventId: eventId)
+        reportedContent.append((eventId, contentType, contentId, reason))
+        try throwIfNeeded()
+    }
+
+    /// Stub for `fetchReports`. Defaults to empty so an unstubbed fetch reads as "nothing
+    /// flagged" rather than silently succeeding with fixture data.
+    var reportsToReturn: [Report] = []
+
+    func fetchReports(eventId: String) async throws -> [Report] {
+        record("fetchReports", eventId: eventId)
+        try throwIfNeeded()
+        return reportsToReturn
+    }
+
     // MARK: - GameBackend: Game State
 
     func listenToGameState(
