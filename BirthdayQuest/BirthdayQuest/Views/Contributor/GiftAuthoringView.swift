@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// The contributor's gift to the celebrant: a letter they unlock with points.
 ///
@@ -52,35 +53,23 @@ struct GiftAuthoringView: View {
                     .foregroundStyle(BQDesign.Colors.textSecondary)
             }
 
-            Section("Your letter") {
-                labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
-                    TextField("", text: $viewModel.title, prompt: Text("A letter from me"))
-                        .accessibilityLabel("Title")
-                }
-                if viewModel.showValidation
-                    && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    fieldError("Give your gift a title.")
-                }
-
-                labelled("Teaser", hint: "One line, shown while it's still locked") {
-                    TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
-                        .accessibilityLabel("Teaser")
-                }
-
-                labelled("The letter itself", hint: nil) {
-                    TextField(
-                        "", text: $viewModel.letter,
-                        prompt: Text("Say the thing you'd say in person"), axis: .vertical
-                    )
-                    .lineLimit(6...20)
-                    .accessibilityLabel("The letter itself")
-                }
-                if viewModel.showValidation
-                    && viewModel.letter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    fieldError("Write something for them to read.")
+            if !viewModel.hasExisting {
+                Section {
+                    Picker("Gift type", selection: $viewModel.contentMode) {
+                        Text("Letter").tag(GiftAuthoringViewModel.GiftContentMode.letter)
+                        Text("Photos").tag(GiftAuthoringViewModel.GiftContentMode.photos)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Gift type")
                 }
             }
-            .disabled(!viewModel.isEditable)
+
+            switch viewModel.contentMode {
+            case .letter:
+                letterSection
+            case .photos:
+                photosSection
+            }
 
             Section {
                 Button {
@@ -109,6 +98,96 @@ struct GiftAuthoringView: View {
             }
         }
         .scrollContentBackground(.hidden)
+    }
+
+    private var letterSection: some View {
+        Section("Your letter") {
+            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                TextField("", text: $viewModel.title, prompt: Text("A letter from me"))
+                    .accessibilityLabel("Title")
+            }
+            if viewModel.showValidation
+                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                fieldError("Give your gift a title.")
+            }
+
+            labelled("Teaser", hint: "One line, shown while it's still locked") {
+                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                    .accessibilityLabel("Teaser")
+            }
+
+            labelled("The letter itself", hint: nil) {
+                TextField(
+                    "", text: $viewModel.letter,
+                    prompt: Text("Say the thing you'd say in person"), axis: .vertical
+                )
+                .lineLimit(6...20)
+                .accessibilityLabel("The letter itself")
+            }
+            if viewModel.showValidation
+                && viewModel.letter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                fieldError("Write something for them to read.")
+            }
+        }
+        .disabled(!viewModel.isEditable)
+    }
+
+    private var photosSection: some View {
+        Section("Your photos") {
+            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                TextField("", text: $viewModel.title, prompt: Text("Photos from me"))
+                    .accessibilityLabel("Title")
+            }
+            if viewModel.showValidation
+                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                fieldError("Give your gift a title.")
+            }
+
+            labelled("Teaser", hint: "One line, shown while it's still locked") {
+                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                    .accessibilityLabel("Teaser")
+            }
+
+            PhotosPicker(
+                selection: $viewModel.selectedPhotos,
+                maxSelectionCount: GiftAuthoringViewModel.maxPhotoCount,
+                matching: .images
+            ) {
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    Image(systemName: "photo.badge.plus")
+                    Text("Add photos").font(BQDesign.Typography.bodyBold)
+                }
+                .foregroundStyle(BQDesign.Colors.primaryPurple)
+            }
+            .accessibilityLabel("Add photos")
+
+            if !viewModel.photoPreviews.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: BQDesign.Spacing.sm) {
+                        ForEach(Array(viewModel.photoPreviews.enumerated()), id: \.offset) { _, image in
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 72, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous))
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+                .accessibilityLabel("\(viewModel.photoPreviews.count) photos selected")
+            } else if let existing = viewModel.existingGiftHasPhotos {
+                Text(existing)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+            }
+
+            if viewModel.showValidation
+                && viewModel.photoPreviews.isEmpty
+                && (viewModel.existingGiftHasPhotos == nil) {
+                fieldError("Add at least one photo.")
+            }
+        }
+        .disabled(!viewModel.isEditable)
     }
 
     private var saveLabel: String {

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import PhotosUI
 import Combine
 import OSLog
 
@@ -15,9 +16,29 @@ import OSLog
 @MainActor
 final class GiftAuthoringViewModel: ObservableObject {
 
+    /// A gift is a letter or a set of photos (video/voice arrive in later slices). For an
+    /// existing gift this is locked to its stored `contentType` — switching modes on an
+    /// existing gift is a content rewrite and is out of scope.
+    enum GiftContentMode {
+        case letter
+        case photos
+    }
+
+    /// Selecting more than this many photos would make a single gift unreasonably heavy to
+    /// upload and to view.
+    static let maxPhotoCount = 10
+
     @Published var title = ""
     @Published var teaser = ""
     @Published var letter = ""
+    @Published var contentMode: GiftContentMode = .letter
+    @Published var selectedPhotos: [PhotosPickerItem] = [] {
+        didSet { Task { await loadPhotoPreviews() } }
+    }
+    /// Settable rather than `private(set)`: tests inject preview images directly, the same
+    /// way `ChallengeSubmissionViewModel.selectedImageData` bypasses `PhotosPickerItem`'s
+    /// async load, which cannot be constructed from a unit test.
+    @Published var photoPreviews: [UIImage] = []
     @Published private(set) var existingGift: Reward?
     @Published private(set) var isLoading = true
     @Published var isSaving = false
@@ -62,9 +83,21 @@ final class GiftAuthoringViewModel: ObservableObject {
         return isLoading ? .loading : .ready
     }
 
+    /// A status line for an existing image gift's already-saved photos, or `nil` if there are
+    /// none — used to explain why Save stays valid with nothing newly selected.
+    var existingGiftHasPhotos: String? {
+        guard let count = existingGift?.contentUrls?.count, count > 0 else { return nil }
+        return "\(count) photo\(count == 1 ? "" : "s") already saved"
+    }
+
     var isValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !letter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        switch contentMode {
+        case .letter:
+            return !letter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .photos:
+            return !selectedPhotos.isEmpty || !(existingGift?.contentUrls ?? []).isEmpty
+        }
     }
 
     var statusText: String {
@@ -96,6 +129,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                         self.title = mine.title
                         self.teaser = mine.teaser ?? ""
                         self.letter = mine.contentText ?? ""
+                        self.contentMode = mine.contentType == .image ? .photos : .letter
                     }
                     self.loadFailure = nil
                 case .failure(let error):
@@ -111,6 +145,41 @@ final class GiftAuthoringViewModel: ObservableObject {
 
     func stopListening() {
         service.removeListener(forKey: listenerKey)
+    }
+
+    // MARK: Photo selection
+
+    /// Reloads `photoPreviews` from `selectedPhotos`. Caps at `maxPhotoCount` — the picker's
+    /// own `maxSelectionCount` already enforces this, but a re-pick could still hand back a
+    /// larger array, and uploading past the cap is what this guard closes.
+    private func loadPhotoPreviews() async {
+        let capped = Array(selectedPhotos.prefix(Self.maxPhotoCount))
+        if capped.count != selectedPhotos.count { selectedPhotos = capped }
+
+        var images: [UIImage] = []
+        for item in capped {
+            do {
+                if let data = try await item.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    images.append(image)
+                }
+            } catch {
+                logger.error("Photo load error: \(error.localizedDescription)")
+            }
+        }
+        photoPreviews = images
+    }
+
+    /// Compresses image data to ~500KB JPEG, mirroring `ChallengeSubmissionViewModel`'s
+    /// pattern: raw photos are too heavy to upload as-is.
+    private func compressImage(_ image: UIImage, maxKB: Int = 500) -> Data? {
+        var quality: CGFloat = 0.8
+        var compressed = image.jpegData(compressionQuality: quality)
+        while let data = compressed, data.count > maxKB * 1024, quality > 0.15 {
+            quality -= 0.1
+            compressed = image.jpegData(compressionQuality: quality)
+        }
+        return compressed
     }
 
     // MARK: Save
@@ -131,32 +200,39 @@ final class GiftAuthoringViewModel: ObservableObject {
         let trimmedLetter = letter.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
-            if let existing = existingGift, let id = existing.id {
-                // Content keys only. pointCost and sortOrder are the host's tier, and the
-                // rules reject a write that reaches across tiers.
-                try await service.updateReward(eventId: eventId, rewardId: id, fields: [
-                    "title": trimmedTitle,
-                    "teaser": trimmedTeaser,
-                    "contentText": trimmedLetter,
-                ])
-            } else {
-                let gift = Reward(
-                    fromUserId: userId,
-                    fromName: authorName,
-                    title: trimmedTitle,
-                    teaser: trimmedTeaser,
-                    pointCost: Self.defaultPointCost,
-                    contentType: .text,
-                    contentUrl: nil,
-                    contentUrls: nil,
-                    contentText: trimmedLetter,
-                    isUnlocked: false,
-                    unlockedAt: nil,
-                    sortOrder: allGifts.count,
-                    badgeIllustration: "envelope.fill",
-                    createdAt: Date()
+            switch contentMode {
+            case .letter:
+                if let existing = existingGift, let id = existing.id {
+                    // Content keys only. pointCost and sortOrder are the host's tier, and the
+                    // rules reject a write that reaches across tiers.
+                    try await service.updateReward(eventId: eventId, rewardId: id, fields: [
+                        "title": trimmedTitle,
+                        "teaser": trimmedTeaser,
+                        "contentText": trimmedLetter,
+                    ])
+                } else {
+                    let gift = Reward(
+                        fromUserId: userId,
+                        fromName: authorName,
+                        title: trimmedTitle,
+                        teaser: trimmedTeaser,
+                        pointCost: Self.defaultPointCost,
+                        contentType: .text,
+                        contentUrl: nil,
+                        contentUrls: nil,
+                        contentText: trimmedLetter,
+                        isUnlocked: false,
+                        unlockedAt: nil,
+                        sortOrder: allGifts.count,
+                        badgeIllustration: "envelope.fill",
+                        createdAt: Date()
+                    )
+                    _ = try await service.createReward(eventId: eventId, reward: gift)
+                }
+            case .photos:
+                try await savePhotos(
+                    userId: userId, title: trimmedTitle, teaser: trimmedTeaser
                 )
-                _ = try await service.createReward(eventId: eventId, reward: gift)
             }
 
             isSaving = false
@@ -169,6 +245,51 @@ final class GiftAuthoringViewModel: ObservableObject {
             errorMessage = "Couldn't save your gift. Try again."
             showError = true
             BQDesign.Haptics.error()
+        }
+    }
+
+    /// Uploads any newly-selected photos to a client-generated storage folder, then writes
+    /// the reward exactly once. A new gift's Firestore id does not exist until `createReward`
+    /// returns, so the upload folder is a `UUID` the rules only check `eventId` against — it
+    /// need not equal the eventual document id. This keeps `totalRewards` incrementing exactly
+    /// once and never leaves an empty image reward behind.
+    private func savePhotos(userId: String, title: String, teaser: String) async throws {
+        var paths: [String]?
+        if !photoPreviews.isEmpty {
+            let group = UUID().uuidString
+            var uploaded: [String] = []
+            for image in photoPreviews {
+                guard let data = compressImage(image) else { continue }
+                let path = try await service.uploadRewardMedia(
+                    eventId: eventId, rewardId: group, data: data, contentType: "image/jpeg"
+                )
+                uploaded.append(path)
+            }
+            paths = uploaded
+        }
+
+        if let existing = existingGift, let id = existing.id {
+            var fields: [String: Any] = ["title": title, "teaser": teaser]
+            if let paths { fields["contentUrls"] = paths }
+            try await service.updateReward(eventId: eventId, rewardId: id, fields: fields)
+        } else {
+            let gift = Reward(
+                fromUserId: userId,
+                fromName: authorName,
+                title: title,
+                teaser: teaser,
+                pointCost: Self.defaultPointCost,
+                contentType: .image,
+                contentUrl: nil,
+                contentUrls: paths ?? [],
+                contentText: nil,
+                isUnlocked: false,
+                unlockedAt: nil,
+                sortOrder: allGifts.count,
+                badgeIllustration: "photo.fill",
+                createdAt: Date()
+            )
+            _ = try await service.createReward(eventId: eventId, reward: gift)
         }
     }
 }

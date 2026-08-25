@@ -327,6 +327,98 @@ struct GiftAuthoringTests {
             return
         }
     }
+
+    /// A tiny solid-color image, just enough for `UIImage.jpegData` to produce real bytes.
+    private func testImage() -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4))
+        return renderer.image { context in
+            UIColor.systemPurple.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+    }
+
+    @Test("a new photo gift uploads every image once, to one shared folder, then creates once")
+    func newPhotoGiftUploadsThenCreatesOnce() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .photos
+        vm.title = "A few photos"
+        vm.teaser = "For you"
+        vm.photoPreviews = [testImage(), testImage(), testImage()]
+
+        await vm.save()
+
+        #expect(mock.callCount("uploadRewardMedia") == 3)
+        let groups = Set(mock.uploadedRewardMedia.map(\.rewardId))
+        #expect(groups.count == 1, "all three images should share one storage folder")
+        #expect(mock.callCount("createReward") == 1)
+
+        let created = mock.createdRewards.first
+        #expect(created?.contentType == .image)
+        #expect(created?.contentUrls?.count == 3)
+        #expect(created?.contentText == nil)
+        #expect(created?.contentUrl == nil, "images use contentUrls, never contentUrl")
+    }
+
+    @Test("a new letter gift never touches upload")
+    func newLetterGiftDoesNotUpload() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .letter
+        vm.title = "A letter"
+        vm.letter = "Dear Alex..."
+
+        await vm.save()
+
+        #expect(!mock.called("uploadRewardMedia"))
+        #expect(mock.createdRewards.first?.contentType == .text)
+        #expect(mock.createdRewards.first?.contentText == "Dear Alex...")
+    }
+
+    @Test("isValid for photos requires a title and at least one image")
+    func isValidForPhotos() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .photos
+
+        #expect(!vm.isValid, "no title, no photos")
+        vm.title = "A few photos"
+        #expect(!vm.isValid, "title alone is not enough")
+        vm.photoPreviews = [testImage()]
+        #expect(vm.isValid)
+    }
+
+    @Test("editing an existing image gift with no new photos updates title and teaser only")
+    func editExistingPhotoGiftWithoutNewPhotos() async {
+        let mock = MockGameBackend()
+        var mine = Reward(
+            fromUserId: "u1", fromName: "Jordan", title: "A message from Jordan",
+            teaser: "Teaser", pointCost: 100, contentType: .image, contentUrl: nil,
+            contentUrls: ["events/evt_1/rewards/existing/photo.jpg"], contentText: nil,
+            isUnlocked: false, unlockedAt: nil, sortOrder: 1,
+            badgeIllustration: "photo.fill", createdAt: Date(timeIntervalSince1970: 0)
+        )
+        mine.id = "r_mine"
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")   // fixture's fromUserId is "u1"
+        for _ in 0..<8 { await Task.yield() }
+        #expect(vm.contentMode == .photos, "an existing image gift locks to photos mode")
+        vm.teaser = "Updated teaser"
+
+        await vm.save()
+
+        #expect(!mock.called("uploadRewardMedia"))
+        let sent = mock.updatedRewards.first?.fields ?? [:]
+        #expect(!sent.keys.contains("contentUrls"), "no new photos were selected")
+        #expect(sent["teaser"] as? String == "Updated teaser")
+    }
 }
 
 @MainActor
