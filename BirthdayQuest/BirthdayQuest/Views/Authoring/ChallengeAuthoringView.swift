@@ -118,6 +118,20 @@ struct ChallengeAuthoringView: View {
             .font(BQDesign.Typography.bodyBold)
             .buttonStyle(.borderedProminent)
             .tint(BQDesign.Colors.primaryPurple)
+
+            if let occasionType = event.occasion?.occasionType {
+                Button("Add starter challenges") {
+                    Task {
+                        await viewModel.addStarterChallenges(
+                            for: occasionType, authorUid: event.participant?.id ?? ""
+                        )
+                    }
+                }
+                .font(BQDesign.Typography.body)
+                .buttonStyle(.bordered)
+                .tint(BQDesign.Colors.primaryPurple)
+                .disabled(viewModel.isPerformingAction)
+            }
         }
         .padding(BQDesign.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

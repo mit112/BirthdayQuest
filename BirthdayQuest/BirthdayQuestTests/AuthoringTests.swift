@@ -920,3 +920,48 @@ struct GiftCurationTests {
         #expect(!mock.called("updateGameState"))
     }
 }
+
+@MainActor
+@Suite("Occasion starter templates")
+struct OccasionStarterTemplateTests {
+
+    @Test("every occasion type ships usable starter challenges")
+    func everyTypeHasStarters() {
+        for type in OccasionType.allCases {
+            let starters = ChallengeTemplates.starters(for: type)
+            #expect(!starters.isEmpty, "\(type) has no starters")
+            for starter in starters {
+                #expect(!starter.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                #expect(!starter.description.trimmingCharacters(in: .whitespaces).isEmpty)
+                #expect(starter.pointValue > 0)
+            }
+        }
+    }
+
+    @Test("adding starters creates one challenge per starter, stamped with the author")
+    func addStartersCreatesEach() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        let expected = ChallengeTemplates.starters(for: .birthday)
+
+        await vm.addStarterChallenges(for: .birthday, authorUid: "uid_host")
+
+        #expect(mock.createdChallenges.count == expected.count)
+        #expect(mock.createdChallenges.map(\.title) == expected.map(\.title))
+        #expect(mock.createdChallenges.allSatisfy { $0.createdByUserId == "uid_host" })
+        #expect(mock.createdChallenges.allSatisfy { $0.isSecret == false })
+        #expect(vm.actionResult?.isError == false)
+    }
+
+    @Test("a failure adding starters is reported, not swallowed")
+    func addStartersFailureReported() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        await vm.addStarterChallenges(for: .birthday, authorUid: "uid_host")
+
+        #expect(vm.actionResult?.isError == true)
+        #expect(vm.isPerformingAction == false)
+    }
+}

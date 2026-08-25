@@ -205,6 +205,38 @@ final class ChallengeAuthoringViewModel: ObservableObject {
         }
     }
 
+    /// Seeds the occasion type's starter challenges as ordinary, editable challenges — a convenience
+    /// for an empty board. The host renames, re-points, or deletes them freely afterward. Each is a
+    /// normal `createChallenge`, so counters and rules behave exactly as for a hand-authored one.
+    func addStarterChallenges(for occasionType: OccasionType, authorUid: String) async {
+        guard !isPerformingAction else { return }
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+
+        let starters = ChallengeTemplates.starters(for: occasionType)
+        do {
+            for starter in starters {
+                var starterDraft = ChallengeDraft()
+                starterDraft.title = starter.title
+                starterDraft.description = starter.description
+                starterDraft.pointValue = starter.pointValue
+                _ = try await service.createChallenge(
+                    eventId: eventId, challenge: starterDraft.newChallenge(authorUid: authorUid)
+                )
+            }
+            actionResult = AdminActionResult(
+                message: "Added \(starters.count) starter challenges.", isError: false
+            )
+            BQDesign.Haptics.success()
+        } catch {
+            logger.error("Adding starter challenges failed: \(error.localizedDescription)")
+            actionResult = AdminActionResult(
+                message: "Couldn't add the starters. \(error.localizedDescription)", isError: true
+            )
+            BQDesign.Haptics.error()
+        }
+    }
+
     func delete(_ challenge: Challenge) async {
         guard !isPerformingAction else { return }
         guard let challengeId = challenge.id else { return }
