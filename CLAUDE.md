@@ -214,8 +214,14 @@ Two tiers, and both must stay green:
   `video/mp4`/`video/quicktime` and writes `contentType: .video` + the single `contentUrl` (never
   `contentUrls`). The whole celebrant/playback half was already built in slice 1
   (`RewardContentPresentation.resolve`, `MediaStore.storagePaths`, `VideoPlayerView`), so slice 2
-  was purely contributor-side authoring and needed no rules change. **Audio gifts still need slice 3
-  (import + record).** The old "13 challenges award 715 pts, 8 rewards cost
+  was purely contributor-side authoring and needed no rules change. **Subsystem #3 slice 3 (as of
+  2026-08-24) added audio/voice gifts**: `GiftAuthoringView`'s selector gained a Voice option with TWO
+  input paths — record (`AudioRecorderController` → AVAudioRecorder AAC/.m4a, 5-min cap,
+  `NSMicrophoneUsageDescription` build setting, `.playAndRecord` scoped to the recording lifecycle) and
+  import (`.fileImporter([.mpeg4Audio, .mp3])`) — plus a review-before-save replay through
+  `AudioPlayerController`; it writes `contentType: .audio` + the single `contentUrl` (never
+  `contentUrls`). No rules change (the spine already accepted `audio/*`). The old "13 challenges award
+  715 pts, 8 rewards cost
   750" figures described the deleted seeder and are not a live invariant. The *design* intent
   stands: balance a set so challenges cannot quite cover the rewards, and let the secret challenges
   close the gap.
@@ -290,6 +296,52 @@ assumption they needed the media pipeline. They did not:
 
 ## Direction (as of 2026-08-22)
 
+### Subsystem #3 slice 3 (media pipeline — audio/voice gifts) is DONE and merged into `main` (as of 2026-08-24)
+
+Landed on `main` by fast-forward (linear history) at `135b23f`; branch `feat/media-gifts-slice-3-audio`
+and the SDD workspace (scratchpad, never in the repo) are deleted — git history is the record.
+**`main` is still not pushed** (~96 ahead of origin). Like slices 1 and 2, this was **purely
+contributor-side authoring** — the celebrant/playback half was already shipped in slice 1
+(`RewardContentPresentation.resolve` handles `.audio` → `AudioPlayerView`, `MediaStore.storagePaths`
+handles `.audio` → `[contentUrl]`, `AudioPlayerView` plays a local `file://`, `uploadRewardMedia`/
+`fileExtension` accept `audio/mpeg`+`audio/mp4`+`audio/x-m4a`, the storage rules' `isPlayableMedia()`
+permits `audio/*` <200MB, `GiftCurationView` labels `.audio` "Voice gift"). **No `storage.rules`/
+`firestore.rules` change** → the emulator rules suite was correctly not re-run.
+
+Audio was more than a mirror of slice 2 for two reasons: **two input paths** (record + import, not one
+picker) and a **new hardware permission + audio-session change**. Delta: a `.voice` case in
+`GiftAuthoringViewModel`/`GiftAuthoringView` mirroring `.video` (`selectedAudioURL`, `audioTooLarge`,
+`acceptAudio`, `saveAudio`, `audioContentType`, `existingGiftHasAudio`, `.voice` added to every
+exhaustive `GiftContentMode` switch and `loadExisting` remapped `.audio` → `.voice`); a new
+`AudioRecorderController` (AVAudioRecorder, AAC/.m4a mono, 5-min auto-stop, `AVAudioApplication`
+mic-permission, session set to `.playAndRecord`+`.defaultToSpeaker` on start and restored to
+`.playback` on **every** exit — stop/cancel/deinit/both catch paths); the record UI (elapsed timer +
+motion-gated pulsing dot + Stop, permission-denied row + Settings link); an import path via
+`.fileImporter([.mpeg4Audio, .mp3])` (the two formats `fileExtension` maps — no `.bin` fallback,
+no WAV import); a **review-before-save** row that replays the picked/recorded clip through the
+celebrant-side `AudioPlayerController` before saving; and `INFOPLIST_KEY_NSMicrophoneUsageDescription`
+added to BOTH pbxproj config blocks (a plain string, so a build setting works — unlike
+`CFBundleURLTypes`; the SOURCE_ROOT `Info.plist` is untouched). Audio uses the SINGLE `contentUrl`
+(never `contentUrls`), stores the Storage **path**, badge `waveform`.
+
+**One reusability fix worth knowing:** `AudioPlayerController.loadAudio` was written for a *single*
+load; the review player re-loads it on re-record/choose-different, so it now tears down the prior
+player + time/status/end observers at the top of `loadAudio` before creating the new ones (AVPlayer
+asserts if deallocated with a periodic time observer still attached). This also hardened the shipped
+celebrant Retry path. Landed green: Swift `** TEST SUCCEEDED **` (10 new audio VM tests), SwiftLint
+`--strict` 0/69. Executed subagent-driven (Sonnet implementers, Opus whole-branch review — 2 Important
+findings, both fixed: the loadAudio teardown + an oversized-import temp-file leak). **The recorder is
+intentionally hardware-bound and NOT unit-tested** — all authoring logic is tested through the VM's
+`acceptAudio` seam (mirroring how video injects `selectedVideoURL`); do not "add coverage" for the
+recorder. **Two deferred design Minors:** (1) the now-4-segment gift-type picker
+(Letter/Photos/Video/Voice) may truncate on the narrowest device at the largest accessibility text
+sizes — folds into the existing "reflow visually unverified" gap; if it truncates switch that picker
+to `.menu`; (2) inline text buttons "Stop"/"Open Settings" hit-area width is slightly under the 44pt
+iOS recommendation but matches the app's existing inline text buttons. **Still out: only the
+media-lifecycle slice** (celebrant purge wiring + expiry reminders + expired state + re-send recovery)
+and the two slice-2 deferrals below (in-memory upload; a media thumbnail/preview in the "selected"
+row — now also applies to audio). Audio, video, photo, and text gifts are all now authorable.
+
 ### Subsystem #3 slice 2 (media pipeline — video gifts) is DONE and merged into `main` (as of 2026-08-24)
 
 Landed on `main` by fast-forward (linear history) at `de5e573`; branch `feat/media-gifts-slice-2-video`
@@ -310,8 +362,9 @@ Minors) with two fix waves. **Two deferrals carried to the media-lifecycle slice
 loads the whole ≤200MB clip into memory via `Data(contentsOf:)` — reusing the shipped
 `uploadRewardMedia(data:)` spine; a file-URL/streaming upload is an API change, not a slice-2 change;
 (2) a video thumbnail in the "Video selected" confirmation row (photos show thumbnails) — a UX
-enhancement. **Still out: audio gifts (slice 3, import + record), and the media-lifecycle slice
-(celebrant purge wiring + expiry reminders + expired state + re-send recovery).**
+enhancement (now also applies to audio's "Voice gift ready" row). **Still out: the media-lifecycle
+slice (celebrant purge wiring + expiry reminders + expired state + re-send recovery).** Audio gifts
+(slice 3, import + record) are now DONE — see the slice 3 block above.
 
 ### Subsystem #3 slice 1 (media pipeline — photo gifts) is DONE and merged into `main` (as of 2026-08-24)
 
@@ -327,9 +380,9 @@ badge + storage-purge-on-delete, and the one `storage.rules` change (reward-medi
 download-URL leak — is done and verified end-to-end.** Landed green (Swift `** TEST SUCCEEDED **`,
 rules 172/172, SwiftLint `--strict` clean), executed subagent-driven with per-task reviews and a
 domain-sliced whole-branch review (Swift on Opus, rules on Sonnet, no Criticals) plus one fix wave.
-**Still out (from slice 1's vantage): video gifts — since done in slice 2 (see above) — audio gifts
-(slice 3, import + record), and the media-lifecycle slice (celebrant purge wiring + expiry reminders
-+ expired state + re-send recovery).**
+**Still out (from slice 1's vantage): video gifts — done in slice 2 — and audio gifts — done in
+slice 3 (see the blocks above) — leaving only the media-lifecycle slice (celebrant purge wiring +
+expiry reminders + expired state + re-send recovery).**
 
 ### Subsystem #2 slice 1 is DONE and merged into `main` (as of 2026-08-24)
 
