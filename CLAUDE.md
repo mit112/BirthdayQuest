@@ -119,6 +119,7 @@ not exist for them. Never reintroduce a root-level content collection.
 | `events/{id}/rewards/{id}` | Plus `fetchedBy: [String]?` for media purge tracking. `update` is field-scoped the same way: gameplay fields are member-writable, content fields are host-or-author, `pointCost`/`sortOrder` are host-only, and `fromUserId`/`createdAt` are immutable by omission. |
 | `events/{id}/timeline/{id}` | Append-only by rule (`allow update, delete: if false`) |
 | `events/{id}/state/main` | GameState. A legitimate singleton now that it is event-scoped. |
+| `events/{id}/reports/{id}` | Content reports (App Store 1.2). `{ contentType (`reward`\|`challenge`), contentId, reportedByUserId (==auth.uid), reason?, createdAt }`. **Member-create, host-read only** (the reporter's uid is host-moderation-scoped), append-only (`update, delete: if false`). Mutation-proven. |
 | `memberships/{uid}/events/{id}` | Thin mirror: `role`, `isHost`, `joinedAt`. No denormalized event name/date. Note the key is **`role`**, not `mode` — it holds a `ParticipantMode` raw value but is spelled differently from `participants.mode`, and no rule or query reads it today. |
 | `inviteCodes/{CODE}` | Uniqueness reservation + code→event resolution only. `allow get` / **deny `list`** so a known code resolves but the collection cannot be enumerated. **Authorization does not flow through here** — joins are authorized against `events/{id}/private/codes`. Treat both the `kind` and the `eventId` stored here as attacker-controlled: anyone signed in can create a row, so validate the `eventId` you read back before building a path from it. |
 
@@ -327,14 +328,32 @@ membership** step to bundle it was left to the human on purpose (the synced-fold
 auto-bundle `.xcprivacy`, and hand-editing pbxproj is what folder-sync exists to avoid). See
 `docs/superpowers/specs/2026-08-25-privacy-manifest.md`.
 
-**Remaining #4 / loose-gap work is human-decision-gated** and was deliberately NOT done autonomously
-(each needs a product, legal, infra, or visual-verification call): UGC moderation model + EULA;
-occasion-type template *content*; participant-removal *semantics* (what happens to a removed
-contributor's gifts) + its rules; the Swift↔emulator transaction-test harness (large infra spike);
-the gift-type picker `.menu` switch (coupled to the unverified reflow gap — needs a visual check on a
-live build); and the standing manual prerequisites (app rename, real bundle ID + signing team, Apple
-Developer account + store listing, Sign in with Apple capability, enabling the Anonymous+Apple
-providers, `tools/export_media.sh` before deploy, and pushing `main` to origin).
+Also landed on `main` this session (all FF, green, reviewed):
+- **Gift-type picker → `.menu`** — 4 word-labels truncated in a segmented control at large Dynamic
+  Type; a menu picker never clips. Closes the documented reflow gap for that control.
+- **Host participant removal** — the host removes a contributor; deleting the participant doc revokes
+  membership via the pre-existing `isHost` delete rule (no rule change; that rule was previously
+  UNTESTED — now mutation-proven). Authored gifts are kept; the stale membership mirror is harmless
+  (`fetchMyOccasions` skip-on-failure drops the occasion). See `2026-08-25-participant-removal-design.md`.
+- **Content reporting (App Store 1.2)** — any member reports a gift → a host-read `events/{id}/reports`
+  collection (NEW rules, mutation-proven) → host moderates via the existing delete. With participant
+  removal (the "eject an abusive user" half) this is the 1.2 mechanism; only the EULA text is
+  human-gated. Report flows through `RewardsViewModel` (Views-don't-touch-backend); the confirmation is
+  hosted on the sheet. See `2026-08-25-content-reporting-design.md`.
+- **Occasion-type starter challenge templates** — an empty-board host can seed editable per-type starter
+  challenges (`ChallengeTemplates`). The starter COPY matches the app tone and is fully editable —
+  review/replace to taste.
+
+**Genuinely NOT done — each needs a human decision or a capability I lack (not avoidance):**
+- **Transaction test harness** (unlock/complete idempotency): feasibility ASSESSED with evidence —
+  emulator/CLI/orchestration all exist, but it needs resolving the app's unconditional
+  `FirebaseApp.configure()` × full-app test-host launch and standing up a new integration-test / CI
+  category; best done attended. Recipe: `2026-08-25-transaction-harness-feasibility.md`.
+- **EULA / terms** copy (legal); **occasion-template copy** sign-off (product tone); and the standing
+  manual prerequisites — app rename + real bundle ID + signing team, Apple Developer account + store
+  listing, Sign in with Apple capability, enabling the Anonymous+Apple providers, `tools/export_media.sh`
+  before deploy, the one-click Xcode target-membership for `PrivacyInfo.xcprivacy`, the live a11y reflow
+  visual check, and **pushing `main` to origin**.
 
 ## Direction (as of 2026-08-22)
 
