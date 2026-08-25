@@ -96,7 +96,10 @@ final class GiftAuthoringViewModel: ObservableObject {
         case .letter:
             return !letter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .photos:
-            return !selectedPhotos.isEmpty || !(existingGift?.contentUrls ?? []).isEmpty
+            // `photoPreviews`, not `selectedPhotos`: it is the loaded-image state `save()`
+            // actually uploads from, and the only one a unit test can populate directly
+            // (a `PhotosPickerItem` cannot be constructed outside `PhotosUI`'s live picker).
+            return !photoPreviews.isEmpty || !(existingGift?.contentUrls ?? []).isEmpty
         }
     }
 
