@@ -78,7 +78,11 @@ struct GiftAuthoringView: View {
                         Text("Video").tag(GiftAuthoringViewModel.GiftContentMode.video)
                         Text("Voice").tag(GiftAuthoringViewModel.GiftContentMode.voice)
                     }
-                    .pickerStyle(.segmented)
+                    // .menu, not .segmented: four word-labels (Letter/Photos/Video/Voice) truncate
+                    // in a segmented control at large Dynamic Type sizes on narrow devices. A menu
+                    // picker shows the current selection and never clips. (Closes the documented
+                    // gift-type-picker reflow gap.)
+                    .pickerStyle(.menu)
                     .accessibilityLabel("Gift type")
                 }
             }
