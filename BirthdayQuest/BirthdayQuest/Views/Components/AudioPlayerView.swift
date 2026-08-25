@@ -232,9 +232,25 @@ final class AudioPlayerController: ObservableObject {
     var scrubTimeString: String { formatTime(Double(scrubProgress) * duration) }
     
     func loadAudio(from url: URL) {
+        // loadAudio may be called more than once on the same instance (the authoring review
+        // player re-loads on re-record / choose-different; the Retry button re-loads on failure).
+        // Tear down the prior player + observers first — AVPlayer asserts if it is deallocated
+        // while a periodic time observer is still registered, and the KVO/NotificationCenter
+        // observers would otherwise leak.
+        if let observer = timeObserver, let player {
+            player.removeTimeObserver(observer)
+        }
+        timeObserver = nil
+        statusObservation?.invalidate()
+        statusObservation = nil
+        if let observer = endOfPlaybackObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        endOfPlaybackObserver = nil
+
         isFailed = false
         isBuffering = true
-        
+
         let item = AVPlayerItem(url: url)
         let avPlayer = AVPlayer(playerItem: item)
         self.player = avPlayer

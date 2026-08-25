@@ -433,6 +433,9 @@ struct GiftAuthoringView: View {
             try FileManager.default.copyItem(at: picked, to: copy)
             let size = (try? FileManager.default.attributesOfItem(atPath: copy.path))?[.size] as? Int ?? 0
             viewModel.acceptAudio(url: copy, sizeBytes: size)
+            if viewModel.audioTooLarge {
+                try? FileManager.default.removeItem(at: copy)
+            }
         } catch {
             // A failed copy leaves selection unchanged; the validation error already covers "nothing selected".
         }
