@@ -12,6 +12,7 @@ const EVENT = 'evt_1';
 const EVENT2 = 'evt_2';
 const CELEBRANT = 'uid_celebrant';
 const CONTRIBUTOR = 'uid_contributor';
+const MEMBER = 'uid_member';
 const OUTSIDER = 'uid_outsider';
 const EVENT2_MEMBER = 'uid_event2_member';
 const IMG = new Uint8Array([1, 2, 3]);
@@ -38,6 +39,9 @@ beforeEach(async () => {
     });
     await setDoc(doc(db, `events/${EVENT}/participants/${CONTRIBUTOR}`), {
       name: 'Sam', avatarId: 'a2', mode: 'contributor', isHost: true, usedCode: 'C2',
+    });
+    await setDoc(doc(db, `events/${EVENT}/participants/${MEMBER}`), {
+      name: 'Lee', avatarId: 'a4', mode: 'contributor', isHost: false, usedCode: 'C4',
     });
 
     // A second, unrelated occasion. A member of evt_1 must not reach its media.
@@ -91,14 +95,24 @@ describe('storage membership gate', () => {
     await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
   });
 
-  it('denies a contributor deleting reward media', async () => {
+  it('denies a non-host contributor deleting reward media', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/rewards/r1/gift.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(MEMBER).storage();
+    await assertFails(deleteObject(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
+  });
+
+  it('lets the host delete reward media', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), `events/${EVENT}/rewards/r1/gift.jpg`), IMG, {
         contentType: 'image/jpeg',
       });
     });
     const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
-    await assertFails(deleteObject(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
+    await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/rewards/r1/gift.jpg`)));
   });
 
   it('denies proof uploads that are not images', async () => {

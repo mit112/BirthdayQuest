@@ -24,6 +24,11 @@ service firebase.storage {
              && firestore.get(participantPath(eventId)).data.mode == 'celebrant';
     }
 
+    function isHost(eventId) {
+      return isMember(eventId)
+             && firestore.get(participantPath(eventId)).data.isHost == true;
+    }
+
     // SVG excluded even though it matches image/.*: it is script-bearing, not just pixels,
     // and reward media and challenge proofs are both served back to every member.
     // Anchored pattern, not equality: bare equality misses parameterised variants like
@@ -53,7 +58,7 @@ service firebase.storage {
     match /events/{eventId}/rewards/{rewardId}/{fileName} {
       allow read: if isMember(eventId);
       allow write: if request.resource == null
-                     ? isCelebrant(eventId)
+                     ? isCelebrant(eventId) || isHost(eventId)
                      : resource == null
                        && isMember(eventId)
                        && request.resource.size < 200 * 1024 * 1024
