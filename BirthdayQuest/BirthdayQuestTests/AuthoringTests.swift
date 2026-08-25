@@ -598,6 +598,18 @@ struct GiftAuthoringTests {
         #expect(!FileManager.default.fileExists(atPath: url.path))
         #expect(vm.selectedVideoURL == nil)
     }
+
+    @Test("rejecting an oversized pick deletes the previously accepted clip")
+    func rejectingOversizedDeletesPriorClip() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        let valid = tempVideoURL()
+        vm.acceptVideo(url: valid, sizeBytes: 10)
+        vm.acceptVideo(url: tempVideoURL(), sizeBytes: GiftAuthoringViewModel.maxVideoBytes)
+        #expect(vm.videoTooLarge)
+        #expect(vm.selectedVideoURL == nil)
+        #expect(!FileManager.default.fileExists(atPath: valid.path))
+    }
 }
 
 @MainActor

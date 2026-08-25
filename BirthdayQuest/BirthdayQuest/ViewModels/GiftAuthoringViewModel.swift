@@ -391,6 +391,9 @@ final class GiftAuthoringViewModel: ObservableObject {
     func acceptVideo(url: URL, sizeBytes: Int) {
         guard sizeBytes < Self.maxVideoBytes else {
             videoTooLarge = true
+            if let previous = selectedVideoURL {
+                try? FileManager.default.removeItem(at: previous)
+            }
             selectedVideoURL = nil
             return
         }
