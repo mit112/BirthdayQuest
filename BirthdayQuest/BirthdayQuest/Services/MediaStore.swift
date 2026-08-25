@@ -68,10 +68,15 @@ actor MediaStore: MediaStoring {
 
     enum MediaStoreError: LocalizedError {
         case missingRewardId
+        /// The Storage object this reward points to is gone — purged or never fully uploaded.
+        /// Distinct from a generic failure so the celebrant sees an honest "expired" state
+        /// rather than the "never authored" one.
+        case objectMissing
 
         var errorDescription: String? {
             switch self {
             case .missingRewardId: return "This reward has no id yet."
+            case .objectMissing: return "This gift's media is no longer available."
             }
         }
     }
@@ -89,7 +94,11 @@ actor MediaStore: MediaStoring {
                 withIntermediateDirectories: true
             )
             if !FileManager.default.fileExists(atPath: localFile.path) {
-                try await transfer.download(path: path, to: localFile)
+                do {
+                    try await transfer.download(path: path, to: localFile)
+                } catch let error as NSError where error.code == StorageErrorCode.objectNotFound.rawValue {
+                    throw MediaStoreError.objectMissing
+                }
             }
             localURLs.append(localFile)
         }

@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import FirebaseStorage
 @testable import BirthdayQuest
 
 // MARK: - FakeMediaTransfer
@@ -9,9 +10,14 @@ import Foundation
 final class FakeMediaTransfer: MediaTransferring, @unchecked Sendable {
     private(set) var downloadedPaths: [String] = []
     private(set) var deletedPaths: [String] = []
+    /// When set, `download` throws this instead of writing the dummy file.
+    var downloadErrorToThrow: Error?
 
     func download(path: String, to localURL: URL) async throws {
         downloadedPaths.append(path)
+        if let downloadErrorToThrow {
+            throw downloadErrorToThrow
+        }
         try Data("dummy".utf8).write(to: localURL)
     }
 
@@ -181,6 +187,25 @@ struct MediaStoreTests {
         let urls = try await store.localURLs(for: reward, eventId: "e1")
 
         #expect(urls.isEmpty)
+    }
+
+    @Test("a Storage objectNotFound download error translates to MediaStoreError.objectMissing")
+    func downloadObjectNotFoundTranslatesToObjectMissing() async throws {
+        let transfer = FakeMediaTransfer()
+        transfer.downloadErrorToThrow = NSError(
+            domain: StorageErrorDomain,
+            code: StorageErrorCode.objectNotFound.rawValue
+        )
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(contentType: .video, contentUrl: "events/e1/rewards/r1/v.mp4")
+
+        do {
+            _ = try await store.localURLs(for: reward, eventId: "e1")
+            Issue.record("Expected MediaStoreError.objectMissing to be thrown")
+        } catch MediaStore.MediaStoreError.objectMissing {
+            // Expected.
+        }
     }
 
     @Test("purge deletes every storage path for the reward")

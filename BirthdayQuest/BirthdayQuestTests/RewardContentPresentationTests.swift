@@ -109,6 +109,18 @@ struct RewardContentPresentationTests {
         #expect(presentation == .unavailable)
     }
 
+    @Test("image, mock throws objectMissing resolves to expired")
+    func imageObjectMissingIsExpired() async {
+        let store = MockMediaStoring()
+        store.errorToThrow = MediaStore.MediaStoreError.objectMissing
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .image, contentUrls: ["events/e1/a.jpg"]),
+            eventId: "e1",
+            mediaStore: store
+        )
+        #expect(presentation == .expired)
+    }
+
     // MARK: Text — resolved synchronously, no MediaStore involvement
 
     @Test("a text reward with a message resolves to text")
@@ -210,5 +222,29 @@ struct RewardContentPresentationTests {
             mediaStore: store
         )
         #expect(presentation == .unavailable)
+    }
+
+    @Test("video, mock throws objectMissing resolves to expired")
+    func videoObjectMissingIsExpired() async {
+        let store = MockMediaStoring()
+        store.errorToThrow = MediaStore.MediaStoreError.objectMissing
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .video, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: store
+        )
+        #expect(presentation == .expired)
+    }
+
+    @Test("audio, mock throws objectMissing resolves to expired")
+    func audioObjectMissingIsExpired() async {
+        let store = MockMediaStoring()
+        store.errorToThrow = MediaStore.MediaStoreError.objectMissing
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .audio, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: store
+        )
+        #expect(presentation == .expired)
     }
 }

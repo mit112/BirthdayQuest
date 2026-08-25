@@ -29,6 +29,10 @@ nonisolated enum RewardContentPresentation: Equatable {
     case gallery([URL])
     /// Nothing presentable. Permanent — there is nothing to wait for.
     case unavailable
+    /// Media was authored but the server object is gone and no local archive exists. Permanent
+    /// from the celebrant's view — recoverable only by the contributor re-sending, not by
+    /// waiting or retrying.
+    case expired
 
     /// Resolves a reward's content asynchronously. Text is judged locally and synchronously;
     /// media (image/video/audio) is resolved through `MediaStore`, which downloads the Storage
@@ -49,16 +53,34 @@ nonisolated enum RewardContentPresentation: Equatable {
             return message.isEmpty ? .unavailable : .text(message)
 
         case .video:
-            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
-            return urls.first.map(RewardContentPresentation.video) ?? .unavailable
+            do {
+                let urls = try await mediaStore.localURLs(for: reward, eventId: eventId)
+                return urls.first.map(RewardContentPresentation.video) ?? .unavailable
+            } catch MediaStore.MediaStoreError.objectMissing {
+                return .expired
+            } catch {
+                return .unavailable
+            }
 
         case .audio:
-            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
-            return urls.first.map(RewardContentPresentation.audio) ?? .unavailable
+            do {
+                let urls = try await mediaStore.localURLs(for: reward, eventId: eventId)
+                return urls.first.map(RewardContentPresentation.audio) ?? .unavailable
+            } catch MediaStore.MediaStoreError.objectMissing {
+                return .expired
+            } catch {
+                return .unavailable
+            }
 
         case .image:
-            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
-            return urls.isEmpty ? .unavailable : .gallery(urls)
+            do {
+                let urls = try await mediaStore.localURLs(for: reward, eventId: eventId)
+                return urls.isEmpty ? .unavailable : .gallery(urls)
+            } catch MediaStore.MediaStoreError.objectMissing {
+                return .expired
+            } catch {
+                return .unavailable
+            }
         }
     }
 }
@@ -121,6 +143,8 @@ struct RewardContentSheet: View {
                             ImageGalleryView(urls: urls, fromName: reward.fromName)
                         case .unavailable:
                             contentUnavailable("Nothing was added to this gift")
+                        case .expired:
+                            contentUnavailable("This gift from \(reward.fromName) isn't available anymore. Ask them to send it again.")
                         }
                     }
                     .opacity(appeared ? 1 : 0)
@@ -186,6 +210,12 @@ struct RewardContentSheet: View {
                 // worth a trail. Nothing else would ever surface it.
                 let rewardId = reward.id ?? "<no id>"
                 logger.warning("Reward \(rewardId, privacy: .public) (\(reward.contentType.rawValue, privacy: .public)) has no content to show")
+            case .expired:
+                // Same suppression as `.unavailable` — an expired gift is just as much of a
+                // letdown, and celebrating it would be the same lie. Distinct log message so
+                // this is distinguishable from "never authored" in the trail.
+                let rewardId = reward.id ?? "<no id>"
+                logger.warning("Reward \(rewardId, privacy: .public) (\(reward.contentType.rawValue, privacy: .public)) media is gone/expired")
             default:
                 confettiCounter += 1
                 BQDesign.Haptics.success()
