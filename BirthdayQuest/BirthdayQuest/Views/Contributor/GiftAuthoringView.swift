@@ -72,6 +72,8 @@ struct GiftAuthoringView: View {
                 photosSection
             case .video:
                 videoSection
+            case .voice:
+                voiceSection
             }
 
             Section {
@@ -246,6 +248,11 @@ struct GiftAuthoringView: View {
             }
         }
         .disabled(!viewModel.isEditable)
+    }
+
+    // Replaced in a later task with the real import/record UI; a stub keeps the target compiling.
+    private var voiceSection: some View {
+        EmptyView()
     }
 
     private var saveLabel: String {

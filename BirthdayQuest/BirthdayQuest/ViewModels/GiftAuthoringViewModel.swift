@@ -39,13 +39,14 @@ private struct Movie: Transferable {
 @MainActor
 final class GiftAuthoringViewModel: ObservableObject {
 
-    /// A gift is a letter, a set of photos, or a video (voice arrives in a later slice). For an
-    /// existing gift this is locked to its stored `contentType` — switching modes on an
-    /// existing gift is a content rewrite and is out of scope.
+    /// A gift is a letter, a set of photos, a video, or a voice recording. For an existing gift
+    /// this is locked to its stored `contentType` — switching modes on an existing gift is a
+    /// content rewrite and is out of scope.
     enum GiftContentMode {
         case letter
         case photos
         case video
+        case voice
     }
 
     /// Selecting more than this many photos would make a single gift unreasonably heavy to
@@ -55,6 +56,10 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// The Storage rules reject an upload of 200 MB or more (`request.resource.size <
     /// 200 * 1024 * 1024`), so a bigger clip would 403 after a long upload. Reject it up front.
     static let maxVideoBytes = 200 * 1024 * 1024
+
+    /// Same 200 MB Storage cap as video. A recorded AAC/.m4a is only a few MB, but an *imported*
+    /// audio file could be large, so both paths are size-checked through `acceptAudio`.
+    static let maxAudioBytes = 200 * 1024 * 1024
 
     enum GiftAuthoringError: LocalizedError {
         case noPhotosUploaded
@@ -70,7 +75,7 @@ final class GiftAuthoringViewModel: ObservableObject {
     @Published var teaser = ""
     @Published var letter = ""
     @Published var contentMode: GiftContentMode = .letter {
-        didSet { videoTooLarge = false }
+        didSet { videoTooLarge = false; audioTooLarge = false }
     }
     @Published var selectedPhotos: [PhotosPickerItem] = [] {
         didSet { Task { await loadPhotoPreviews() } }
@@ -89,6 +94,12 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// Set when the picked video is at or over `maxVideoBytes`; drives the inline error and keeps
     /// the oversized file out of `selectedVideoURL`.
     @Published var videoTooLarge = false
+    /// The loaded, size-checked local file for the voice clip (recorded or imported). Settable
+    /// for tests — a live recorder/file-importer result cannot be built in a unit test.
+    @Published var selectedAudioURL: URL?
+    /// Set when an imported audio file is at or over `maxAudioBytes`; drives the inline error and
+    /// keeps the oversized file out of `selectedAudioURL`.
+    @Published var audioTooLarge = false
     @Published private(set) var existingGift: Reward?
     @Published private(set) var isLoading = true
     @Published var isSaving = false
@@ -147,6 +158,13 @@ final class GiftAuthoringViewModel: ObservableObject {
         return "A video is already saved"
     }
 
+    /// A note that an existing voice gift already has a saved clip, or `nil` — explains why Save
+    /// stays valid with nothing newly selected.
+    var existingGiftHasAudio: String? {
+        guard existingGift?.contentType == .audio, existingGift?.contentUrl != nil else { return nil }
+        return "A voice recording is already saved"
+    }
+
     var isValid: Bool {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         switch contentMode {
@@ -159,6 +177,8 @@ final class GiftAuthoringViewModel: ObservableObject {
             return !photoPreviews.isEmpty || !(existingGift?.contentUrls ?? []).isEmpty
         case .video:
             return selectedVideoURL != nil || existingGift?.contentUrl != nil
+        case .voice:
+            return selectedAudioURL != nil || existingGift?.contentUrl != nil
         }
     }
 
@@ -194,7 +214,8 @@ final class GiftAuthoringViewModel: ObservableObject {
                         switch mine.contentType {
                         case .image: self.contentMode = .photos
                         case .video: self.contentMode = .video
-                        case .text, .audio: self.contentMode = .letter
+                        case .audio: self.contentMode = .voice
+                        case .text: self.contentMode = .letter
                         }
                     }
                     self.loadFailure = nil
@@ -301,6 +322,8 @@ final class GiftAuthoringViewModel: ObservableObject {
                 )
             case .video:
                 try await saveVideo(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
+            case .voice:
+                try await saveAudio(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
             }
 
             isSaving = false
@@ -458,5 +481,79 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// Storage rules and mapped to an extension by `FirestoreService.fileExtension`.
     private func videoContentType(for url: URL) -> String {
         url.pathExtension.lowercased() == "mp4" ? "video/mp4" : "video/quicktime"
+    }
+
+    // MARK: Audio selection
+
+    /// Accepts a picked/recorded audio clip only if it is under the Storage cap. Mirrors
+    /// `acceptVideo`: an oversized import is rejected before a doomed upload, and a replacement
+    /// deletes the prior temp file. The recorder and the file importer both funnel through here.
+    func acceptAudio(url: URL, sizeBytes: Int) {
+        guard sizeBytes < Self.maxAudioBytes else {
+            audioTooLarge = true
+            if let previous = selectedAudioURL {
+                try? FileManager.default.removeItem(at: previous)
+            }
+            selectedAudioURL = nil
+            return
+        }
+        audioTooLarge = false
+        if let previous = selectedAudioURL, previous != url {
+            try? FileManager.default.removeItem(at: previous)
+        }
+        selectedAudioURL = url
+    }
+
+    /// Uploads the selected clip (if any) to a client-generated folder, then writes the reward
+    /// once. Mirrors `saveVideo`: the folder is a `UUID`, independent of the eventual document id.
+    /// Voice uses the single `contentUrl` field, never `contentUrls`. `isValid` guarantees
+    /// `selectedAudioURL` for a new gift, so a `.audio` reward is never created empty.
+    private func saveAudio(userId: String, title: String, teaser: String) async throws {
+        var path: String?
+        let uploadedURL = selectedAudioURL
+        if let url = uploadedURL {
+            let data = try Data(contentsOf: url)
+            let group = UUID().uuidString
+            path = try await service.uploadRewardMedia(
+                eventId: eventId, rewardId: group, data: data,
+                contentType: audioContentType(for: url)
+            )
+        }
+
+        if let existing = existingGift, let id = existing.id {
+            var fields: [String: Any] = ["title": title, "teaser": teaser]
+            if let path { fields["contentUrl"] = path }
+            try await service.updateReward(eventId: eventId, rewardId: id, fields: fields)
+        } else {
+            let gift = Reward(
+                fromUserId: userId,
+                fromName: authorName,
+                title: title,
+                teaser: teaser,
+                pointCost: Self.defaultPointCost,
+                contentType: .audio,
+                contentUrl: path,
+                contentUrls: nil,
+                contentText: nil,
+                isUnlocked: false,
+                unlockedAt: nil,
+                sortOrder: allGifts.count,
+                badgeIllustration: "waveform",
+                createdAt: Date()
+            )
+            _ = try await service.createReward(eventId: eventId, reward: gift)
+        }
+
+        if let uploadedURL {
+            try? FileManager.default.removeItem(at: uploadedURL)
+            selectedAudioURL = nil
+        }
+    }
+
+    /// The clip's MIME type from its file extension. The recorder writes `.m4a`; imports are
+    /// restricted to `.m4a`/`.mp3`. Both `audio/mp4` and `audio/mpeg` are mapped by
+    /// `FirestoreService.fileExtension` and accepted by `isPlayableMedia` in the Storage rules.
+    private func audioContentType(for url: URL) -> String {
+        url.pathExtension.lowercased() == "mp3" ? "audio/mpeg" : "audio/mp4"
     }
 }

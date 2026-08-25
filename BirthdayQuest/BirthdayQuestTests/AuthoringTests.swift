@@ -610,6 +610,166 @@ struct GiftAuthoringTests {
         #expect(vm.selectedVideoURL == nil)
         #expect(!FileManager.default.fileExists(atPath: valid.path))
     }
+
+    @Test("a new voice gift uploads once and creates a .audio reward with a single contentUrl")
+    func newVoiceGiftUploadsThenCreatesOnce() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .voice
+        vm.title = "A voice note"
+        vm.teaser = "For you"
+        vm.selectedAudioURL = tempVideoURL(ext: "m4a")
+
+        await vm.save()
+
+        #expect(mock.callCount("uploadRewardMedia") == 1)
+        #expect(mock.uploadedRewardMedia.first?.contentType == "audio/mp4")
+        #expect(mock.callCount("createReward") == 1)
+        let created = mock.createdRewards.first
+        #expect(created?.contentType == .audio)
+        #expect(created?.contentUrl != nil, "audio uses the single contentUrl field")
+        #expect(created?.contentUrls == nil, "audio never uses the images array")
+        #expect(created?.contentText == nil)
+    }
+
+    @Test("an .mp3 import uploads as audio/mpeg")
+    func mp3ImportUploadsAsMpeg() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .voice
+        vm.title = "A voice note"
+        vm.selectedAudioURL = tempVideoURL(ext: "mp3")
+
+        await vm.save()
+
+        #expect(mock.uploadedRewardMedia.first?.contentType == "audio/mpeg")
+    }
+
+    @Test("an audio clip at or over the 200MB cap is rejected; one under it is accepted")
+    func oversizedAudioRejected() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+
+        vm.acceptAudio(url: tempVideoURL(ext: "m4a"), sizeBytes: GiftAuthoringViewModel.maxAudioBytes)
+        #expect(vm.audioTooLarge)
+        #expect(vm.selectedAudioURL == nil)
+
+        vm.acceptAudio(url: tempVideoURL(ext: "m4a"), sizeBytes: GiftAuthoringViewModel.maxAudioBytes - 1)
+        #expect(!vm.audioTooLarge)
+        #expect(vm.selectedAudioURL != nil)
+    }
+
+    @Test("isValid for voice requires a title and a selected (or existing) clip")
+    func isValidForVoice() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .voice
+
+        #expect(!vm.isValid, "no title, no clip")
+        vm.title = "A voice note"
+        #expect(!vm.isValid, "title alone is not enough")
+        vm.selectedAudioURL = tempVideoURL(ext: "m4a")
+        #expect(vm.isValid)
+    }
+
+    @Test("an existing audio gift locks to voice mode and, with no new clip, updates text only")
+    func editExistingAudioGiftWithoutNewClip() async {
+        let mock = MockGameBackend()
+        let mine = Reward.fixture(
+            id: "r_mine", contentType: .audio,
+            contentUrl: "events/evt_1/rewards/existing/note.m4a"
+        )
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")   // fixture's fromUserId is "u1"
+        for _ in 0..<8 { await Task.yield() }
+        #expect(vm.contentMode == .voice, "an existing audio gift locks to voice mode")
+        vm.teaser = "Updated teaser"
+
+        await vm.save()
+
+        #expect(!mock.called("uploadRewardMedia"))
+        let sent = mock.updatedRewards.first?.fields ?? [:]
+        #expect(!sent.keys.contains("contentUrl"), "no new clip was selected")
+        #expect(sent["teaser"] as? String == "Updated teaser")
+    }
+
+    @Test("selecting a new clip on an existing audio gift sends the new contentUrl")
+    func editExistingAudioGiftWithNewClip() async {
+        let mock = MockGameBackend()
+        let mine = Reward.fixture(
+            id: "r_mine", contentType: .audio,
+            contentUrl: "events/evt_1/rewards/existing/note.m4a"
+        )
+        mock.rewards = [mine]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.selectedAudioURL = tempVideoURL(ext: "m4a")
+
+        await vm.save()
+
+        #expect(mock.callCount("uploadRewardMedia") == 1)
+        let sent = mock.updatedRewards.first?.fields ?? [:]
+        #expect(sent["contentUrl"] != nil, "the replacement clip's path is written")
+    }
+
+    @Test("switching gift type clears a stale over-size audio error")
+    func modeSwitchClearsAudioTooLarge() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.acceptAudio(url: tempVideoURL(ext: "m4a"), sizeBytes: GiftAuthoringViewModel.maxAudioBytes)
+        #expect(vm.audioTooLarge)
+        vm.contentMode = .letter
+        #expect(!vm.audioTooLarge)
+    }
+
+    @Test("picking a replacement audio clip deletes the previous temp file")
+    func replacingAudioClipDeletesPreviousTempFile() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        let first = tempVideoURL(ext: "m4a")
+        vm.acceptAudio(url: first, sizeBytes: 10)
+        let second = tempVideoURL(ext: "m4a")
+        vm.acceptAudio(url: second, sizeBytes: 10)
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(vm.selectedAudioURL == second)
+    }
+
+    @Test("a successful voice save deletes the uploaded temp file and clears the selection")
+    func successfulVoiceSaveCleansUpTempFile() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .voice
+        vm.title = "A voice note"
+        let url = tempVideoURL(ext: "m4a")
+        vm.selectedAudioURL = url
+
+        await vm.save()
+
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(vm.selectedAudioURL == nil)
+    }
+
+    @Test("rejecting an oversized audio pick deletes the previously accepted clip")
+    func rejectingOversizedAudioDeletesPriorClip() {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        let valid = tempVideoURL(ext: "m4a")
+        vm.acceptAudio(url: valid, sizeBytes: 10)
+        vm.acceptAudio(url: tempVideoURL(ext: "m4a"), sizeBytes: GiftAuthoringViewModel.maxAudioBytes)
+        #expect(vm.audioTooLarge)
+        #expect(vm.selectedAudioURL == nil)
+        #expect(!FileManager.default.fileExists(atPath: valid.path))
+    }
 }
 
 @MainActor
