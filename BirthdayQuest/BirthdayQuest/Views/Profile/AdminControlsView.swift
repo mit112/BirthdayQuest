@@ -60,7 +60,14 @@ struct AdminControlsView: View {
 
                     // 5b. Roster
                     rosterCard
-                    
+
+                    // 5c. Remove a contributor. A section of its own, not folded into the
+                    // roster card above: removal is destructive and the roster card is
+                    // read-mostly (a crown badge is its only other affordance).
+                    if !viewModel.removableParticipants.isEmpty {
+                        removeParticipantCard
+                    }
+
                     // 6. Day counter + join toggle
                     dayAndJoinsCard
                     
@@ -146,6 +153,26 @@ struct AdminControlsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This is the big moment. The final badge celebration will trigger for everyone. Make sure you're ready.")
+            }
+            // Remove participant confirmation
+            .confirmationDialog(
+                "Remove from Occasion?",
+                isPresented: Binding(
+                    get: { viewModel.participantToRemove != nil },
+                    set: { if !$0 { viewModel.participantToRemove = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let participant = viewModel.participantToRemove {
+                    Button("Remove \(participant.name)", role: .destructive) {
+                        Task { await viewModel.removeParticipant(participant) }
+                    }
+                    Button("Cancel", role: .cancel) { viewModel.participantToRemove = nil }
+                }
+            } message: {
+                if let participant = viewModel.participantToRemove {
+                    Text("\(participant.name) will lose access to this occasion. Their gifts stay. They can rejoin with the invite code.")
+                }
             }
         }
         .onAppear { viewModel.startListening() }
@@ -647,6 +674,38 @@ private extension AdminControlsView {
                                 .fill(BQDesign.Colors.background)
                         )
                     }
+                }
+            }
+        }
+        .adminCard()
+    }
+
+    /// Removal is host-only at the rules layer, but the finer "contributors only" policy
+    /// (never the host, never the celebrant) lives here — `viewModel.removableParticipants`
+    /// already applies it, so every row this renders is safe to offer a Remove button on.
+    var removeParticipantCard: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.md) {
+            adminSectionHeader("Participants", icon: "person.badge.minus")
+
+            VStack(spacing: BQDesign.Spacing.sm) {
+                ForEach(viewModel.removableParticipants) { participant in
+                    HStack(spacing: BQDesign.Spacing.sm) {
+                        AvatarView(avatarId: participant.avatarId, size: 28)
+                        Text(participant.name)
+                            .font(BQDesign.Typography.caption)
+                            .foregroundColor(BQDesign.Colors.textPrimary)
+
+                        Spacer()
+
+                        adminActionButton("Remove", color: BQDesign.Colors.error) {
+                            viewModel.participantToRemove = participant
+                        }
+                    }
+                    .padding(BQDesign.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: BQDesign.Radius.sm, style: .continuous)
+                            .fill(BQDesign.Colors.background)
+                    )
                 }
             }
         }

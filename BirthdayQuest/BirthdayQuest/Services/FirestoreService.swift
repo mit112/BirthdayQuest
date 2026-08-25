@@ -324,6 +324,12 @@ final class FirestoreService: GameBackend {
         return try? doc.data(as: Participant.self)
     }
 
+    /// Deletes only the participant doc. See the doc-comment on `GameBackend.removeParticipant`
+    /// for why the membership mirror is deliberately left behind.
+    func removeParticipant(eventId: String, uid: String) async throws {
+        try await participantsRef(eventId).document(uid).delete()
+    }
+
     /// A field update, never a `setData`. `hostUid` is pinned immutable by the rules
     /// (`request.resource.data.hostUid == resource.data.hostUid`), so a full replace that
     /// omitted it would be denied.

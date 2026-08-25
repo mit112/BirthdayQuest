@@ -62,6 +62,18 @@ protocol GameBackend: AnyObject {
     func fetchOccasion(eventId: String) async throws -> Occasion?
     func fetchParticipants(eventId: String) async throws -> [Participant]
     func fetchMyParticipant(eventId: String) async throws -> Participant?
+
+    /// Deletes ONLY the participant doc at `events/{eventId}/participants/{uid}`. The rules'
+    /// `isHost` delete gate means this is what revokes that uid's membership — every read/write
+    /// gated on `isMember` fails for them immediately after.
+    ///
+    /// Does not touch the membership mirror at `memberships/{uid}/events/{id}`: the host cannot
+    /// delete another user's mirror (the rules gate mirror-delete on `request.auth.uid == uid`),
+    /// and widening that would be an unwanted privilege. The stale mirror is harmless —
+    /// `fetchMyOccasions`'s skip-on-failure drops the now-unreadable occasion from the removed
+    /// user's list on their next fetch.
+    func removeParticipant(eventId: String, uid: String) async throws
+
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws
 
     /// The occasion's two invite codes, read from `events/{eventId}/private/codes`.

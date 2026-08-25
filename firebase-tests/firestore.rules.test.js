@@ -1376,3 +1376,32 @@ describe('privilege escalation chain is broken', () => {
     await assertFails(updateDoc(doc(db, `events/${EVENT}`), { celebrantCode: '' }));
   });
 });
+
+describe('participant deletion (host removal)', () => {
+  beforeEach(seed);
+
+  it("the host can delete a contributor's participant doc", async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(HOST).firestore();
+    await assertSucceeds(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  it('a non-host member cannot delete another participant', async () => {
+    await joinAsContributor(GUEST);
+    await joinAsContributor(OUTSIDER);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${OUTSIDER}`)));
+  });
+
+  it('a non-host member cannot delete their own participant doc', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  it('an outsider (non-member) cannot delete a participant', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(OUTSIDER).firestore();
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+});

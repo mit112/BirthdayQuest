@@ -157,6 +157,16 @@ final class MockGameBackend: GameBackend {
         return stubbedParticipant
     }
 
+    /// Every `(eventId, uid)` a removal was attempted for, recorded before `throwIfNeeded()`,
+    /// so a stubbed failure still proves the attempt happened.
+    private(set) var removedParticipants: [(eventId: String, uid: String)] = []
+
+    func removeParticipant(eventId: String, uid: String) async throws {
+        record("removeParticipant", eventId: eventId)
+        removedParticipants.append((eventId: eventId, uid: uid))
+        try throwIfNeeded()
+    }
+
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws {
         record("setOccasionOpen", eventId: eventId)
         try throwIfNeeded()

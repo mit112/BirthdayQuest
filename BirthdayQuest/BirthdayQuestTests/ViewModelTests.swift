@@ -440,6 +440,62 @@ struct AdminViewModelListenerTests {
         #expect(vm.actionResult?.isError == true)
         #expect(vm.isPerformingAction == false)
     }
+
+    @Test("removing a contributor calls the backend with the right ids and reloads the roster")
+    func removeParticipantCallsBackendAndReloadsRoster() async {
+        let mock = MockGameBackend()
+        let jordan = participant(id: "uid_jo", name: "Jordan")
+        mock.stubParticipants = [
+            participant(id: "uid_host", name: "Sam", isHost: true),
+            jordan,
+        ]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        await vm.loadRoster()
+        #expect(vm.otherParticipants.map(\.name) == ["Jordan"])
+
+        // Simulate the removal landing server-side: the next roster read no longer sees Jordan.
+        mock.stubParticipants = [participant(id: "uid_host", name: "Sam", isHost: true)]
+
+        await vm.removeParticipant(jordan)
+
+        #expect(mock.removedParticipants.map(\.eventId) == ["evt_1"])
+        #expect(mock.removedParticipants.map(\.uid) == ["uid_jo"])
+        #expect(mock.callCount("fetchParticipants") == 2, "removal reloads the roster")
+        #expect(vm.otherParticipants.isEmpty, "the reload must reflect the removal")
+        #expect(vm.actionResult?.isError == false)
+        #expect(vm.isPerformingAction == false)
+    }
+
+    @Test("a backend failure removing a participant surfaces an error and does not crash")
+    func removeParticipantFailureSurfacesError() async {
+        let mock = MockGameBackend()
+        let jordan = participant(id: "uid_jo", name: "Jordan")
+        mock.stubParticipants = [jordan]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+        await vm.loadRoster()
+
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        await vm.removeParticipant(jordan)
+
+        #expect(mock.removedParticipants.map(\.uid) == ["uid_jo"], "the attempt still happened")
+        #expect(vm.actionResult?.isError == true)
+        #expect(vm.isPerformingAction == false)
+    }
+
+    @Test("removing the host or the celebrant is a no-op — the backend is never called")
+    func removeParticipantGuardsHostAndCelebrant() async {
+        let mock = MockGameBackend()
+        let host = participant(id: "uid_host", name: "Sam", isHost: true)
+        let celebrant = participant(id: "uid_alex", name: "Alex", mode: .celebrant)
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        await vm.removeParticipant(host)
+        await vm.removeParticipant(celebrant)
+
+        #expect(mock.called("removeParticipant") == false)
+        #expect(vm.actionResult == nil, "a silent no-op must not report success or failure")
+    }
 }
 
 @MainActor

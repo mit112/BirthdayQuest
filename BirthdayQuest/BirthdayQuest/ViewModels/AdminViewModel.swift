@@ -62,6 +62,7 @@ final class AdminViewModel: ObservableObject {
     @Published var rewardToUnlock: Reward?
     @Published var rewardUnlockDeductsPoints = false
     @Published var showFinalBadgeConfirm = false
+    @Published var participantToRemove: Participant?
     
     private let service: GameBackend
     private let eventId: String
@@ -89,6 +90,14 @@ final class AdminViewModel: ObservableObject {
     /// Everyone in the occasion apart from the host looking at this screen.
     var otherParticipants: [Participant] {
         participants.filter { !$0.isHost }
+    }
+
+    /// The subset of `otherParticipants` the host is allowed to remove: contributors only.
+    /// Never the host (self, already excluded above) and never the celebrant — removing the
+    /// recipient would orphan the occasion. The rule enforces host-only *delete*; this is the
+    /// finer product policy on top of it.
+    var removableParticipants: [Participant] {
+        otherParticipants.filter { $0.mode == .contributor && !$0.isHost }
     }
 
     /// Whether anyone with `mode == .celebrant` has joined yet. There is no handover mode,
@@ -205,8 +214,39 @@ final class AdminViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Remove Participant
+
+    /// Removes a contributor from the occasion. Guarded to only ever act on a removable
+    /// contributor — never the host (self) and never the celebrant — so a stale confirmation
+    /// dialog or a future call site cannot orphan the occasion or remove its owner.
+    func removeParticipant(_ participant: Participant) async {
+        guard !isPerformingAction else { return }
+        guard participant.mode == .contributor && !participant.isHost, let uid = participant.id else {
+            return
+        }
+        isPerformingAction = true
+
+        do {
+            try await service.removeParticipant(eventId: eventId, uid: uid)
+            await loadRoster()
+            actionResult = AdminActionResult(
+                message: "✅ Removed \(participant.name) from the occasion.",
+                isError: false
+            )
+            BQDesign.Haptics.success()
+        } catch {
+            actionResult = AdminActionResult(
+                message: "❌ Failed: \(error.localizedDescription)",
+                isError: true
+            )
+            BQDesign.Haptics.error()
+        }
+
+        isPerformingAction = false
+    }
+
     // MARK: - Force Complete Challenge
-    
+
     func forceCompleteChallenge(_ challenge: Challenge) async {
         guard let challengeId = challenge.id else { return }
         isPerformingAction = true
