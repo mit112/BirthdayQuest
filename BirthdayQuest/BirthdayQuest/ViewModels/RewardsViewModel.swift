@@ -8,10 +8,12 @@ final class RewardsViewModel: ObservableObject {
 
     private let service: GameBackend
     private let eventId: String
+    private let mediaStore: MediaStoring
 
-    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+    init(eventId: String, service: GameBackend = FirestoreService.shared, mediaStore: MediaStoring = MediaStore()) {
         self.eventId = eventId
         self.service = service
+        self.mediaStore = mediaStore
     }
     
     // MARK: - Published
@@ -55,8 +57,70 @@ final class RewardsViewModel: ObservableObject {
         return rewards.isEmpty ? .empty : .ready
     }
     
+    // MARK: - Media Lifecycle
+
+    struct ExpiryReminderInfo: Equatable {
+        let formattedDate: String
+        let unopenedMediaCount: Int
+    }
+
+    private var lifecycleContext: (isCelebrant: Bool, occasionDate: Date?, now: Date)?
+    private var didDismissReminder = false
+    private var didRunLifecycle = false
+
+    /// Pure so it is directly unit-testable. Non-nil iff the celebrant is within the reminder
+    /// window before media expiry and at least one non-text reward is still unopened.
+    static func makeExpiryReminder(
+        isCelebrant: Bool,
+        occasionDate: Date?,
+        rewards: [Reward],
+        now: Date
+    ) -> ExpiryReminderInfo? {
+        guard isCelebrant, let occasionDate else { return nil }
+        guard MediaLifecycle.isWithinReminderWindow(occasionDate: occasionDate, now: now) else { return nil }
+
+        let unopened = rewards.filter { $0.contentType != .text && !$0.isUnlocked }
+        guard !unopened.isEmpty else { return nil }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+
+        return ExpiryReminderInfo(
+            formattedDate: formatter.string(from: MediaLifecycle.expiry(occasionDate: occasionDate)),
+            unopenedMediaCount: unopened.count
+        )
+    }
+
+    /// Recomputes from live `rewards` so unlocking a gift updates the count without a new trigger.
+    var expiryReminder: ExpiryReminderInfo? {
+        guard !didDismissReminder, let ctx = lifecycleContext else { return nil }
+        return Self.makeExpiryReminder(
+            isCelebrant: ctx.isCelebrant,
+            occasionDate: ctx.occasionDate,
+            rewards: rewards,
+            now: ctx.now
+        )
+    }
+
+    func dismissExpiryReminder() {
+        didDismissReminder = true
+        objectWillChange.send()
+    }
+
+    /// One-shot: safe to call repeatedly (e.g. from an `.onChange` gated on a delivered snapshot).
+    func runMediaLifecycle(isCelebrant: Bool, occasionDate: Date?, now: Date = Date()) {
+        guard !didRunLifecycle else { return }
+        didRunLifecycle = true
+        lifecycleContext = (isCelebrant, occasionDate, now)
+        guard isCelebrant, let occasionDate else { return }
+        Task { [mediaStore, eventId, rewards] in
+            _ = await mediaStore.purgeExpiredArchived(rewards: rewards, eventId: eventId, occasionDate: occasionDate, now: now)
+        }
+    }
+
     // MARK: - Listeners
-    
+
     func startListening() {
         service.listenToRewards(eventId: eventId) { [weak self] result in
             Task { @MainActor in

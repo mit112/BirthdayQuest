@@ -48,6 +48,8 @@ private final class MockMediaStoring: MediaStoring, @unchecked Sendable {
     }
 
     func purge(reward: Reward, eventId: String) async throws {}
+
+    func purgeExpiredArchived(rewards: [Reward], eventId: String, occasionDate: Date, now: Date) async -> Int { 0 }
 }
 
 private struct StubbedError: Error {}

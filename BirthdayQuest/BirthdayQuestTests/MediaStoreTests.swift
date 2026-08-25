@@ -224,4 +224,109 @@ struct MediaStoreTests {
             "events/e1/rewards/r1/a.jpg", "events/e1/rewards/r1/b.jpg"
         ])
     }
+
+    // MARK: - purgeExpiredArchived
+
+    private let occasionDate = Date(timeIntervalSince1970: 0)
+
+    private func archive(reward: Reward, at baseDirectory: URL, eventId: String, paths: [String]) throws {
+        guard let rewardId = reward.id else { return }
+        for path in paths {
+            let localFile = baseDirectory
+                .appendingPathComponent("RewardMedia", isDirectory: true)
+                .appendingPathComponent(eventId, isDirectory: true)
+                .appendingPathComponent(rewardId, isDirectory: true)
+                .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+            try FileManager.default.createDirectory(
+                at: localFile.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data("archived".utf8).write(to: localFile)
+        }
+    }
+
+    @Test("not yet expired: purgeExpiredArchived returns 0 and deletes nothing")
+    func purgeExpiredArchivedNotYetExpired() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(contentType: .video, contentUrl: "events/e1/rewards/r1/v.mp4")
+        try archive(reward: reward, at: baseDirectory, eventId: "e1", paths: ["events/e1/rewards/r1/v.mp4"])
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate).addingTimeInterval(-1)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 0)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("expired with the local file archived: purges and returns 1")
+    func purgeExpiredArchivedDeletesArchivedReward() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(contentType: .video, contentUrl: "events/e1/rewards/r1/v.mp4")
+        try archive(reward: reward, at: baseDirectory, eventId: "e1", paths: ["events/e1/rewards/r1/v.mp4"])
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 1)
+        #expect(transfer.deletedPaths == ["events/e1/rewards/r1/v.mp4"])
+    }
+
+    @Test("expired but the local file is absent: does not purge (archive-before-purge)")
+    func purgeExpiredArchivedSkipsUnarchivedReward() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(contentType: .video, contentUrl: "events/e1/rewards/r1/v.mp4")
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 0)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("a text reward (no storage paths) is skipped and not counted")
+    func purgeExpiredArchivedSkipsTextReward() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let textReward = makeReward(id: "r-text", contentType: .text)
+        let videoReward = makeReward(id: "r-video", contentType: .video, contentUrl: "events/e1/rewards/r-video/v.mp4")
+        try archive(
+            reward: videoReward, at: baseDirectory, eventId: "e1", paths: ["events/e1/rewards/r-video/v.mp4"]
+        )
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [textReward, videoReward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 1)
+        #expect(transfer.deletedPaths == ["events/e1/rewards/r-video/v.mp4"])
+    }
+
+    @Test("running purgeExpiredArchived twice does not throw (idempotent)")
+    func purgeExpiredArchivedIsIdempotent() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(contentType: .video, contentUrl: "events/e1/rewards/r1/v.mp4")
+        try archive(reward: reward, at: baseDirectory, eventId: "e1", paths: ["events/e1/rewards/r1/v.mp4"])
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        _ = await store.purgeExpiredArchived(rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now)
+        _ = await store.purgeExpiredArchived(rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now)
+
+        #expect(transfer.deletedPaths.count == 2)
+    }
 }

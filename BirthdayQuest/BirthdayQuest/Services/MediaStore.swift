@@ -38,6 +38,10 @@ protocol MediaStoring: Sendable {
     /// Delete the remote objects for this reward. Called by the celebrant flow after a successful
     /// fetch (celebrant-only by the Storage rules). Idempotent.
     func purge(reward: Reward, eventId: String) async throws
+    /// Celebrant-only. For each reward whose media this device already holds locally AND whose occasion
+    /// is past media expiry, delete the remote Storage objects (idempotent, best-effort). Never deletes
+    /// an object this device has not archived. Returns the number of rewards whose media was purged.
+    func purgeExpiredArchived(rewards: [Reward], eventId: String, occasionDate: Date, now: Date) async -> Int
 }
 
 // MARK: - MediaStore
@@ -124,6 +128,35 @@ actor MediaStore: MediaStoring {
         for path in storagePaths(for: reward) {
             try await transfer.delete(path: path)
         }
+    }
+
+    /// Sweeps every reward whose media this device has already archived once the occasion is past
+    /// media expiry. "Archive-before-purge": eligibility is decided by checking the local file
+    /// exists on disk right now, never by trusting `fetchedBy`, so a reward can only be purged once
+    /// this device actually holds a copy.
+    func purgeExpiredArchived(rewards: [Reward], eventId: String, occasionDate: Date, now: Date) async -> Int {
+        guard MediaLifecycle.isExpired(occasionDate: occasionDate, now: now) else { return 0 }
+
+        var purgedCount = 0
+        for reward in rewards {
+            let paths = storagePaths(for: reward)
+            guard !paths.isEmpty else { continue }
+            guard let rewardId = reward.id else { continue }
+
+            let localFiles = paths.map { localFileURL(eventId: eventId, rewardId: rewardId, path: $0) }
+            let isArchived = localFiles.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+            guard isArchived else { continue }
+
+            for path in paths {
+                do {
+                    try await transfer.delete(path: path)
+                } catch {
+                    logger.error("purgeExpiredArchived delete failed for \(path): \(error.localizedDescription)")
+                }
+            }
+            purgedCount += 1
+        }
+        return purgedCount
     }
 
     // MARK: - Private

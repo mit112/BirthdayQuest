@@ -45,6 +45,10 @@ struct RewardsCarouselView: View {
         }
         .onAppear { viewModel.startListening() }
         .onDisappear { viewModel.stopListening() }
+        .onChange(of: viewModel.contentState) { _, newState in
+            guard newState == .ready || newState == .empty else { return }
+            viewModel.runMediaLifecycle(isCelebrant: event.isCelebrant, occasionDate: event.occasion?.occasionDate)
+        }
         .confirmationDialog(
             "Unlock Gift",
             isPresented: $viewModel.showUnlockConfirm,
@@ -97,6 +101,10 @@ private extension RewardsCarouselView {
     
     var mainContent: some View {
         VStack(spacing: BQDesign.Spacing.lg) {
+            if let info = viewModel.expiryReminder {
+                expiryReminderBanner(info)
+            }
+
             // Header: Points
             PointsDisplayView(points: event.currentPoints, style: .large)
                 .padding(.top, BQDesign.Spacing.xl)
@@ -194,8 +202,54 @@ private extension RewardsCarouselView {
             Spacer().frame(height: BQDesign.Spacing.md)
         }
         .animation(BQDesign.Animation.smooth, value: viewModel.showTimelinePrompt)
+        .animation(BQDesign.Animation.gentle, value: viewModel.expiryReminder)
     }
-    
+
+    func expiryReminderBanner(_ info: RewardsViewModel.ExpiryReminderInfo) -> some View {
+        HStack(alignment: .top, spacing: BQDesign.Spacing.sm) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .font(BQDesign.Typography.body)
+                .foregroundColor(BQDesign.Colors.goldText)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+                Text("\(info.unopenedMediaCount) gift\(info.unopenedMediaCount == 1 ? "" : "s") will expire soon")
+                    .font(BQDesign.Typography.bodyBold)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+                Text("Your gifts get tidied up after \(info.formattedDate). Open them to keep them on this device.")
+                    .font(BQDesign.Typography.caption)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                viewModel.dismissExpiryReminder()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(BQDesign.Typography.caption)
+                    .foregroundColor(BQDesign.Colors.textSecondary)
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Dismiss reminder")
+        }
+        .padding(.leading, BQDesign.Spacing.md)
+        .padding(.trailing, BQDesign.Spacing.xs)
+        .padding(.vertical, BQDesign.Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: BQDesign.Radius.lg)
+                .fill(BQDesign.Colors.cardBackground)
+                .shadow(
+                    color: BQDesign.Shadows.card.color,
+                    radius: BQDesign.Shadows.card.radius,
+                    x: BQDesign.Shadows.card.x,
+                    y: BQDesign.Shadows.card.y
+                )
+        )
+        .padding(.horizontal, BQDesign.Spacing.md)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
     func jumpToCenter() {
         let count = viewModel.rewards.count
         guard count > 0 else { return }
