@@ -208,8 +208,14 @@ Two tiers, and both must stay green:
   (as of 2026-08-24) added photo gifts**: `GiftAuthoringView` gained a Letter/Photos selector, a
   contributor uploads images via `FirestoreService.uploadRewardMedia` (which returns the Storage
   object *path*, never a download URL), and a new `MediaStore` actor downloads+persists them to
-  Documents and hands the celebrant a local `file://` URL to render. **Video and audio gifts still
-  need slices 2–3.** The old "13 challenges award 715 pts, 8 rewards cost
+  Documents and hands the celebrant a local `file://` URL to render. **Subsystem #3 slice 2 (as of
+  2026-08-24) added video gifts**: `GiftAuthoringView`'s selector gained a Video option, a
+  contributor picks a clip via `PhotosPicker(matching: .videos)`, it uploads with contentType
+  `video/mp4`/`video/quicktime` and writes `contentType: .video` + the single `contentUrl` (never
+  `contentUrls`). The whole celebrant/playback half was already built in slice 1
+  (`RewardContentPresentation.resolve`, `MediaStore.storagePaths`, `VideoPlayerView`), so slice 2
+  was purely contributor-side authoring and needed no rules change. **Audio gifts still need slice 3
+  (import + record).** The old "13 challenges award 715 pts, 8 rewards cost
   750" figures described the deleted seeder and are not a live invariant. The *design* intent
   stands: balance a set so challenges cannot quite cover the rewards, and let the secret challenges
   close the gap.
@@ -284,6 +290,29 @@ assumption they needed the media pipeline. They did not:
 
 ## Direction (as of 2026-08-22)
 
+### Subsystem #3 slice 2 (media pipeline — video gifts) is DONE and merged into `main` (as of 2026-08-24)
+
+Landed on `main` by fast-forward (linear history) at `de5e573`; branch `feat/media-gifts-slice-2-video`
+and the SDD workspace are deleted — git history is the record. **`main` is still not pushed** (~90
+ahead of origin). This slice was **purely contributor-side authoring** — the celebrant/playback half
+was already shipped in slice 1 (`RewardContentPresentation.resolve` handles `.video`,
+`MediaStore.storagePaths` handles `.video`, `VideoPlayerView` plays a local `file://` URL,
+`uploadRewardMedia`/`fileExtension` accept `video/mp4`+`video/quicktime`, the storage rules permit
+`video/*` <200MB, `GiftCurationView` labels+icons `.video`). Delta: a `.video` case in
+`GiftAuthoringViewModel`/`GiftAuthoringView` mirroring `.photos`, a `Movie` `Transferable` so the
+picked clip's size is checked against the 200MB cap without loading it into memory, `saveVideo`
+(writes the Storage **path** to the single `contentUrl`, `contentUrls: nil`, UUID upload folder),
+a 200MB-cap UX (`videoTooLarge`), and temp-file cleanup on re-pick/reject/after-save. **No
+`storage.rules`/`firestore.rules` change** (so the emulator rules suite was correctly not re-run).
+Landed green (Swift `** TEST SUCCEEDED **` 241 test-case passes, SwiftLint `--strict` 0/68), executed
+subagent-driven (Sonnet implementer, Opus whole-branch review — essentially clean, 3 temp-file/media
+Minors) with two fix waves. **Two deferrals carried to the media-lifecycle slice:** (1) the upload
+loads the whole ≤200MB clip into memory via `Data(contentsOf:)` — reusing the shipped
+`uploadRewardMedia(data:)` spine; a file-URL/streaming upload is an API change, not a slice-2 change;
+(2) a video thumbnail in the "Video selected" confirmation row (photos show thumbnails) — a UX
+enhancement. **Still out: audio gifts (slice 3, import + record), and the media-lifecycle slice
+(celebrant purge wiring + expiry reminders + expired state + re-send recovery).**
+
 ### Subsystem #3 slice 1 (media pipeline — photo gifts) is DONE and merged into `main` (as of 2026-08-24)
 
 Landed on `main` by fast-forward (linear history) at `e0997f1`; branch `feat/media-gifts-slice-1` and
@@ -298,8 +327,9 @@ badge + storage-purge-on-delete, and the one `storage.rules` change (reward-medi
 download-URL leak — is done and verified end-to-end.** Landed green (Swift `** TEST SUCCEEDED **`,
 rules 172/172, SwiftLint `--strict` clean), executed subagent-driven with per-task reviews and a
 domain-sliced whole-branch review (Swift on Opus, rules on Sonnet, no Criticals) plus one fix wave.
-**Still out: video gifts (slice 2), audio gifts (slice 3, import + record), and the media-lifecycle
-slice (celebrant purge wiring + expiry reminders + expired state + re-send recovery).**
+**Still out (from slice 1's vantage): video gifts — since done in slice 2 (see above) — audio gifts
+(slice 3, import + record), and the media-lifecycle slice (celebrant purge wiring + expiry reminders
++ expired state + re-send recovery).**
 
 ### Subsystem #2 slice 1 is DONE and merged into `main` (as of 2026-08-24)
 
