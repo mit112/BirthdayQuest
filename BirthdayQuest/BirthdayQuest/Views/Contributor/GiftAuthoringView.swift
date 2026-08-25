@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 
 /// The contributor's gift to the celebrant: a letter they unlock with points.
 ///
@@ -10,6 +11,11 @@ struct GiftAuthoringView: View {
 
     @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: GiftAuthoringViewModel
+    @State private var isImportingAudio = false
+    // @StateObject, not @State: AudioPlayerController is an ObservableObject, so the play/pause
+    // icon must observe its @Published isPlaying.
+    @StateObject private var reviewPlayer = AudioPlayerController()
+    @ScaledMetric private var reviewPlayerIconSize: CGFloat = 28
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: GiftAuthoringViewModel(eventId: eventId))
@@ -59,6 +65,7 @@ struct GiftAuthoringView: View {
                         Text("Letter").tag(GiftAuthoringViewModel.GiftContentMode.letter)
                         Text("Photos").tag(GiftAuthoringViewModel.GiftContentMode.photos)
                         Text("Video").tag(GiftAuthoringViewModel.GiftContentMode.video)
+                        Text("Voice").tag(GiftAuthoringViewModel.GiftContentMode.voice)
                     }
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Gift type")
@@ -250,9 +257,104 @@ struct GiftAuthoringView: View {
         .disabled(!viewModel.isEditable)
     }
 
-    // Replaced in a later task with the real import/record UI; a stub keeps the target compiling.
     private var voiceSection: some View {
-        EmptyView()
+        Section("Your voice gift") {
+            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                TextField("", text: $viewModel.title, prompt: Text("A voice note from me"))
+                    .accessibilityLabel("Title")
+            }
+            if viewModel.showValidation
+                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                fieldError("Give your gift a title.")
+            }
+
+            labelled("Teaser", hint: "One line, shown while it's still locked") {
+                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                    .accessibilityLabel("Teaser")
+            }
+
+            // Import path. A record control is added above this button in a later task.
+            Button {
+                isImportingAudio = true
+            } label: {
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    Image(systemName: "waveform.badge.plus")
+                    Text(viewModel.selectedAudioURL == nil ? "Choose an audio file" : "Choose a different file")
+                        .font(BQDesign.Typography.bodyBold)
+                }
+                .foregroundStyle(BQDesign.Colors.primaryPurple)
+            }
+            .accessibilityLabel("Choose an audio file")
+            .fileImporter(
+                isPresented: $isImportingAudio,
+                allowedContentTypes: [.mpeg4Audio, .mp3],
+                allowsMultipleSelection: false
+            ) { result in
+                handleAudioImport(result)
+            }
+
+            if let url = viewModel.selectedAudioURL {
+                audioReviewRow(url: url)
+            } else if let existing = viewModel.existingGiftHasAudio {
+                Text(existing)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+            }
+
+            if viewModel.audioTooLarge {
+                fieldError("That audio file is over 200 MB. Please choose a smaller one.")
+            }
+
+            if viewModel.showValidation
+                && viewModel.selectedAudioURL == nil
+                && (viewModel.existingGiftHasAudio == nil) {
+                fieldError("Record or choose a voice gift.")
+            }
+        }
+        .disabled(!viewModel.isEditable)
+    }
+
+    /// A review row for the selected/recorded clip: play it back before saving. Reuses the
+    /// celebrant-side `AudioPlayerController` pointed at the local temp file.
+    private func audioReviewRow(url: URL) -> some View {
+        HStack(spacing: BQDesign.Spacing.sm) {
+            Button {
+                BQDesign.Haptics.light()
+                reviewPlayer.togglePlayback()
+            } label: {
+                Image(systemName: reviewPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: reviewPlayerIconSize))
+                    .foregroundStyle(BQDesign.Colors.primaryPurple)
+            }
+            .accessibilityLabel(reviewPlayer.isPlaying ? "Pause review" : "Play review")
+
+            Text("Voice gift ready")
+                .font(BQDesign.Typography.captionSmall)
+                .foregroundStyle(BQDesign.Colors.textPrimary)
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .onAppear { reviewPlayer.loadAudio(from: url) }
+        .onChange(of: url) { _, newURL in reviewPlayer.loadAudio(from: newURL) }
+        .onDisappear { reviewPlayer.pause() }
+    }
+
+    /// Copies the imported file into our temp dir (the picked URL is security-scoped and only
+    /// valid inside the access block), reads its size, and hands it to the view model.
+    private func handleAudioImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let picked = urls.first else { return }
+        let scoped = picked.startAccessingSecurityScopedResource()
+        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let copy = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(picked.pathExtension)
+        do {
+            try FileManager.default.copyItem(at: picked, to: copy)
+            let size = (try? FileManager.default.attributesOfItem(atPath: copy.path))?[.size] as? Int ?? 0
+            viewModel.acceptAudio(url: copy, sizeBytes: size)
+        } catch {
+            // A failed copy leaves selection unchanged; the validation error already covers "nothing selected".
+        }
     }
 
     private var saveLabel: String {
