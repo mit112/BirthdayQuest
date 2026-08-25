@@ -197,8 +197,11 @@ Two tiers, and both must stay green:
   child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
   rather than failing the whole list. No test is possible while every Swift test substitutes
   `MockGameBackend` for `FirestoreService`, so do not "tidy" that optional into a `throws`.
-- The 3 `BirthdayQuestUITests` were written against the deleted character-select flow. They compile
-  but are not run and will need rewriting.
+- The 3 `BirthdayQuestUITests` are Xcode template boilerplate (`testExample`, `testLaunch`,
+  `testLaunchPerformance`) — **not** character-select tests, contrary to the earlier note here
+  (verified 2026-08-25). They compile and are CI-skipped (`-skip-testing:BirthdayQuestUITests`). Real
+  UI-flow tests need a live Firebase project (the app cannot pass launch without the Anonymous
+  provider), so they stay boilerplate until that exists — there is no "dead" flow to rewrite.
 - **A new occasion starts empty, but is no longer stuck that way.** `createOccasion` still writes
   `totalChallenges: 0, totalRewards: 0` and seeds no content, but subsystem #2 slice 1 gave it two
   in-app authoring paths: the host authors challenges (`ChallengeAuthoringView`), and each
@@ -251,19 +254,30 @@ Two tiers, and both must stay green:
   contrast on the dark secret surfaces (5.11:1 to 3.18:1); that is currently harmless only because
   no dark-themed view uses the token, which was verified rather than assumed. A dark theme has to
   revisit it.
-- **Reward media leak is CLOSED for the shipped path; proof media is not.** Subsystem #3 slice 1
-  closed the reward-media half: `rewards.contentUrl`/`contentUrls` now store Storage **object paths**,
-  and `MediaStore` downloads them through an authenticated `Storage.storage().reference(withPath:)`
-  (which honours the Storage rules), rendering a local `file://` URL — no tokened download URL is ever
-  persisted for a reward. **Proof photos still store long-lived download URLs**
-  (`?alt=media&token=…`) via `uploadProofData`, and those bypass Storage rules by design, so a proof
-  URL still outlives membership revocation. Closing the proof half is deferred (reward media was the
-  sensitive one — family photos/videos). Two related reward-media items are also deferred to a later
-  media-lifecycle slice, by ruling: **celebrant client-side purge** (`MediaStore.purge` exists but has
-  no production caller yet — wiring it needs the "expired after purge" state, and it must be
-  celebrant-gated since the rules deny non-host/non-celebrant delete) and **media-expiry handling**.
-  So Slice-1 reward objects persist server-side until the GCS lifecycle backstop. The host *can* now
-  delete reward-media objects during curation (`storage.rules` delete widened to `isCelebrant || isHost`).
+- **Reward-media leak, reward-media LIFECYCLE, and the proof-photo leak are all CLOSED (merged to
+  main 2026-08-25).** Subsystem #3 slice 1 closed the reward-media leak: `rewards.contentUrl`/
+  `contentUrls` store Storage **object paths**, and `MediaStore` downloads them through an
+  authenticated `Storage.storage().reference(withPath:)` (honouring the Storage rules) into a local
+  `file://` URL — no tokened download URL is ever persisted for a reward.
+  - **Media-lifecycle slice — DONE.** `MediaLifecycle` (pure policy: `occasionDate + gracePeriod`,
+    30-day grace / 7-day reminder window, `now` always injected) drives three things: (1) celebrant-
+    only server purge (`MediaStore.purgeExpiredArchived`, fired once per rewards-view appearance),
+    gated on **archive-before-purge** — it deletes a reward's Storage objects only when EVERY local
+    file is on disk *right now* (never trusting `fetchedBy`), so it can never delete the celebrant's
+    last copy (pinned by a mutation-proven test); (2) a distinct `RewardContentPresentation.expired`
+    state (from a Storage objectNotFound with no local archive — honest copy, no confetti), separate
+    from `.unavailable` ("never authored"); (3) a dismissible expiry-reminder banner when unopened
+    media gifts are near expiry. No rules change (celebrant Storage delete was already granted). Still
+    deferred: the full **re-send round-trip** (contributor re-upload of an expired gift — its own
+    slice; `.expired` copy points the celebrant to ask the contributor, no round-trip wired),
+    streaming/file-URL upload, and thumbnail previews in the "selected" rows.
+  - **Proof-photo leak — CLOSED.** `uploadProofData` now returns the Storage **path** (not a tokened
+    download URL); `challenge.proofUrl` holds a path; a new `ProofImageView` renders it via
+    `MediaStore.localURL(forPath:eventId:)` (a narrow `ProofMediaLoading` protocol — authenticated
+    download → local `file://`). A revoked member is now denied by the Storage rules. No rules change.
+    Still deferred: proof-media **purge/expiry** (a later application of the same MediaStore spine).
+  - The host *can* delete reward-media objects during curation (`storage.rules` delete widened to
+    `isCelebrant || isHost`).
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -293,6 +307,34 @@ assumption they needed the media pipeline. They did not:
   case was `contentText ?? placeholder` treating `""` as present. Branch selection is now a pure
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
+
+## Direction (as of 2026-08-25)
+
+Session focus: close the remaining media/security work and survey #4. Landed on `main` (FF, linear;
+still **unpushed**):
+- **Reward-media LIFECYCLE slice (subsystem #3, final slice) — DONE + merged.** `MediaLifecycle`
+  policy + celebrant `purgeExpiredArchived` (archive-before-purge, mutation-proven) + `.expired`
+  presentation state + expiry-reminder banner. Reviews: correctness clean (Opus), a11y clean
+  (Sonnet). No rules change. See `docs/superpowers/specs/2026-08-24-media-lifecycle-design.md`.
+- **Proof-photo leak — CLOSED + merged.** Proof photos store Storage paths, render via authenticated
+  download (`ProofImageView` / `ProofMediaLoading`). Security review clean (Sonnet). No rules change.
+  See `docs/superpowers/specs/2026-08-25-proof-photo-paths-design.md`.
+
+Authored but **NOT merged** (on branch `feat/privacy-manifest`): the App Store `PrivacyInfo.xcprivacy`.
+It is valid (`plutil` OK) with factual tracking=false + file-timestamp required-reason APIs; the
+`NSPrivacyCollectedDataTypes` declaration needs developer sign-off, and the **one-click Xcode target-
+membership** step to bundle it was left to the human on purpose (the synced-folder project does not
+auto-bundle `.xcprivacy`, and hand-editing pbxproj is what folder-sync exists to avoid). See
+`docs/superpowers/specs/2026-08-25-privacy-manifest.md`.
+
+**Remaining #4 / loose-gap work is human-decision-gated** and was deliberately NOT done autonomously
+(each needs a product, legal, infra, or visual-verification call): UGC moderation model + EULA;
+occasion-type template *content*; participant-removal *semantics* (what happens to a removed
+contributor's gifts) + its rules; the Swift↔emulator transaction-test harness (large infra spike);
+the gift-type picker `.menu` switch (coupled to the unverified reflow gap — needs a visual check on a
+live build); and the standing manual prerequisites (app rename, real bundle ID + signing team, Apple
+Developer account + store listing, Sign in with Apple capability, enabling the Anonymous+Apple
+providers, `tools/export_media.sh` before deploy, and pushing `main` to origin).
 
 ## Direction (as of 2026-08-22)
 
