@@ -27,8 +27,6 @@ nonisolated enum RewardContentPresentation: Equatable {
     /// resolving to `singleImage` instead was the shipped defect this type replaced — do not
     /// resurrect that branch.
     case gallery([URL])
-    /// Kept only because the view still switches on it; the resolver below never produces it.
-    case singleImage(URL)
     /// Nothing presentable. Permanent — there is nothing to wait for.
     case unavailable
 
@@ -121,8 +119,6 @@ struct RewardContentSheet: View {
                             AudioPlayerView(url: url, fromName: reward.fromName)
                         case .gallery(let urls):
                             ImageGalleryView(urls: urls, fromName: reward.fromName)
-                        case .singleImage(let url):
-                            imageContent(url: url)
                         case .unavailable:
                             contentUnavailable("Nothing was added to this gift")
                         }
@@ -201,29 +197,7 @@ struct RewardContentSheet: View {
 // MARK: - Content Subviews
 
 private extension RewardContentSheet {
-    
-    /// Image content using AsyncImage
-    func imageContent(url: URL) -> some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.xl, style: .continuous))
-            case .failure:
-                contentUnavailable("Couldn't load this image")
-            default:
-                ProgressView()
-                    .tint(BQDesign.Colors.primaryPurple)
-                    .frame(height: 200)
-            }
-        }
-        .bqShadow(BQDesign.Shadows.card)
-        .padding(.horizontal, BQDesign.Spacing.lg)
-    }
-    
+
     /// Fallback when there is nothing to show. `reason` keeps this honest at both call
     /// sites: content that was never authored will never arrive, whereas an image that
     /// failed to fetch might. Neither may claim it is "loading soon" — that is a promise

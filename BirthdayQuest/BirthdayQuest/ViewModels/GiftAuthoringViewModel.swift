@@ -28,6 +28,16 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// upload and to view.
     static let maxPhotoCount = 10
 
+    enum GiftAuthoringError: LocalizedError {
+        case noPhotosUploaded
+
+        var errorDescription: String? {
+            switch self {
+            case .noPhotosUploaded: return "Couldn't save your photos. Try again."
+            }
+        }
+    }
+
     @Published var title = ""
     @Published var teaser = ""
     @Published var letter = ""
@@ -269,6 +279,14 @@ final class GiftAuthoringViewModel: ObservableObject {
                 uploaded.append(path)
             }
             paths = uploaded
+        }
+
+        // A new gift with no successfully-compressed photo must not create an empty `.image`
+        // reward (it resolves to `.unavailable` — a broken gift). An existing gift keeps its
+        // prior `contentUrls` when every re-selected photo fails, since `fields` above only
+        // sets `contentUrls` when `paths` is non-nil.
+        if existingGift == nil, let paths, paths.isEmpty {
+            throw GiftAuthoringError.noPhotosUploaded
         }
 
         if let existing = existingGift, let id = existing.id {

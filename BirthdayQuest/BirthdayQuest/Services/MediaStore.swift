@@ -99,6 +99,18 @@ actor MediaStore: MediaStoring {
         return localURLs
     }
 
+    /// Deletes the remote Storage objects for this reward's media, once the celebrant's device
+    /// already holds them locally — "server as courier, device as archive."
+    ///
+    /// **Deferred to a later slice (media lifecycle).** It intentionally has no production caller
+    /// yet in Slice 1: the leak this closes is already bounded by storing Storage *paths* (never
+    /// download URLs) behind an authenticated reference, so purge exists only to bound storage
+    /// cost, not to close a security gap. Wiring it correctly needs the "expired after purge"
+    /// state the media-lifecycle slice adds, so a reward isn't left pointing at deleted objects.
+    ///
+    /// When wired, this must be called **only on the celebrant's device** — the Storage rules
+    /// grant reward-media delete to celebrant-or-host only, so calling it as an ordinary member
+    /// throws.
     func purge(reward: Reward, eventId: String) async throws {
         for path in storagePaths(for: reward) {
             try await transfer.delete(path: path)

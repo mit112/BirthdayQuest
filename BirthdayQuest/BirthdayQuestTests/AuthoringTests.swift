@@ -362,6 +362,26 @@ struct GiftAuthoringTests {
         #expect(created?.contentUrl == nil, "images use contentUrls, never contentUrl")
     }
 
+    @Test("a new photo gift where every image fails to compress surfaces an error, not an empty reward")
+    func newPhotoGiftAllCompressionFailuresSurfacesError() async {
+        let mock = MockGameBackend()
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "uid_jo", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        vm.contentMode = .photos
+        vm.title = "A few photos"
+        vm.teaser = "For you"
+        // `UIImage()` has no backing CGImage, so `jpegData(compressionQuality:)` returns nil —
+        // the same shape as every real photo failing to compress.
+        vm.photoPreviews = [UIImage(), UIImage()]
+
+        await vm.save()
+
+        #expect(!mock.called("createReward"), "an all-nil compression must not create an empty .image reward")
+        #expect(vm.showError)
+        #expect(vm.errorMessage != nil)
+    }
+
     @Test("a new letter gift never touches upload")
     func newLetterGiftDoesNotUpload() async {
         let mock = MockGameBackend()
