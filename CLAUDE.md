@@ -204,8 +204,12 @@ Two tiers, and both must stay green:
   in-app authoring paths: the host authors challenges (`ChallengeAuthoringView`), and each
   contributor authors one text gift (`GiftAuthoringView`); the host then prices, orders, and can
   delete gifts (`GiftCurationView`) without being able to rewrite their text. `totalChallenges` /
-  `totalRewards` now move with the content, batched inside `FirestoreService`. Media gifts
-  (video/audio/image) still need subsystem #3. The old "13 challenges award 715 pts, 8 rewards cost
+  `totalRewards` now move with the content, batched inside `FirestoreService`. **Subsystem #3 slice 1
+  (as of 2026-08-24) added photo gifts**: `GiftAuthoringView` gained a Letter/Photos selector, a
+  contributor uploads images via `FirestoreService.uploadRewardMedia` (which returns the Storage
+  object *path*, never a download URL), and a new `MediaStore` actor downloads+persists them to
+  Documents and hands the celebrant a local `file://` URL to render. **Video and audio gifts still
+  need slices 2–3.** The old "13 challenges award 715 pts, 8 rewards cost
   750" figures described the deleted seeder and are not a live invariant. The *design* intent
   stands: balance a set so challenges cannot quite cover the rewards, and let the secret challenges
   close the gap.
@@ -235,11 +239,19 @@ Two tiers, and both must stay green:
   contrast on the dark secret surfaces (5.11:1 to 3.18:1); that is currently harmless only because
   no dark-themed view uses the token, which was verified rather than assumed. A dark theme has to
   revisit it.
-- **Reward and proof media are reachable by anyone holding the URL.** The Storage rules gate the
-  *objects* on event membership, but the app stores long-lived Firebase **download URLs**
-  (`?alt=media&token=…`) in Firestore, and those bypass Storage rules by design. So revoking
-  membership does not revoke media already linked. The spec claims the new rules replace
-  world-readable URLs; they do not, and closing it needs the Plan 2 media pipeline.
+- **Reward media leak is CLOSED for the shipped path; proof media is not.** Subsystem #3 slice 1
+  closed the reward-media half: `rewards.contentUrl`/`contentUrls` now store Storage **object paths**,
+  and `MediaStore` downloads them through an authenticated `Storage.storage().reference(withPath:)`
+  (which honours the Storage rules), rendering a local `file://` URL — no tokened download URL is ever
+  persisted for a reward. **Proof photos still store long-lived download URLs**
+  (`?alt=media&token=…`) via `uploadProofData`, and those bypass Storage rules by design, so a proof
+  URL still outlives membership revocation. Closing the proof half is deferred (reward media was the
+  sensitive one — family photos/videos). Two related reward-media items are also deferred to a later
+  media-lifecycle slice, by ruling: **celebrant client-side purge** (`MediaStore.purge` exists but has
+  no production caller yet — wiring it needs the "expired after purge" state, and it must be
+  celebrant-gated since the rules deny non-host/non-celebrant delete) and **media-expiry handling**.
+  So Slice-1 reward objects persist server-side until the GCS lifecycle backstop. The host *can* now
+  delete reward-media objects during curation (`storage.rules` delete widened to `isCelebrant || isHost`).
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -271,6 +283,23 @@ assumption they needed the media pipeline. They did not:
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
 ## Direction (as of 2026-08-22)
+
+### Subsystem #3 slice 1 (media pipeline — photo gifts) is DONE and merged into `main` (as of 2026-08-24)
+
+Landed on `main` by fast-forward (linear history) at `e0997f1`; branch `feat/media-gifts-slice-1` and
+the SDD workspace are deleted — git history is the record. **`main` is still not pushed.** This slice
+built the *spine* of the media pipeline on the simplest media (images): `uploadRewardMedia` (returns
+the Storage **path**, not a download URL), the `MediaStore` actor (authenticated download → persist to
+Documents → local `file://` URL; records `fetchedBy`; `purge` present but unwired — see Known Gaps),
+the `RewardContentPresentation` async rework (`.loading` added, media resolves via `MediaStore`, the
+dead `.singleImage` case removed), the Letter/Photos authoring selector, the curation content-type
+badge + storage-purge-on-delete, and the one `storage.rules` change (reward-media delete widened to
+`isCelebrant || isHost`, mutation-tested). **Its reason for existing — closing the reward-media
+download-URL leak — is done and verified end-to-end.** Landed green (Swift `** TEST SUCCEEDED **`,
+rules 172/172, SwiftLint `--strict` clean), executed subagent-driven with per-task reviews and a
+domain-sliced whole-branch review (Swift on Opus, rules on Sonnet, no Criticals) plus one fix wave.
+**Still out: video gifts (slice 2), audio gifts (slice 3, import + record), and the media-lifecycle
+slice (celebrant purge wiring + expiry reminders + expired state + re-send recovery).**
 
 ### Subsystem #2 slice 1 is DONE and merged into `main` (as of 2026-08-24)
 
