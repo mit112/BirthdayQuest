@@ -451,9 +451,15 @@ final class MockGameBackend: GameBackend {
         return "events/\(eventId)/rewards/\(rewardId)/mock.jpg"
     }
 
+    /// Stubbed independently of `errorToThrow` so a test can fail this call alone and prove
+    /// the caller (`GiftCurationViewModel.delete`) treats it as best-effort rather than
+    /// letting it surface as a failed gift deletion.
+    var deleteRewardMediaError: Error?
+
     func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws {
         record("deleteRewardMedia", eventId: eventId)
         deletedRewardMediaPaths.append(storagePaths)
+        if let deleteRewardMediaError { throw deleteRewardMediaError }
         try throwIfNeeded()
     }
 

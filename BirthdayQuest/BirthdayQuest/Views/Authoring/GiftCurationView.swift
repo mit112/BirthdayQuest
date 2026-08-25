@@ -8,6 +8,7 @@ struct GiftCurationView: View {
 
     @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: GiftCurationViewModel
+    @ScaledMetric private var badgeGlyphSize: CGFloat = 18
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: GiftCurationViewModel(eventId: eventId))
@@ -81,6 +82,15 @@ struct GiftCurationView: View {
         return "Delete this gift?"
     }
 
+    private func contentTypeLabel(_ contentType: RewardContentType) -> String {
+        switch contentType {
+        case .video: return "Video gift"
+        case .audio: return "Voice gift"
+        case .text: return "Letter gift"
+        case .image: return "Photo gift"
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: BQDesign.Spacing.md) {
             Text("No gifts yet")
@@ -129,9 +139,16 @@ struct GiftCurationView: View {
 
     private func row(_ gift: Reward) -> some View {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
-            Text(gift.title)
-                .font(BQDesign.Typography.cardTitle)
-                .foregroundStyle(BQDesign.Colors.textPrimary)
+            HStack(spacing: BQDesign.Spacing.xs) {
+                Image(systemName: gift.contentType.icon)
+                    .font(.system(size: badgeGlyphSize))
+                    .foregroundStyle(BQDesign.Colors.primaryPurple)
+                    .accessibilityLabel(contentTypeLabel(gift.contentType))
+
+                Text(gift.title)
+                    .font(BQDesign.Typography.cardTitle)
+                    .foregroundStyle(BQDesign.Colors.textPrimary)
+            }
 
             Text("from \(gift.fromName)")
                 .font(BQDesign.Typography.captionSmall)

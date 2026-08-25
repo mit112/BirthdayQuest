@@ -113,6 +113,19 @@ final class GiftCurationViewModel: ObservableObject {
                 isError: true
             )
             BQDesign.Haptics.error()
+            return
+        }
+
+        // The Firestore doc — the source of truth and the counter — is already gone. A
+        // media gift's Storage objects are purged best-effort: a failure here must not read
+        // as a failed deletion, since there is nothing left to roll back. Orphans fall to
+        // the GCS lifecycle backstop.
+        let paths = (gift.contentUrls ?? []) + [gift.contentUrl].compactMap { $0 }
+        guard !paths.isEmpty else { return }
+        do {
+            try await service.deleteRewardMedia(eventId: eventId, storagePaths: paths)
+        } catch {
+            logger.error("Purging gift media failed: \(error.localizedDescription)")
         }
     }
 

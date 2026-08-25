@@ -461,6 +461,64 @@ struct GiftCurationTests {
         #expect(mock.deletedRewardIds == ["r7"])
     }
 
+    @Test("deleting a photo gift also purges its exact Storage paths")
+    func deletePhotoGiftPurgesMedia() async {
+        let mock = MockGameBackend()
+        var photoGift = Reward(
+            fromUserId: "u1", fromName: "Jordan", title: "A message from Jordan",
+            teaser: "Teaser", pointCost: 100, contentType: .image, contentUrl: nil,
+            contentUrls: ["events/evt_1/rewards/r_photo/a.jpg", "events/evt_1/rewards/r_photo/b.jpg"],
+            contentText: nil, isUnlocked: false, unlockedAt: nil, sortOrder: 1,
+            badgeIllustration: "photo.fill", createdAt: Date(timeIntervalSince1970: 0)
+        )
+        photoGift.id = "r_photo"
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+
+        await vm.delete(photoGift)
+
+        #expect(mock.deletedRewardIds == ["r_photo"])
+        #expect(mock.called("deleteRewardMedia"))
+        #expect(mock.deletedRewardMediaPaths.first == [
+            "events/evt_1/rewards/r_photo/a.jpg", "events/evt_1/rewards/r_photo/b.jpg",
+        ])
+    }
+
+    @Test("deleting a letter gift never touches Storage")
+    func deleteLetterGiftSkipsMedia() async {
+        let mock = MockGameBackend()
+        let letterGift = Reward.fixture(id: "r_letter", contentType: .text)
+
+        await vm(mock).delete(letterGift)
+
+        #expect(mock.deletedRewardIds == ["r_letter"])
+        #expect(!mock.called("deleteRewardMedia"))
+    }
+
+    @Test("a Storage purge failure does not fail the gift deletion")
+    func mediaPurgeFailureDoesNotFailDelete() async {
+        let mock = MockGameBackend()
+        mock.deleteRewardMediaError = MockGameBackend.StubbedError()
+        var photoGift = Reward(
+            fromUserId: "u1", fromName: "Jordan", title: "A message from Jordan",
+            teaser: "Teaser", pointCost: 100, contentType: .image, contentUrl: nil,
+            contentUrls: ["events/evt_1/rewards/r_photo/a.jpg"],
+            contentText: nil, isUnlocked: false, unlockedAt: nil, sortOrder: 1,
+            badgeIllustration: "photo.fill", createdAt: Date(timeIntervalSince1970: 0)
+        )
+        photoGift.id = "r_photo"
+        let vm = GiftCurationViewModel(eventId: "evt_1", service: mock)
+
+        await vm.delete(photoGift)
+
+        #expect(mock.deletedRewardIds == ["r_photo"], "the doc delete must still happen")
+        #expect(mock.called("deleteRewardMedia"), "the purge was attempted")
+        #expect(vm.actionResult?.isError != true, "a Storage failure must not read as a failed deletion")
+    }
+
+    private func vm(_ mock: MockGameBackend) -> GiftCurationViewModel {
+        GiftCurationViewModel(eventId: "evt_1", service: mock)
+    }
+
     @Test("an occasion with no gifts reads as empty, a refused read as failed")
     func statesAreDistinct() async {
         let empty = MockGameBackend()
