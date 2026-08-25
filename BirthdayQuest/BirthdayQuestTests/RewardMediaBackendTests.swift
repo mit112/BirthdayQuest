@@ -32,4 +32,17 @@ struct RewardMediaBackendTests {
 
         #expect(mock.deletedRewardMediaPaths == [paths])
     }
+
+    @Test("uploadProofData records the call and returns a deterministic path, never a URL")
+    func uploadProofDataReturnsPath() async throws {
+        let mock = MockGameBackend()
+
+        let path = try await mock.uploadProofData(
+            eventId: "evt_1", challengeId: "c1", data: Data([0xFF]), contentType: "image/jpeg"
+        )
+
+        #expect(path == "events/evt_1/proofs/c1/mock.jpg")
+        #expect(mock.uploadedContentTypes == ["image/jpeg"])
+        #expect(mock.requestedEventIds == ["evt_1"])
+    }
 }

@@ -356,6 +356,56 @@ struct MediaStoreTests {
         #expect(transfer.deletedPaths.isEmpty)
     }
 
+    // MARK: - localURL(forPath:eventId:) — proof photos
+
+    @Test("localURL downloads on cache miss and returns a local file url")
+    func localURLDownloadsOnCacheMiss() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let url = try await store.localURL(forPath: "events/e1/proofs/c1/photo.jpg", eventId: "e1")
+
+        #expect(transfer.downloadedPaths == ["events/e1/proofs/c1/photo.jpg"])
+        #expect(url.isFileURL)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test("localURL skips download for a file already on disk")
+    func localURLSkipsDownloadOnCacheHit() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let expectedLocalFile = baseDirectory.appendingPathComponent("SharedMedia/e1/photo.jpg")
+        try FileManager.default.createDirectory(
+            at: expectedLocalFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("preexisting".utf8).write(to: expectedLocalFile)
+
+        _ = try await store.localURL(forPath: "events/e1/proofs/c1/photo.jpg", eventId: "e1")
+
+        #expect(transfer.downloadedPaths.isEmpty)
+    }
+
+    @Test("localURL translates a Storage objectNotFound download error to objectMissing")
+    func localURLTranslatesObjectNotFound() async throws {
+        let transfer = FakeMediaTransfer()
+        transfer.downloadErrorToThrow = NSError(
+            domain: StorageErrorDomain,
+            code: StorageErrorCode.objectNotFound.rawValue
+        )
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        do {
+            _ = try await store.localURL(forPath: "events/e1/proofs/c1/photo.jpg", eventId: "e1")
+            Issue.record("Expected MediaStoreError.objectMissing to be thrown")
+        } catch MediaStore.MediaStoreError.objectMissing {
+            // Expected.
+        }
+    }
+
     @Test("expired image with only some files archived: does not purge (every path must be on disk)")
     func purgeExpiredArchivedRequiresEveryPathArchived() async throws {
         // Pins `allSatisfy`, not `contains(where:)`: a partially-archived gallery must not be purged,

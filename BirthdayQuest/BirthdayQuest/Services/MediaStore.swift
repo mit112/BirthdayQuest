@@ -44,13 +44,21 @@ protocol MediaStoring: Sendable {
     func purgeExpiredArchived(rewards: [Reward], eventId: String, occasionDate: Date, now: Date) async -> Int
 }
 
+// MARK: - ProofMediaLoading
+
+protocol ProofMediaLoading: Sendable {
+    /// Local file URL for a single Storage object path (e.g. a challenge proof photo),
+    /// downloading+persisting on first access. No fetch-recording or purge — proofs are not rewards.
+    func localURL(forPath path: String, eventId: String) async throws -> URL
+}
+
 // MARK: - MediaStore
 
 /// Downloads a reward's media through an authenticated Storage reference and persists it to
 /// Documents, so playback never depends on a live network connection. `contentUrl`/`contentUrls`
 /// are Storage object paths, never download URLs (D1 / Ruling P2) — this type resolves them
 /// through `MediaTransferring`, it never constructs a remote URL from them.
-actor MediaStore: MediaStoring {
+actor MediaStore: MediaStoring, ProofMediaLoading {
 
     private let transfer: MediaTransferring
     private let service: GameBackend
@@ -159,7 +167,34 @@ actor MediaStore: MediaStoring {
         return purgedCount
     }
 
+    /// Resolves a single Storage object path (e.g. a challenge proof photo) to a local file URL,
+    /// downloading+persisting on first access. Unlike `localURLs(for:eventId:)`, this has no
+    /// reward to key its cache dir by, no `fetchedBy` to record, and no purge — proofs are not
+    /// rewards.
+    func localURL(forPath path: String, eventId: String) async throws -> URL {
+        let localFile = sharedFileURL(eventId: eventId, path: path)
+        try FileManager.default.createDirectory(
+            at: localFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if !FileManager.default.fileExists(atPath: localFile.path) {
+            do {
+                try await transfer.download(path: path, to: localFile)
+            } catch let error as NSError where error.code == StorageErrorCode.objectNotFound.rawValue {
+                throw MediaStoreError.objectMissing
+            }
+        }
+        return localFile
+    }
+
     // MARK: - Private
+
+    private func sharedFileURL(eventId: String, path: String) -> URL {
+        baseDirectory
+            .appendingPathComponent("SharedMedia", isDirectory: true)
+            .appendingPathComponent(eventId, isDirectory: true)
+            .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
+    }
 
     private func storagePaths(for reward: Reward) -> [String] {
         switch reward.contentType {

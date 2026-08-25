@@ -850,8 +850,7 @@ final class FirestoreService: GameBackend {
         metadata.contentType = contentType
 
         _ = try await ref.putDataAsync(data, metadata: metadata)
-        let url = try await ref.downloadURL()
-        return url.absoluteString
+        return path
     }
 
     func uploadRewardMedia(

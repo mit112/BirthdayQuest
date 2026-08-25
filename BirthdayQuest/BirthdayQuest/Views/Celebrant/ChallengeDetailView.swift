@@ -480,31 +480,8 @@ private extension ChallengeDetailView {
                     .frame(height: 240)
                     .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
                     .bqShadow(BQDesign.Shadows.card)
-            } else if let urlString = challenge.proofUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 240)
-                            .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
-                            .bqShadow(BQDesign.Shadows.card)
-                    case .failure:
-                        proofPlaceholder(icon: "photo", text: "Couldn't load photo")
-                    case .empty:
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 240)
-                            .background(
-                                RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                                    .fill(BQDesign.Colors.cardBackground)
-                            )
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
+            } else if let proofPath = challenge.proofUrl, !proofPath.isEmpty {
+                ProofImageView(path: proofPath, eventId: event.eventId)
             } else {
                 proofPlaceholder(icon: "camera.fill", text: "Photo submitted")
             }

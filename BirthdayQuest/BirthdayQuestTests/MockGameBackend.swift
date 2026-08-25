@@ -49,7 +49,6 @@ final class MockGameBackend: GameBackend {
     var stubbedParticipant: Participant?
     var stubbedChallenge: Challenge?
     var stubbedReward: Reward?
-    var stubbedUploadUrl = "https://example.com/upload.jpg"
     var stubbedSecretChallengeId = "secret-1"
     var stubbedCreatedEventId = "evt_mock"
 
@@ -424,7 +423,7 @@ final class MockGameBackend: GameBackend {
         record("uploadProofData", eventId: eventId)
         uploadedContentTypes.append(contentType)
         try throwIfNeeded()
-        return stubbedUploadUrl
+        return "events/\(eventId)/proofs/\(challengeId)/mock.jpg"
     }
 
     /// Pinned by `ChallengeSubmissionTests.sendsAnImageContentType`: `putData` with no

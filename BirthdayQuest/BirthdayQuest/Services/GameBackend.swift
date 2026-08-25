@@ -207,6 +207,12 @@ protocol GameBackend: AnyObject {
     /// `contentType` is required, not optional. The Storage rules demand a usable content
     /// type, and `putData` does not infer one from the path — omitting it was the audit's
     /// suspected cause of every proof upload failing with 403.
+    ///
+    /// Returns the Storage OBJECT PATH (e.g. "events/{eventId}/proofs/{challengeId}/{uuid}.jpg")
+    /// — NOT a download URL. Storing the path (not a tokened `?alt=media&token=` download URL) is
+    /// deliberate: download URLs bypass Storage rules, so persisting one would reopen the leak
+    /// this closes. The celebrant's device resolves the path through an authenticated reference
+    /// later (see `ProofMediaLoading`).
     func uploadProofData(
         eventId: String,
         challengeId: String,
