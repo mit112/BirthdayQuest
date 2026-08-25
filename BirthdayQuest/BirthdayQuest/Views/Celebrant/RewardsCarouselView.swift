@@ -63,7 +63,7 @@ struct RewardsCarouselView: View {
         }
         .sheet(isPresented: $viewModel.showUnlockedContent) {
             if let reward = viewModel.justUnlockedReward {
-                RewardContentSheet(reward: reward) {
+                RewardContentSheet(reward: reward, eventId: event.eventId) {
                     viewModel.dismissContent()
                 }
             }

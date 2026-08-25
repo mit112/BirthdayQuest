@@ -84,7 +84,7 @@ struct TimelineView: View {
         }
         .sheet(item: $selectedReward) { reward in
             if reward.isUnlocked {
-                RewardContentSheet(reward: reward, onDismiss: { selectedReward = nil })
+                RewardContentSheet(reward: reward, eventId: event.eventId, onDismiss: { selectedReward = nil })
                     .environmentObject(event)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.hidden)

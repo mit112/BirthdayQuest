@@ -18,66 +18,50 @@ import ConfettiSwiftUI
 /// `contentUrl` field, and an empty-string `contentText` rendering as a real but blank
 /// letter — and none of them was reachable by a test while the decision lived in `body`.
 nonisolated enum RewardContentPresentation: Equatable {
+    /// Media is still resolving through `MediaStore` (download, or a cache-hit disk read).
+    case loading
     case text(String)
     case video(URL)
     case audio(URL)
-    /// One *or more* images from `contentUrls`. A single-element array belongs here:
-    /// `contentUrls` and `contentUrl` are different fields and an image reward only ever
-    /// populates the former, so sending a lone image to `singleImage` sends it to a nil field.
+    /// One *or more* images. Always used for image rewards, even a single one: a lone image
+    /// resolving to `singleImage` instead was the shipped defect this type replaced — do not
+    /// resurrect that branch.
     case gallery([URL])
-    /// An image reward carrying `contentUrl` instead of `contentUrls`.
+    /// Kept only because the view still switches on it; the resolver below never produces it.
     case singleImage(URL)
     /// Nothing presentable. Permanent — there is nothing to wait for.
     case unavailable
 
-    init(reward: Reward) {
+    /// Resolves a reward's content asynchronously. Text is judged locally and synchronously;
+    /// media (image/video/audio) is resolved through `MediaStore`, which downloads the Storage
+    /// object(s) referenced by the reward's (schemeless) stored path(s) into local `file://`
+    /// URLs. Media URLs come only from `MediaStore` — never built from the stored path directly
+    /// (D1 / Ruling P2).
+    static func resolve(
+        reward: Reward,
+        eventId: String,
+        mediaStore: MediaStoring
+    ) async -> RewardContentPresentation {
         switch reward.contentType {
         case .text:
             // Empty and whitespace-only mean the same thing as missing. Rendering either as
             // a letter shows the celebrant a blank gift attributed to a real person.
             let message = (reward.contentText ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            self = message.isEmpty ? .unavailable : .text(message)
+            return message.isEmpty ? .unavailable : .text(message)
 
         case .video:
-            if let url = Self.loadableURL(reward.contentUrl) {
-                self = .video(url)
-            } else {
-                self = .unavailable
-            }
+            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
+            return urls.first.map(RewardContentPresentation.video) ?? .unavailable
 
         case .audio:
-            if let url = Self.loadableURL(reward.contentUrl) {
-                self = .audio(url)
-            } else {
-                self = .unavailable
-            }
+            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
+            return urls.first.map(RewardContentPresentation.audio) ?? .unavailable
 
         case .image:
-            // One guard owns emptiness, and it owns it *after* parsing. Guarding the raw
-            // strings instead would let an array of unloadable entries through as an empty
-            // gallery, which renders as a blank pager captioned "1 of 0".
-            let gallery = (reward.contentUrls ?? []).compactMap { Self.loadableURL($0) }
-            if !gallery.isEmpty {
-                self = .gallery(gallery)
-            } else if let url = Self.loadableURL(reward.contentUrl) {
-                self = .singleImage(url)
-            } else {
-                self = .unavailable
-            }
+            let urls = (try? await mediaStore.localURLs(for: reward, eventId: eventId)) ?? []
+            return urls.isEmpty ? .unavailable : .gallery(urls)
         }
-    }
-
-    /// A stored string is loadable only if it parses *and* carries a scheme. `URL(string:)`
-    /// percent-encodes junk rather than rejecting it, so a bare Storage path such as
-    /// `rewards/r1/clip.mp4` yields a non-nil relative URL that no player can ever fetch.
-    private static func loadableURL(_ string: String?) -> URL? {
-        guard let string else { return nil }
-        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let url = URL(string: trimmed), url.scheme != nil else {
-            return nil
-        }
-        return url
     }
 }
 
@@ -86,10 +70,13 @@ nonisolated enum RewardContentPresentation: Equatable {
 struct RewardContentSheet: View {
     
     let reward: Reward
+    let eventId: String
     let onDismiss: () -> Void
-    
+    var mediaStore: MediaStoring = MediaStore()
+
     @State private var confettiCounter = 0
     @State private var appeared = false
+    @State private var presentation: RewardContentPresentation = .loading
     @ScaledMetric private var confettiEmojiSize: CGFloat = 50
     @ScaledMetric private var unavailableHeartIconSize: CGFloat = 40
 
@@ -122,6 +109,10 @@ struct RewardContentSheet: View {
                     // Content based on type
                     Group {
                         switch presentation {
+                        case .loading:
+                            ProgressView()
+                                .tint(BQDesign.Colors.primaryPurple)
+                                .frame(height: 200)
                         case .text(let message):
                             TextRewardView(text: message, fromName: reward.fromName)
                         case .video(let url):
@@ -176,8 +167,19 @@ struct RewardContentSheet: View {
             withAnimation(BQDesign.Animation.bouncy.delay(0.1)) {
                 appeared = true
             }
+        }
+        .task {
+            presentation = await RewardContentPresentation.resolve(
+                reward: reward,
+                eventId: eventId,
+                mediaStore: mediaStore
+            )
 
-            if presentation == .unavailable {
+            switch presentation {
+            case .loading:
+                // Never produced by `resolve`; nothing to celebrate or log.
+                break
+            case .unavailable:
                 // No confetti and no success haptic for a gift with nothing in it. Both fired
                 // unconditionally, so the single worst moment in the product — the celebrant
                 // opens a gift a friend recorded for them and finds it empty — was dressed up
@@ -188,19 +190,11 @@ struct RewardContentSheet: View {
                 // worth a trail. Nothing else would ever surface it.
                 let rewardId = reward.id ?? "<no id>"
                 logger.warning("Reward \(rewardId, privacy: .public) (\(reward.contentType.rawValue, privacy: .public)) has no content to show")
-            } else {
+            default:
                 confettiCounter += 1
                 BQDesign.Haptics.success()
             }
         }
-    }
-    
-    // MARK: - Helpers
-    
-    /// The single owner of the "what do we actually show?" decision, extracted from `body`
-    /// so it can be unit-tested. See RewardContentPresentationTests.
-    private var presentation: RewardContentPresentation {
-        RewardContentPresentation(reward: reward)
     }
 }
 

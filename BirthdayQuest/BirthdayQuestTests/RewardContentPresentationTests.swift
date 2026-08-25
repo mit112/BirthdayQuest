@@ -30,9 +30,27 @@ private func reward(
     )
 }
 
-private let imageA = URL(string: "https://example.com/a.jpg")!
-private let imageB = URL(string: "https://example.com/b.jpg")!
-private let clip = URL(string: "https://example.com/clip.mp4")!
+private let localA = URL(fileURLWithPath: "/tmp/a.jpg")
+private let localB = URL(fileURLWithPath: "/tmp/b.jpg")
+private let localClip = URL(fileURLWithPath: "/tmp/clip.mp4")
+
+// MARK: - MockMediaStoring
+
+/// Returns a fixed array of local URLs, or throws, regardless of the reward passed in — the
+/// presenter's job is to react to what `MediaStore` hands back, not to inspect the reward itself.
+private final class MockMediaStoring: MediaStoring, @unchecked Sendable {
+    var urlsToReturn: [URL] = []
+    var errorToThrow: Error?
+
+    func localURLs(for reward: Reward, eventId: String) async throws -> [URL] {
+        if let errorToThrow { throw errorToThrow }
+        return urlsToReturn
+    }
+
+    func purge(reward: Reward, eventId: String) async throws {}
+}
+
+private struct StubbedError: Error {}
 
 // MARK: - Tests
 
@@ -41,156 +59,156 @@ struct RewardContentPresentationTests {
 
     // MARK: Images
 
-    @Test("a one-element contentUrls array resolves to the gallery, not the single-URL branch")
-    func oneImageResolvesToGallery() {
-        // The regression guard for the shipped defect: the branch tested `urls.count > 1`, so a
-        // valid one-image gift fell through to `contentUrl` — a *different* field, nil for every
-        // image reward — and the celebrant saw the "Content loading soon" placeholder forever.
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image, contentUrls: [imageA.absoluteString])
+    @Test("image, mock returns 2 file urls resolves to a gallery, order preserved")
+    func twoImagesResolveToGallery() async {
+        let store = MockMediaStoring()
+        store.urlsToReturn = [localA, localB]
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .image, contentUrls: ["events/e1/a.jpg", "events/e1/b.jpg"]),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .gallery([imageA]))
+        #expect(presentation == .gallery([localA, localB]))
     }
 
-    @Test("a multi-element contentUrls array resolves to the gallery")
-    func manyImagesResolveToGallery() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image,
-                           contentUrls: [imageA.absoluteString, imageB.absoluteString])
+    @Test("image, mock returns 1 url resolves to a gallery of one, not singleImage")
+    func oneImageResolvesToGalleryNotSingleImage() async {
+        // The regression guard for the shipped defect: a valid one-image gift must never route
+        // through `singleImage`, which reads a different (nil) field.
+        let store = MockMediaStoring()
+        store.urlsToReturn = [localA]
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .image, contentUrls: ["events/e1/a.jpg"]),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .gallery([imageA, imageB]))
+        #expect(presentation == .gallery([localA]))
     }
 
-    @Test("an image reward carrying only contentUrl still resolves to the single-image branch")
-    func imageWithOnlyContentUrlResolvesToSingleImage() {
-        // Behaviour preservation: dropping this branch would break any image reward authored
-        // against contentUrl rather than contentUrls.
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image, contentUrl: imageA.absoluteString)
-        )
-        #expect(presentation == .singleImage(imageA))
-    }
-
-    @Test("an empty contentUrls array falls back to contentUrl")
-    func emptyGalleryFallsBackToContentUrl() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image, contentUrl: imageA.absoluteString, contentUrls: [])
-        )
-        #expect(presentation == .singleImage(imageA))
-    }
-
-    @Test("an image reward with nothing in either field is unavailable")
-    func imageWithNoUrlsIsUnavailable() {
-        #expect(RewardContentPresentation(reward: reward(contentType: .image)) == .unavailable)
-    }
-
-    @Test("a contentUrls array of unloadable entries is unavailable, not an empty gallery")
-    func unloadableGalleryIsUnavailable() {
-        // Emptiness must be judged *after* parsing. Guarding the raw strings lets this through
-        // as `.gallery([])`, which renders a blank pager captioned "1 of 0".
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image, contentUrls: ["rewards/r1/a.jpg", ""])
+    @Test("image, mock throws resolves to unavailable")
+    func imageMediaStoreThrowIsUnavailable() async {
+        let store = MockMediaStoring()
+        store.errorToThrow = StubbedError()
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .image, contentUrls: ["events/e1/a.jpg"]),
+            eventId: "e1",
+            mediaStore: store
         )
         #expect(presentation == .unavailable)
     }
 
-    @Test("unloadable entries are dropped from an otherwise valid gallery")
-    func unloadableEntriesAreDroppedFromGallery() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .image,
-                           contentUrls: ["rewards/r1/a.jpg", imageB.absoluteString])
+    @Test("image, mock returns an empty array resolves to unavailable")
+    func imageEmptyUrlsIsUnavailable() async {
+        let store = MockMediaStoring()
+        store.urlsToReturn = []
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .image, contentUrls: ["events/e1/a.jpg"]),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .gallery([imageB]))
+        #expect(presentation == .unavailable)
     }
 
-    // MARK: Text
+    // MARK: Text — resolved synchronously, no MediaStore involvement
 
     @Test("a text reward with a message resolves to text")
-    func textWithMessageResolvesToText() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .text, contentText: "Happy birthday, kiddo.")
+    func textWithMessageResolvesToText() async {
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .text, contentText: "Happy birthday, kiddo."),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
         )
         #expect(presentation == .text("Happy birthday, kiddo."))
     }
 
     @Test("a text reward's message is trimmed")
-    func textMessageIsTrimmed() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .text, contentText: "\n  Happy birthday.  \n")
+    func textMessageIsTrimmed() async {
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .text, contentText: "\n  Happy birthday.  \n"),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
         )
         #expect(presentation == .text("Happy birthday."))
     }
 
     @Test("an empty-string contentText is unavailable, not a blank letter")
-    func emptyTextIsUnavailable() {
+    func emptyTextIsUnavailable() async {
         // The second shipped defect: `contentText ?? placeholder` only caught nil, so an empty
         // string rendered the full letter card — gold quotation mark, "from Sam" attribution —
         // containing nothing, presented to the celebrant as the real gift.
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .text, contentText: "")
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .text, contentText: ""),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
         )
         #expect(presentation == .unavailable)
     }
 
     @Test("a whitespace-only contentText is unavailable")
-    func whitespaceTextIsUnavailable() {
-        let presentation = RewardContentPresentation(
-            reward: reward(contentType: .text, contentText: "   \n\t ")
+    func whitespaceTextIsUnavailable() async {
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .text, contentText: "   \n\t "),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
         )
         #expect(presentation == .unavailable)
     }
 
     @Test("a nil contentText is unavailable")
-    func nilTextIsUnavailable() {
-        #expect(RewardContentPresentation(reward: reward(contentType: .text)) == .unavailable)
+    func nilTextIsUnavailable() async {
+        let presentation = await RewardContentPresentation.resolve(
+            reward: reward(contentType: .text),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
+        )
+        #expect(presentation == .unavailable)
     }
 
     // MARK: Video and audio
 
-    @Test("a video reward with a loadable contentUrl resolves to video")
-    func videoResolvesToVideo() {
-        let presentation = RewardContentPresentation(
-            reward: .fixture(contentType: .video, contentUrl: clip.absoluteString)
+    @Test("video, mock returns 1 url resolves to video")
+    func videoResolvesToVideo() async {
+        let store = MockMediaStoring()
+        store.urlsToReturn = [localClip]
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .video, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .video(clip))
+        #expect(presentation == .video(localClip))
     }
 
-    @Test("an audio reward with a loadable contentUrl resolves to audio")
-    func audioResolvesToAudio() {
-        let presentation = RewardContentPresentation(
-            reward: .fixture(contentType: .audio, contentUrl: clip.absoluteString)
+    @Test("audio, mock returns 1 url resolves to audio")
+    func audioResolvesToAudio() async {
+        let store = MockMediaStoring()
+        store.urlsToReturn = [localClip]
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .audio, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .audio(clip))
+        #expect(presentation == .audio(localClip))
     }
 
-    @Test("a video reward with an empty-string contentUrl is unavailable")
-    func emptyVideoUrlIsUnavailable() {
-        let presentation = RewardContentPresentation(
-            reward: .fixture(contentType: .video, contentUrl: "")
-        )
-        #expect(presentation == .unavailable)
-    }
-
-    @Test("an audio reward with a nil contentUrl is unavailable")
-    func nilAudioUrlIsUnavailable() {
-        #expect(RewardContentPresentation(reward: .fixture(contentType: .audio)) == .unavailable)
-    }
-
-    @Test("a schemeless storage path is unavailable rather than a URL no player can fetch")
-    func schemelessPathIsUnavailable() {
-        // URL(string:) percent-encodes junk instead of rejecting it, so `rewards/r1/clip.mp4`
-        // parses into a non-nil *relative* URL. Handing that to AVPlayer buffers forever.
-        let presentation = RewardContentPresentation(
-            reward: .fixture(contentType: .video, contentUrl: "rewards/r1/clip.mp4")
+    @Test("video, mock returns an empty array resolves to unavailable")
+    func videoEmptyUrlsIsUnavailable() async {
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .video, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: MockMediaStoring()
         )
         #expect(presentation == .unavailable)
     }
 
-    @Test("a whitespace-padded contentUrl still resolves")
-    func paddedUrlResolves() {
-        let presentation = RewardContentPresentation(
-            reward: .fixture(contentType: .video, contentUrl: "  \(clip.absoluteString)\n")
+    @Test("audio, mock throws resolves to unavailable")
+    func audioMediaStoreThrowIsUnavailable() async {
+        let store = MockMediaStoring()
+        store.errorToThrow = StubbedError()
+        let presentation = await RewardContentPresentation.resolve(
+            reward: .fixture(contentType: .audio, contentUrl: "events/e1/clip.mp4"),
+            eventId: "e1",
+            mediaStore: store
         )
-        #expect(presentation == .video(clip))
+        #expect(presentation == .unavailable)
     }
 }
