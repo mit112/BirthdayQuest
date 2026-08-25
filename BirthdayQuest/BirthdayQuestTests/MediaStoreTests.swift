@@ -329,4 +329,53 @@ struct MediaStoreTests {
 
         #expect(transfer.deletedPaths.count == 2)
     }
+
+    @Test("expired with fetchedBy set but the local file absent: does not purge (never trusts fetchedBy)")
+    func purgeExpiredArchivedNeverTrustsFetchedBy() async throws {
+        // The ML2 catastrophe: the flag says a device once archived this, but the file is not on
+        // disk now. Trusting the flag would delete the last surviving copy. The uid is aligned with
+        // the auth mock so this fails against BOTH plausible regressions — `!fetchedBy.isEmpty` and
+        // `fetchedBy.contains(currentUid)`.
+        let transfer = FakeMediaTransfer()
+        let auth = MockAuthProviding()
+        auth.currentUid = "celebrant-uid"
+        let (store, baseDirectory) = makeStore(transfer: transfer, auth: auth)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(
+            contentType: .video,
+            contentUrl: "events/e1/rewards/r1/v.mp4",
+            fetchedBy: ["celebrant-uid"]
+        )
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 0)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("expired image with only some files archived: does not purge (every path must be on disk)")
+    func purgeExpiredArchivedRequiresEveryPathArchived() async throws {
+        // Pins `allSatisfy`, not `contains(where:)`: a partially-archived gallery must not be purged,
+        // or the un-archived images become the last-copy loss ML2 guards against.
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let reward = makeReward(
+            contentType: .image,
+            contentUrls: ["events/e1/rewards/r1/a.jpg", "events/e1/rewards/r1/b.jpg"]
+        )
+        // Only one of the two images is on disk.
+        try archive(reward: reward, at: baseDirectory, eventId: "e1", paths: ["events/e1/rewards/r1/a.jpg"])
+        let now = MediaLifecycle.expiry(occasionDate: occasionDate)
+
+        let count = await store.purgeExpiredArchived(
+            rewards: [reward], eventId: "e1", occasionDate: occasionDate, now: now
+        )
+
+        #expect(count == 0)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
 }
