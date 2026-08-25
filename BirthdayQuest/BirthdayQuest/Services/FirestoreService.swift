@@ -854,6 +854,52 @@ final class FirestoreService: GameBackend {
         return url.absoluteString
     }
 
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String {
+        _ = try eventRef(eventId)
+        let fileName = "\(UUID().uuidString).\(fileExtension(forContentType: contentType))"
+        let path = StoragePaths.rewardMedia(
+            eventId: eventId, rewardId: rewardId, fileName: fileName
+        )
+        let ref = Storage.storage().reference().child(path)
+
+        // Required. putData does not infer a content type from the path, so without this
+        // the object uploads as application/octet-stream and the Storage rule rejects it.
+        let metadata = StorageMetadata()
+        metadata.contentType = contentType
+
+        _ = try await ref.putDataAsync(data, metadata: metadata)
+        return path
+    }
+
+    func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws {
+        _ = try eventRef(eventId)
+        for path in storagePaths {
+            do {
+                try await Storage.storage().reference().child(path).delete()
+            } catch let error as NSError where error.code == StorageErrorCode.objectNotFound.rawValue {
+                logger.info("Reward media already absent, treating delete as success")
+            }
+        }
+    }
+
+    private func fileExtension(forContentType contentType: String) -> String {
+        switch contentType {
+        case "image/jpeg": return "jpg"
+        case "image/png": return "png"
+        case "image/heic": return "heic"
+        case "video/mp4": return "mp4"
+        case "video/quicktime": return "mov"
+        case "audio/mpeg": return "mp3"
+        case "audio/mp4", "audio/x-m4a": return "m4a"
+        default: return "bin"
+        }
+    }
+
     // MARK: - Admin Operations
 
     /// Admin force-unlock: bypasses balance check. Optionally deducts points.

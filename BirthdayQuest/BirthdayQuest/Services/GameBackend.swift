@@ -214,6 +214,23 @@ protocol GameBackend: AnyObject {
         contentType: String
     ) async throws -> String
 
+    /// Uploads reward gift media and returns the Storage OBJECT PATH
+    /// (e.g. "events/{eventId}/rewards/{rewardId}/{uuid}.jpg") — NOT a download URL.
+    /// Storing the path (not a tokened `?alt=media&token=` download URL) is deliberate: download
+    /// URLs bypass Storage rules, so persisting one reopens the very leak this subsystem closes.
+    /// The celebrant's device resolves the path through an authenticated reference later.
+    /// `contentType` is required and must be sent as StorageMetadata (see uploadProofData).
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String
+
+    /// Deletes the Storage objects at the given full object paths. Idempotent: an already-absent
+    /// object counts as success (a re-issued or partial curation delete must not throw).
+    func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws
+
     // MARK: Admin
 
     func adminForceUnlockReward(

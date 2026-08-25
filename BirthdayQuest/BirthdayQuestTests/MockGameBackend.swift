@@ -432,6 +432,31 @@ final class MockGameBackend: GameBackend {
     /// that 403 was the audit's headline bug.
     private(set) var uploadedContentTypes: [String] = []
 
+    /// Every `(rewardId, contentType)` a reward-media upload was attempted for, recorded
+    /// before `throwIfNeeded()`, so a stubbed failure still proves the attempt happened.
+    private(set) var uploadedRewardMedia: [(rewardId: String, contentType: String)] = []
+    /// Every `storagePaths` array a delete was attempted for, recorded before
+    /// `throwIfNeeded()`, so a stubbed failure still proves the attempt happened.
+    private(set) var deletedRewardMediaPaths: [[String]] = []
+
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        data: Data,
+        contentType: String
+    ) async throws -> String {
+        record("uploadRewardMedia", eventId: eventId)
+        uploadedRewardMedia.append((rewardId: rewardId, contentType: contentType))
+        try throwIfNeeded()
+        return "events/\(eventId)/rewards/\(rewardId)/mock.jpg"
+    }
+
+    func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws {
+        record("deleteRewardMedia", eventId: eventId)
+        deletedRewardMediaPaths.append(storagePaths)
+        try throwIfNeeded()
+    }
+
     // MARK: - GameBackend: Admin
 
     func adminForceUnlockReward(
