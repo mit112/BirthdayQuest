@@ -176,10 +176,18 @@ Two tiers, and both must stay green:
 - Security rules live in `firestore.rules` / `storage.rules`, deployed via `firebase deploy --only firestore:rules,storage`.
 
 ## Known Gaps (do not "discover" these as new)
-- The atomic transaction logic (`unlockRewardAtomically`, `completeChallengeAtomically`,
-  `adminForceUnlockReward`) is still NOT covered by tests. It was ported to the event-scoped paths
-  with no logic change. Proving the balance re-check and idempotency guards needs a Swift↔emulator
-  integration harness that does not exist.
+- ~~The atomic transaction logic (`unlockRewardAtomically`, `completeChallengeAtomically`,
+  `adminForceUnlockReward`) is NOT covered by tests.~~ **Closed (2026-08-25).** An emulator-backed
+  harness now proves it: `FirestoreService` gained an injectable `init(db:)`, and
+  `BirthdayQuestTests/TransactionIntegrationTests` seeds docs via a secondary emulator-pointed
+  `FirebaseApp` and runs the *real* methods against the Firestore emulator — a short balance is
+  refused and writes nothing (the balance re-check), a double-submit awards once (the idempotency
+  guard). The suite is gated on `EmulatorProbe.isReachable` (a socket probe to :8080), so the
+  normal `-only-testing:BirthdayQuestTests` pass **skips** it (verified: the four cases report
+  `skipped`); a dedicated CI job runs it wrapped in `firebase emulators:exec` against the **open**
+  rules in `integration-tests/` (authorization is out of scope here — the 183-test rules suite owns
+  it). Both guards were proven **non-vacuous**: with each guard defeated, its test fails. See
+  `integration-tests/README.md` and `docs/superpowers/specs/2026-08-25-transaction-harness-feasibility.md`.
 - **Any member can rewrite `state/main` (point balances) and flip `rewards.isUnlocked`.** The rules
   gate those on membership only. This is the pre-existing no-Functions trust model, not a
   regression — but it is now a stranger-facing assumption rather than a family one. The same gap
@@ -344,11 +352,16 @@ Also landed on `main` this session (all FF, green, reviewed):
   challenges (`ChallengeTemplates`). The starter COPY matches the app tone and is fully editable —
   review/replace to taste.
 
+**Landed this session (attended) — the last remaining engineering item:**
+- **Transaction test harness — DONE + committed** (branch `feat/transaction-test-harness`, then
+  FF-merged to `main`). Proves the balance re-check and idempotency guards against the Firestore
+  emulator; non-vacuous; gated so the unit pass skips it; new CI `integration-tests` job. The
+  `FirebaseApp.configure()` × test-host concern turned out benign: the host app just needs *a*
+  plist (the real one locally, `GoogleService-Info.plist.example` on CI), and the harness uses a
+  **secondary** emulator-pointed `FirebaseApp`, leaving the default app alone. See the Known Gaps
+  entry above and `integration-tests/README.md`.
+
 **Genuinely NOT done — each needs a human decision or a capability I lack (not avoidance):**
-- **Transaction test harness** (unlock/complete idempotency): feasibility ASSESSED with evidence —
-  emulator/CLI/orchestration all exist, but it needs resolving the app's unconditional
-  `FirebaseApp.configure()` × full-app test-host launch and standing up a new integration-test / CI
-  category; best done attended. Recipe: `2026-08-25-transaction-harness-feasibility.md`.
 - **EULA / terms** copy (legal); **occasion-template copy** sign-off (product tone); and the standing
   manual prerequisites — app rename + real bundle ID + signing team, Apple Developer account + store
   listing, Sign in with Apple capability, enabling the Anonymous+Apple providers, `tools/export_media.sh`

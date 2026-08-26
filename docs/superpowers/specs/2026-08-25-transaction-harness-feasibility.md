@@ -1,6 +1,18 @@
-# Transaction Test Harness — Feasibility Finding (DEFERRED, with recipe)
+# Transaction Test Harness — Feasibility Finding (DONE)
 
-**Date:** 2026-08-25  **Status:** assessed, deferred to an attended session (evidence below).
+**Date:** 2026-08-25  **Status:** IMPLEMENTED (attended, 2026-08-25). Everything below is the
+original feasibility finding, kept as the record. What actually shipped:
+`FirestoreService.init(db:)` (injectable), `BirthdayQuestTests/TransactionIntegrationTests.swift`
+(the four cases, gated on `EmulatorProbe.isReachable`), the `integration-tests/` open-rules
+emulator config, and a CI `integration-tests` job. Two deltas from the plan below: (1) the
+`FirebaseApp.configure()` blocker (point 1) was a non-issue — the host app only needs *a* plist
+and the harness uses a **secondary** emulator-pointed `FirebaseApp`, so the default app is left
+alone; (2) chosen gating = per-suite `@Suite(.enabled(if:))` (not a new target), run via
+`emulators:exec`. One gotcha worth recording: configure the emulator with an explicit
+`settings.host` + `isSSLEnabled = false` — mixing `useEmulator(withHost:)` with a later
+`settings` reassignment can reset SSL to `true`, and the SDK then attempts TLS against the
+plaintext emulator and retries the failed handshake forever (the test hangs). Both guards were
+proven non-vacuous. See `integration-tests/README.md`.
 
 ## The gap
 `FirestoreService.unlockRewardAtomically`, `completeChallengeAtomically`, and
