@@ -188,6 +188,13 @@ jobs:
       # emulators:exec boots Firestore (open rules from integration-tests/), runs the transaction
       # suite against it, and tears the emulator down. The suite is gated on EmulatorProbe, so it
       # is the ONLY place these tests actually execute — the unit-tests job above skips them.
+      #
+      # A skip HERE, though, is always a misconfiguration: the emulator is guaranteed up, so a skip
+      # means EmulatorProbe's endpoint drifted from the emulator port (both are hardcoded, in
+      # separate files), and a skipped Swift Testing suite still exits 0 — a green job proving
+      # nothing, while the very regression this harness exists to catch ships undetected. So assert
+      # the suite actually ran. The greps are scoped to the suite on purpose: a blanket `skipped`
+      # match would false-positive on xcodebuild's own "Metadata extraction skipped" noise.
       - name: Transaction integration tests (Firestore emulator)
         run: |
           set -o pipefail
@@ -199,4 +206,13 @@ jobs:
                -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
                -derivedDataPath build \
                CODE_SIGNING_ALLOWED=NO \
-               -only-testing:BirthdayQuestTests/TransactionIntegrationTests test-without-building'
+               -only-testing:BirthdayQuestTests/TransactionIntegrationTests test-without-building' \
+            2>&1 | tee integration-test-output.log
+          if grep -qE "TransactionIntegrationTests[/.][A-Za-z]+\(\).*skipped" integration-test-output.log; then
+            echo "::error::Transaction integration suite was SKIPPED — EmulatorProbe did not reach the emulator (port drift between the Swift probe and integration-tests/firebase.json?). Failing rather than passing a green no-op."
+            exit 1
+          fi
+          if ! grep -qE "TransactionIntegrationTests[/.][A-Za-z]+\(\)" integration-test-output.log; then
+            echo "::error::No transaction integration test executed (did -only-testing match the suite?)."
+            exit 1
+          fi
