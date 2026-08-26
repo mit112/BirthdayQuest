@@ -15,12 +15,17 @@ final class FirestoreService: GameBackend {
 
     static let shared = FirestoreService()
 
-    private let db = Firestore.firestore()
+    private let db: Firestore
     private var listeners: [String: ListenerRegistration] = [:]
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Firestore")
 
-    private init() {
-        // Settings configured in BirthdayQuestApp.init() before any Firestore access
+    /// `db` is injectable only so the emulator-backed transaction integration tests
+    /// (`TransactionIntegrationTests`) can hand in a `Firestore` pointed at the local
+    /// emulator. Production always goes through `shared`, which uses the default
+    /// `Firestore.firestore()`; its settings are configured in `BirthdayQuestApp.init()`
+    /// before any access.
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
     }
 
     // MARK: - Path Helpers

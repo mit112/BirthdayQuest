@@ -125,3 +125,78 @@ jobs:
 
       - run: npm test
         working-directory: firebase-tests
+
+  integration-tests:
+    name: Transaction integration tests
+    runs-on: macos-latest
+    env:
+      # Same pin as rules-tests: the emulator this fetches is what the transaction harness was
+      # verified against, and a silent emulator upgrade is not something to discover from a red
+      # build on an unrelated PR.
+      FIREBASE_TOOLS_VERSION: '15.8.0'
+    steps:
+      - uses: actions/checkout@v4
+
+      # See the build job: iOS 26.0 needs Xcode 26+, which the hosted image may not carry yet.
+      - name: Select newest available Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      # The host app's FirebaseApp.configure() runs at test-host launch; a placeholder plist
+      # keeps it from aborting. The emulator itself ignores credentials.
+      - name: Stage placeholder Firebase config
+        run: cp GoogleService-Info.plist.example BirthdayQuest/BirthdayQuest/GoogleService-Info.plist
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ hashFiles('**/Package.resolved') }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The Firestore emulator is a Java process.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ env.FIREBASE_TOOLS_VERSION }}
+
+      - run: npm install -g firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }}
+
+      # Split build from run so the emulator only wraps the fast test execution.
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BirthdayQuest/BirthdayQuest.xcodeproj \
+            -scheme BirthdayQuest \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+
+      # emulators:exec boots Firestore (open rules from integration-tests/), runs the transaction
+      # suite against it, and tears the emulator down. The suite is gated on EmulatorProbe, so it
+      # is the ONLY place these tests actually execute — the unit-tests job above skips them.
+      - name: Transaction integration tests (Firestore emulator)
+        run: |
+          set -o pipefail
+          firebase --config integration-tests/firebase.json emulators:exec \
+            --only firestore --project birthdayquest-test \
+            'xcodebuild \
+               -project BirthdayQuest/BirthdayQuest.xcodeproj \
+               -scheme BirthdayQuest \
+               -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
+               -derivedDataPath build \
+               CODE_SIGNING_ALLOWED=NO \
+               -only-testing:BirthdayQuestTests/TransactionIntegrationTests test-without-building'

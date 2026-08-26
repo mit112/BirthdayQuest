@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// OPEN rules, ON PURPOSE. This ruleset is used ONLY by the emulator-backed transaction
+// integration tests (BirthdayQuestTests/TransactionIntegrationTests). Those tests prove the
+// SERVER-SIDE TRANSACTION LOGIC inside FirestoreService — the balance re-check in
+// unlockRewardAtomically and the idempotency guard in completeChallengeAtomically — which is
+// rules-independent. Authorization is covered exhaustively by the strict production ruleset
+// (../firestore.rules) and its 183-test suite in ../firebase-tests. Running the integration
+// tests against open rules isolates the transaction control flow from authorization and avoids
+// standing up the Auth emulator + membership just to seed a document.
+//
+// This file is NEVER deployed. `firebase deploy` uses ../firebase.json → ../firestore.rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
