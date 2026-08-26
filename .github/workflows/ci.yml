@@ -106,7 +106,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       # ~170 MB of JARs, otherwise re-downloaded on every single run. They are versioned by the
       # firebase-tools release that fetches them, so the pin above is the entire cache key.
@@ -163,7 +163,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Cache Firebase emulators
         uses: actions/cache@v4
