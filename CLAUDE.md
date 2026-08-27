@@ -343,11 +343,25 @@ Also landed on `main` this session (all FF, green, reviewed):
   membership via the pre-existing `isHost` delete rule (no rule change; that rule was previously
   UNTESTED — now mutation-proven). Authored gifts are kept; the stale membership mirror is harmless
   (`fetchMyOccasions` skip-on-failure drops the occasion). See `2026-08-25-participant-removal-design.md`.
-- **Content reporting (App Store 1.2)** — any member reports a gift → a host-read `events/{id}/reports`
-  collection (NEW rules, mutation-proven) → host moderates via the existing delete. With participant
-  removal (the "eject an abusive user" half) this is the 1.2 mechanism; only the EULA text is
-  human-gated. Report flows through `RewardsViewModel` (Views-don't-touch-backend); the confirmation is
-  hosted on the sheet. See `2026-08-25-content-reporting-design.md`.
+- **Content reporting (App Store 1.2)** — any member reports a gift **or a challenge** → a host-read
+  `events/{id}/reports` collection (NEW rules, mutation-proven) → host moderates via the existing
+  delete. With participant removal (the "eject an abusive user" half) this is the 1.2 mechanism; only
+  the EULA text is human-gated. Gift reports flow through `RewardsViewModel.reportReward`, challenge
+  reports through `ChallengeSubmissionViewModel.reportChallenge`
+  (Views-don't-touch-backend); each confirmation is hosted on the sheet that presents the content, not
+  on the parent, because an alert bound to the parent cannot appear over a presented sheet. See
+  `2026-08-25-content-reporting-design.md`.
+  - **Challenge reporting (2026-08-26)** closed the asymmetry — the backend seam, the `Report` model
+    and `AdminViewModel.reportedContentTitle` were already generic, so this was a view-model method,
+    the affordance, and tests. **No rules change** (`contentType in ['reward', 'challenge']` already
+    allowed it) — but the rules suite only ever exercised `'reward'`, so a case pinning that
+    `'challenge'` is *accepted* was added: narrowing the list to `['reward']` now reddens it instead
+    of failing at runtime as permission-denied. The challenge affordance is **always rendered** (no
+    injected closure, unlike `RewardContentSheet`'s) because `ChallengeDetailView` owns its own view
+    model, so both presentation sites — the board and the timeline — already have somewhere to send.
+    The host's Reports card now names each report's **kind as text** (`reportedContentKind`), since
+    a gift is moderated from gift curation but a challenge from challenge authoring, and colour or an
+    icon alone would not survive grayscale or VoiceOver (WCAG 1.4.1).
 - **Occasion-type starter challenge templates** — an empty-board host can seed editable per-type starter
   challenges (`ChallengeTemplates`). The starter COPY matches the app tone and is fully editable —
   review/replace to taste.
