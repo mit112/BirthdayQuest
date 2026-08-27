@@ -784,11 +784,15 @@ private extension AdminControlsView {
         VStack(alignment: .leading, spacing: BQDesign.Spacing.sm) {
             adminSectionHeader("Reports", icon: "flag.fill")
 
-            // Read-only: the host acts on a flagged gift through the existing gift
-            // curation delete flow, not from here.
+            // Read-only: the host acts on flagged content through that content's existing
+            // delete flow — gift curation for a gift, challenge authoring for a challenge —
+            // not from here. Which one it is is why each row names its kind.
             VStack(spacing: BQDesign.Spacing.sm) {
                 ForEach(viewModel.reports) { report in
                     VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.reportedContentKind(report))
+                            .font(BQDesign.Typography.captionSmall)
+                            .foregroundColor(BQDesign.Colors.textSecondary)
                         Text(viewModel.reportedContentTitle(report))
                             .font(BQDesign.Typography.caption)
                             .foregroundColor(BQDesign.Colors.textPrimary)

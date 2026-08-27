@@ -1417,6 +1417,18 @@ describe('content reports (Guideline 1.2)', () => {
     }));
   });
 
+  // The Swift side now files both kinds, and 'reward' is the only one the rest of this
+  // block exercises. Without this case, narrowing the allow-list to ['reward'] would look
+  // like harmless cleanup and would break challenge reporting at runtime only, as
+  // permission-denied, with every test still green.
+  it('a member can file a report against a challenge, not just a gift', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {
+      reportedByUserId: GUEST, contentType: 'challenge', contentId: 'c1', createdAt: new Date(),
+    }));
+  });
+
   it('a non-member cannot file a report', async () => {
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
     await assertFails(setDoc(doc(db, `events/${EVENT}/reports/rep1`), {

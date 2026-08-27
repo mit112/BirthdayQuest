@@ -146,6 +146,32 @@ final class ChallengeSubmissionViewModel: ObservableObject {
         isSubmitting = false
     }
     
+    // MARK: - Report
+
+    /// Files a report against this challenge and RETURNS the user-facing confirmation to show,
+    /// mirroring `RewardsViewModel.reportReward`. It returns the message rather than publishing
+    /// one so the presenting sheet owns the alert — the same shape as the gift path, which keeps
+    /// the two report flows readable side by side.
+    ///
+    /// `contentType` is the literal the rules compare against (`contentType in ['reward',
+    /// 'challenge']`), so it is load-bearing: a typo here fails at runtime as permission-denied.
+    func reportChallenge() async -> String {
+        guard let challengeId = challenge.id else { return "Couldn't send that report. Try again." }
+
+        do {
+            try await service.reportContent(
+                eventId: eventId,
+                contentType: "challenge",
+                contentId: challengeId,
+                reason: nil
+            )
+            return "Reported — the host will review it."
+        } catch {
+            logger.error("Report error: \(error.localizedDescription)")
+            return "Couldn't send that report. Try again."
+        }
+    }
+
     // MARK: - Image Compression (#8)
     
     /// Compresses image data to ~500KB JPEG. Prevents 5MB+ raw photos from killing cellular uploads.

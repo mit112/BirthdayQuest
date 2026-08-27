@@ -587,6 +587,45 @@ struct AdminViewModelListenerTests {
 
         #expect(vm.reportedContentTitle(report) == "missing-id")
     }
+
+    @Test("a challenge report resolves its title against the loaded challenges, not the gifts")
+    func reportedContentTitleResolvesChallengeTitle() async {
+        let mock = MockGameBackend()
+        // Same id in both collections: a resolver that ignored contentType and searched
+        // rewards first would return the gift's title here and look correct everywhere else.
+        mock.rewards = [.fixture(id: "x1", fromName: "Sam")]
+        mock.challenges = [.fixture(id: "x1", title: "Sing in public")]
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+        vm.startListening()
+        await settle()
+
+        let report = Report(
+            contentType: "challenge", contentId: "x1",
+            reportedByUserId: "u1", reason: nil, createdAt: Date()
+        )
+
+        #expect(vm.reportedContentTitle(report) == "Sing in public")
+    }
+
+    @Test("each report names the kind of content it flags, so the host knows where to moderate")
+    func reportedContentKindIsHumanText() async {
+        let mock = MockGameBackend()
+        let vm = AdminViewModel(eventId: "evt_1", service: mock)
+
+        func kind(_ type: String) -> String {
+            vm.reportedContentKind(
+                Report(
+                    contentType: type, contentId: "c1",
+                    reportedByUserId: "u1", reason: nil, createdAt: Date()
+                )
+            )
+        }
+
+        #expect(kind("reward") == "Gift", "the UI never calls a reward a 'reward'")
+        #expect(kind("challenge") == "Challenge")
+        // An unrecognised type must stay legible rather than silently reading as a gift.
+        #expect(kind("sticker") == "Sticker")
+    }
 }
 
 @MainActor
@@ -765,5 +804,58 @@ struct ChallengeSubmissionTests {
         #expect(vm.showError)
         #expect(mock.completedChallengeIds.isEmpty)
         #expect(vm.isSubmitting == false)
+    }
+}
+
+@MainActor
+@Suite("ChallengeSubmissionViewModel reporting")
+struct ChallengeReportTests {
+
+    @Test("reporting a challenge calls the backend with the challenge's content and a confirmation")
+    func reportChallengeSucceeds() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c9"), service: mock
+        )
+
+        let message = await vm.reportChallenge()
+
+        #expect(mock.reportedContent.count == 1)
+        #expect(mock.reportedContent.first?.eventId == "evt_1")
+        // Load-bearing: the rules accept both 'reward' and 'challenge', so a copy-pasted
+        // 'reward' here would commit happily and mislabel the report to the host forever.
+        // Nothing else in the stack catches it.
+        #expect(mock.reportedContent.first?.contentType == "challenge")
+        #expect(mock.reportedContent.first?.contentId == "c9")
+        #expect(mock.reportedContent.first?.reason == nil, "no reason-input UI this cut")
+        #expect(message == "Reported — the host will review it.")
+    }
+
+    @Test("a failed challenge report surfaces an error confirmation instead of a thank-you")
+    func reportChallengeFailureSurfacesError() async {
+        let mock = MockGameBackend()
+        mock.errorToThrow = MockGameBackend.StubbedError()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c9"), service: mock
+        )
+
+        let message = await vm.reportChallenge()
+
+        #expect(mock.reportedContent.count == 1, "the attempt still happened")
+        #expect(message == "Couldn't send that report. Try again.")
+    }
+
+    @Test("reporting does not disturb the submission state it shares a view model with")
+    func reportLeavesSubmissionAlone() async {
+        let mock = MockGameBackend()
+        let vm = ChallengeSubmissionViewModel(
+            eventId: "evt_1", challenge: .fixture(id: "c9"), service: mock
+        )
+
+        _ = await vm.reportChallenge()
+
+        #expect(vm.showError == false, "a report is not a submission failure")
+        #expect(vm.submitSuccess == false)
+        #expect(mock.completedChallengeIds.isEmpty, "reporting must never complete the challenge")
     }
 }

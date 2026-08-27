@@ -11,6 +11,8 @@ struct ChallengeDetailView: View {
     @StateObject private var viewModel: ChallengeSubmissionViewModel
     @State private var confettiTrigger = 0
     @State private var selectedOption: Int = 0 // For 2-in-1: 0 = option A, 1 = option B
+    @State private var showReportConfirm = false
+    @State private var reportMessage: String?
 
     @ScaledMetric private var categoryIconSize: CGFloat = 40
     @ScaledMetric private var twoInOneBoltIconSize: CGFloat = 12
@@ -68,7 +70,9 @@ struct ChallengeDetailView: View {
                     if viewModel.showTimelinePrompt {
                         timelineButton
                     }
-                    
+
+                    reportButton
+
                     Spacer().frame(height: BQDesign.Spacing.xxl)
                 }
                 .padding(.horizontal, BQDesign.Spacing.lg)
@@ -563,6 +567,53 @@ private extension ChallengeDetailView {
         .bqShadow(BQDesign.Shadows.card)
     }
     
+    // MARK: Report Button
+
+    /// Low-key and subordinate to the submit/timeline actions on purpose — this is a safety
+    /// valve, not a feature to promote. It mirrors `RewardContentSheet`'s gift-report affordance.
+    ///
+    /// Unlike that one it takes no injected closure and is always rendered: this view owns its
+    /// own `ChallengeSubmissionViewModel`, so *both* presentation sites (the board and the
+    /// timeline) already have somewhere to send the report — there is no call site where it
+    /// would dangle, and a member who spots something objectionable in the timeline should be
+    /// able to flag it there too.
+    var reportButton: some View {
+        Button {
+            BQDesign.Haptics.light()
+            showReportConfirm = true
+        } label: {
+            Text("Report this challenge")
+                .font(BQDesign.Typography.caption)
+                .foregroundColor(BQDesign.Colors.textSecondary)
+                .frame(minHeight: 44)
+        }
+        .confirmationDialog(
+            "Report this challenge to the host?",
+            isPresented: $showReportConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Report", role: .destructive) {
+                Task { reportMessage = await viewModel.reportChallenge() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The host will be able to see and remove it.")
+        }
+        // Hosted here (not on the presenting board) so it can actually appear while this
+        // sheet is on screen.
+        .alert(
+            "Report",
+            isPresented: Binding(
+                get: { reportMessage != nil },
+                set: { if !$0 { reportMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(reportMessage ?? "")
+        }
+    }
+
     // MARK: Timeline Button
     var timelineButton: some View {
         Button {

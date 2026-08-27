@@ -244,6 +244,23 @@ final class AdminViewModel: ObservableObject {
         }
     }
 
+    /// The human label for what kind of content a report points at.
+    ///
+    /// Carried as **text**, not as a colour or a bare icon: the host moderates a flagged gift
+    /// from gift curation but a flagged challenge from challenge authoring, so which one it is
+    /// has to survive a glance, a grayscale screen and VoiceOver (WCAG 1.4.1). An unrecognised
+    /// type falls back to the raw value rather than guessing.
+    func reportedContentKind(_ report: Report) -> String {
+        switch report.contentType {
+        case "reward":
+            return "Gift"
+        case "challenge":
+            return "Challenge"
+        default:
+            return report.contentType.capitalized
+        }
+    }
+
     // MARK: - Remove Participant
 
     /// Removes a contributor from the occasion. Guarded to only ever act on a removable
