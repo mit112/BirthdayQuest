@@ -48,8 +48,20 @@ protocol MediaStoring: Sendable {
 
 protocol ProofMediaLoading: Sendable {
     /// Local file URL for a single Storage object path (e.g. a challenge proof photo),
-    /// downloading+persisting on first access. No fetch-recording or purge — proofs are not rewards.
+    /// downloading+persisting on first access. No fetch-recording — proofs are not rewards, so
+    /// there is no `fetchedBy` to maintain (see `ProofMediaPurging` for why).
     func localURL(forPath path: String, eventId: String) async throws -> URL
+}
+
+// MARK: - ProofMediaPurging
+
+/// Deliberately separate from `ProofMediaLoading`: loading is a *View* dependency
+/// (`ProofImageView`), purging is a *ViewModel* dependency (`ChallengesViewModel`). Keeping them
+/// apart means neither seam has to stub the other's method.
+protocol ProofMediaPurging: Sendable {
+    /// Celebrant-only. Delete the remote proof objects for every challenge whose occasion is past
+    /// media expiry. Idempotent and best-effort. Returns the number of objects actually deleted.
+    func purgeExpiredProofs(challenges: [Challenge], eventId: String, occasionDate: Date, now: Date) async -> Int
 }
 
 // MARK: - MediaStore
@@ -58,7 +70,7 @@ protocol ProofMediaLoading: Sendable {
 /// Documents, so playback never depends on a live network connection. `contentUrl`/`contentUrls`
 /// are Storage object paths, never download URLs (D1 / Ruling P2) — this type resolves them
 /// through `MediaTransferring`, it never constructs a remote URL from them.
-actor MediaStore: MediaStoring, ProofMediaLoading {
+actor MediaStore: MediaStoring, ProofMediaLoading, ProofMediaPurging {
 
     private let transfer: MediaTransferring
     private let service: GameBackend
@@ -169,8 +181,7 @@ actor MediaStore: MediaStoring, ProofMediaLoading {
 
     /// Resolves a single Storage object path (e.g. a challenge proof photo) to a local file URL,
     /// downloading+persisting on first access. Unlike `localURLs(for:eventId:)`, this has no
-    /// reward to key its cache dir by, no `fetchedBy` to record, and no purge — proofs are not
-    /// rewards.
+    /// reward to key its cache dir by and no `fetchedBy` to record — proofs are not rewards.
     func localURL(forPath path: String, eventId: String) async throws -> URL {
         let localFile = sharedFileURL(eventId: eventId, path: path)
         try FileManager.default.createDirectory(
@@ -185,6 +196,62 @@ actor MediaStore: MediaStoring, ProofMediaLoading {
             }
         }
         return localFile
+    }
+
+    /// Sweeps every challenge's proof photo off the server once the occasion is past
+    /// `MediaLifecycle` expiry. Celebrant-only: `storage.rules` grants proof *delete* to the
+    /// celebrant alone (`request.resource == null ? isCelebrant(eventId) : ...`), so no rules
+    /// change was needed to wire this — and calling it as an ordinary member simply fails every
+    /// delete, which this method swallows.
+    ///
+    /// **There is deliberately no archive-before-purge gate here, unlike `purgeExpiredArchived`.**
+    /// That gate exists for rewards because a gift is an irreplaceable keepsake and the server
+    /// copy may be the only one. A proof photo is transient evidence that a dare was done, and
+    /// everything durable about it — `isCompleted`, `completedAt`, `proofType`, `proofText`, the
+    /// points awarded and the timeline entry — lives in Firestore and is untouched by this sweep.
+    /// Copying the reward rule would also invert the intent: proofs are only downloaded when
+    /// someone opens that one challenge's detail, so the great majority are never archived on the
+    /// celebrant's device, and "purge only what this device already holds" would spare exactly the
+    /// objects the sweep exists to reclaim. Time is therefore the only gate, and
+    /// `MediaLifecycle.isExpired` is the load-bearing guard: purging early destroys evidence the
+    /// celebrant may not have seen yet.
+    ///
+    /// The second guard is a path check, and it is load-bearing for a less obvious reason.
+    /// `challenge.proofUrl` sits in the *gameplay* tier of the Firestore rules, so **any member can
+    /// write it to any string**. The celebrant is authorised to delete both proof objects and
+    /// reward media in their own event, so a contributor who wrote another contributor's gift path
+    /// into `proofUrl` would have the celebrant's own sweep destroy that gift — the Storage rules
+    /// cannot catch it, because both deletes are legitimately theirs to make. Rebuilding the
+    /// expected path with the same `StoragePaths.proof` constructor the upload uses, and demanding
+    /// exact equality, makes the sweep unable to aim anywhere but this challenge's own proof.
+    func purgeExpiredProofs(challenges: [Challenge], eventId: String, occasionDate: Date, now: Date) async -> Int {
+        guard MediaLifecycle.isExpired(occasionDate: occasionDate, now: now) else { return 0 }
+
+        var purgedCount = 0
+        for challenge in challenges {
+            guard let challengeId = challenge.id else { continue }
+            guard let path = challenge.proofUrl, !path.isEmpty else { continue }
+
+            let expectedPath = StoragePaths.proof(
+                eventId: eventId,
+                challengeId: challengeId,
+                fileName: URL(fileURLWithPath: path).lastPathComponent
+            )
+            guard path == expectedPath else {
+                logger.error("Refusing to purge proofUrl outside this challenge's own proof path")
+                continue
+            }
+
+            do {
+                try await transfer.delete(path: path)
+                purgedCount += 1
+            } catch {
+                // Best-effort: a failed delete is retried on the next sweep, and the count stays
+                // honest about what actually left the server.
+                logger.error("purgeExpiredProofs delete failed for \(path): \(error.localizedDescription)")
+            }
+        }
+        return purgedCount
     }
 
     // MARK: - Private

@@ -29,6 +29,10 @@ struct ChallengesBoardView: View {
         }
         .onAppear { viewModel.startListening() }
         .onDisappear { viewModel.stopListening() }
+        .onChange(of: viewModel.contentState) { _, newState in
+            guard newState == .ready || newState == .empty else { return }
+            viewModel.runProofMediaLifecycle(isCelebrant: event.isCelebrant, occasionDate: event.occasion?.occasionDate)
+        }
         .sheet(isPresented: $viewModel.showDetail) {
             if let challenge = viewModel.selectedChallenge {
                 ChallengeDetailView(eventId: event.eventId, challenge: challenge) {

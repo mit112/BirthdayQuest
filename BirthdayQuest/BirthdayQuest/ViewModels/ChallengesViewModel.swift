@@ -8,11 +8,17 @@ final class ChallengesViewModel: ObservableObject {
 
     private let service: GameBackend
     private let eventId: String
+    private let proofMedia: ProofMediaPurging
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Challenges")
 
-    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+    init(
+        eventId: String,
+        service: GameBackend = FirestoreService.shared,
+        proofMedia: ProofMediaPurging = MediaStore()
+    ) {
         self.eventId = eventId
         self.service = service
+        self.proofMedia = proofMedia
     }
 
     // MARK: - Published
@@ -62,8 +68,34 @@ final class ChallengesViewModel: ObservableObject {
         return regularChallenges.isEmpty ? .empty : .ready
     }
     
+    // MARK: - Media Lifecycle
+
+    private var didRunProofLifecycle = false
+
+    /// Celebrant-only sweep of expired challenge proof photos off Storage — the proof-media
+    /// counterpart of `RewardsViewModel.runMediaLifecycle`, and fired from the same place in the
+    /// same way: once per board appearance, from an `.onChange` gated on a delivered snapshot.
+    ///
+    /// The challenge board is the right trigger because it is the only celebrant-facing screen
+    /// that holds *every* challenge at once (proofs are otherwise only touched one at a time, when
+    /// a detail sheet is opened — which is precisely the proof that would *not* need purging).
+    /// `challenges`, not `regularChallenges`: a secret challenge carries a proof photo too.
+    ///
+    /// One-shot, and the flag is set before the celebrant guard so a contributor never re-enters
+    /// this on every board refresh. Safe to call repeatedly.
+    func runProofMediaLifecycle(isCelebrant: Bool, occasionDate: Date?, now: Date = Date()) {
+        guard !didRunProofLifecycle else { return }
+        didRunProofLifecycle = true
+        guard isCelebrant, let occasionDate else { return }
+        Task { [proofMedia, eventId, challenges] in
+            _ = await proofMedia.purgeExpiredProofs(
+                challenges: challenges, eventId: eventId, occasionDate: occasionDate, now: now
+            )
+        }
+    }
+
     // MARK: - Listeners
-    
+
     func startListening() {
         service.listenToChallenges(eventId: eventId) { [weak self] result in
             Task { @MainActor in
