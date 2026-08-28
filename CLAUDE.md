@@ -104,6 +104,31 @@ Three invariants now hold there, and all are easy to break by accident:
 - **The palette records its own contrast ratios.** `textTertiary`, `gold` and `success` are not
   text colours on a light surface; `goldText` exists for exactly that case. Check the comment on a
   token before putting a sentence in it.
+- **Every token is scheme-adaptive; there is no light-only escape hatch.** Dark mode shipped
+  2026-08-28 (`.preferredColorScheme(.light)` is gone). Each `BQDesign` color is built via a
+  private `adaptive(light:dark:)` helper over `Color(uiColor: UIColor { traits in ... })`, taking
+  `0xRRGGBB` pairs — a typo is a compile error, unlike `Color(hex:)`, which silently falls back to
+  black. Static-let gradients adapt for free because the provider resolves at *draw* time, not at
+  declaration. Light values are unchanged byte-for-byte from before dark mode, so every previously
+  recorded light ratio still holds. `PaletteContrastTests` asserts AA floors against the
+  **resolved** `UIColor` in both appearances, not a parallel constant table — that is what makes
+  the test non-vacuous. Two things are deliberately scheme-invariant, and a naive "convert every
+  hardcoded colour" pass would break both: the spy-dossier surfaces (`secretDark`/`secretDeep`)
+  stay dark in *both* appearances (their ~30 `Color.white` glyph sites are correct as written, and
+  the surfaces earn separation from the page by lightness, not by contrast with a light
+  background), and white text on a saturated brand gradient is likewise scheme-invariant because
+  the gradient itself is. A page gradient or card surface is authored as a low-opacity brand tint
+  **over** a surface token — never as its own fixed hex — with the opacity solved against the hex
+  it replaced so light still resolves within a few 255ths; end stops use a brand token at zero
+  alpha, never `.clear` (`.clear` is transparent *black*, and SwiftUI interpolates neighbours
+  through it, which shows up as a visible dark fringe). A locked reward card recedes *below*
+  `cardBackground` in both schemes now, not just in light.
+  Known remaining, not regressions: `Challenge.difficulty.color` is a model-supplied hex string
+  and is not adaptive (accepted — difficulty is carried by star count, so colour is never the only
+  signal); the audio scrub thumb stays `Color.white` to match `UISlider` and fails WCAG 1.4.11
+  against the unfilled track in light (1.10:1, pre-existing, not introduced by dark mode);
+  `textSecondary` on the timeline page's deepest gradient stop is 4.05:1 in light, still under AA
+  but better than the 3.96:1 it replaced.
 
 ### Collections
 All event content lives under `events/{eventId}` subcollections. Isolation is by **path**, not by
@@ -276,12 +301,14 @@ Two tiers, and both must stay green:
   15%-opacity skeleton fill — its *text* uses moved to `textSecondary`. `Colors.error` at 3.59:1 is
   unchanged and still large-text-only: the error rows put the colour on an icon and leave the
   sentence at `textPrimary`, and that split is the pattern to copy.
-  Dark mode is still pinned off
-  (`.preferredColorScheme(.light)`) because every colour is a fixed hex with no dark variant — a
-  real dark theme means dark variants for every token. Note darkening `textSecondary` *lowered* its
-  contrast on the dark secret surfaces (5.11:1 to 3.18:1); that is currently harmless only because
-  no dark-themed view uses the token, which was verified rather than assumed. A dark theme has to
-  revisit it.
+  ~~Dark mode is still pinned off (`.preferredColorScheme(.light)`)~~ **Shipped (2026-08-28,
+  `3a25004`).** See the Design System section for the mechanism. The old warning that darkening
+  `textSecondary` lowered its contrast on the dark secret surfaces (5.11:1 → 3.18:1) is now
+  **resolved** there (5.26:1 in dark), because those surfaces stay dark in both appearances by
+  design; the light-mode figure it was measured against is unchanged and the underlying
+  prohibition (don't darken `textSecondary` without re-checking every surface it lands on) still
+  stands — this is a correction to the note, not a deletion of it. Visually confirmed in the
+  simulator at 1320×2868.
 - **Reward-media leak, reward-media LIFECYCLE, and the proof-photo leak are all CLOSED (merged to
   main 2026-08-25).** Subsystem #3 slice 1 closed the reward-media leak: `rewards.contentUrl`/
   `contentUrls` store Storage **object paths**, and `MediaStore` downloads them through an
@@ -295,17 +322,76 @@ Two tiers, and both must stay green:
     last copy (pinned by a mutation-proven test); (2) a distinct `RewardContentPresentation.expired`
     state (from a Storage objectNotFound with no local archive — honest copy, no confetti), separate
     from `.unavailable` ("never authored"); (3) a dismissible expiry-reminder banner when unopened
-    media gifts are near expiry. No rules change (celebrant Storage delete was already granted). Still
-    deferred: the full **re-send round-trip** (contributor re-upload of an expired gift — its own
-    slice; `.expired` copy points the celebrant to ask the contributor, no round-trip wired),
-    streaming/file-URL upload, and thumbnail previews in the "selected" rows.
+    media gifts are near expiry. No rules change (celebrant Storage delete was already granted).
+    ~~Still deferred: the full re-send round-trip … streaming/file-URL upload, and thumbnail
+    previews in the "selected" rows.~~ **Re-send round-trip CLOSED (`53c3e7e`, 2026-08-28).** A
+    contributor can now re-send a gift whose media expired — see the dedicated Known Gap entry
+    below for the mechanism and the new invariant it establishes. Video and audio "selected" rows
+    also gained a poster frame and a duration display respectively, closing the thumbnail-preview
+    deferral. **Still open:** streaming/file-URL upload (the ≤200MB clip still loads fully into
+    memory via `Data(contentsOf:)` before upload — an API change, not a slice change).
   - **Proof-photo leak — CLOSED.** `uploadProofData` now returns the Storage **path** (not a tokened
     download URL); `challenge.proofUrl` holds a path; a new `ProofImageView` renders it via
     `MediaStore.localURL(forPath:eventId:)` (a narrow `ProofMediaLoading` protocol — authenticated
     download → local `file://`). A revoked member is now denied by the Storage rules. No rules change.
-    Still deferred: proof-media **purge/expiry** (a later application of the same MediaStore spine).
+    ~~Still deferred: proof-media purge/expiry~~ **CLOSED (`caf1864`, 2026-08-28).** See the
+    dedicated Known Gap entry below.
   - The host *can* delete reward-media objects during curation (`storage.rules` delete widened to
     `isCelebrant || isHost`).
+- **Gift re-send after expiry (`53c3e7e`, 2026-08-28) — CLOSED.** `isEditable` on
+  `GiftAuthoringViewModel` is unchanged (still `!(existingGift?.isUnlocked ?? false)`); two derived
+  flags, `canAttachMedia` and `isResendOnly`, carve out media-only editing on an otherwise-frozen
+  gift. Detection is two-stage: `MediaLifecycle`'s date test gates whether any network call happens
+  at all (keeps live occasions free of probing), then a narrow injectable `RewardMediaProbing` seam
+  — deliberately **not** a `GameBackend` method, since that seam is Firestore CRUD plus uploads and
+  this is a Storage **metadata** read with different failure semantics — checks each stored path.
+  The probe **fails closed**: only a confirmed `objectNotFound` counts as expired; present,
+  unauthorized and offline all answer "not expired," because a wrong "present" only preserves
+  today's behaviour while a wrong "gone" would hand out a rewrite. **Invariant worth its own
+  line:** a re-send writes *only* `contentUrl`/`contentUrls`. It must never grow to include
+  `title`/`teaser`/letter text — those sit in the same content tier, so the rules would accept
+  them, and the payload construction is the only thing stopping a contributor from rewriting a
+  gift the celebrant already read. This is a code-level guarantee, not a rules-level one; do not
+  assume the rules would catch a regression here. No rules change; `RewardContentPresentation.resolve`
+  needed none either, because `uploadRewardMedia` mints a fresh UUID filename and `MediaStore` keys
+  its cache on `lastPathComponent`, so new media is a guaranteed cache miss.
+- **Proof-photo expiry (`caf1864`, 2026-08-28) — CLOSED.** New `ProofMediaPurging` protocol +
+  `MediaStore.purgeExpiredProofs`, fired from `ChallengesBoardView` via
+  `ChallengesViewModel.runProofMediaLifecycle`, mirroring the rewards trigger. No rules change —
+  proof delete was already celebrant-only, and it stays that way on purpose: the host got
+  reward-media delete because curation deletes gifts and must take their Storage objects along,
+  but the host moderates a challenge by deleting the *document*, so widening proof delete to the
+  host would only add a way to destroy a contributor's evidence before the celebrant ever sees it.
+  **Archive-before-purge is deliberately NOT copied from rewards, and a test pins the omission so
+  it isn't re-added by reflex:** a gift is an irreplaceable keepsake whose server copy may be the
+  only one; a proof is transient evidence, and everything durable about it (`isCompleted`,
+  `completedAt`, the points awarded, the timeline entry) lives in Firestore, untouched by this
+  sweep. Copying the reward gate would also invert the intent — proofs are only downloaded when
+  someone opens that one challenge, so most are never archived on the celebrant's device, and
+  "only purge what's already archived" would spare exactly the objects the sweep exists to
+  reclaim. **The security guard that replaces it is the important part.** `challenge.proofUrl` is
+  in the gameplay tier, so any member can write it to any string, and the celebrant is authorised
+  to delete both proof objects and reward media in their own event. A contributor could write
+  another contributor's *gift* path into `proofUrl` and have the celebrant's own sweep destroy
+  that gift — the Storage rules cannot object, because both deletes are legitimately the
+  celebrant's to make. The sweep defends against this by rebuilding the expected path with the
+  same `StoragePaths.proof(...)` constructor the upload uses and requiring exact equality before
+  deleting anything. Mutation-proven by three tests. A purged proof now presents as `.expired`
+  ("isn't kept anymore") via a new `ProofImagePresentation` enum, rather than as a load failure.
+  **Latent gap, not closed by this commit:** deleting a challenge (host moderation,
+  `FirestoreService.deleteChallenge`) does not delete its proof Storage object. The sweep only
+  iterates *live* challenges, so a proof orphaned by challenge deletion is unreachable forever.
+  Closing it needs either a purge-on-delete with a host-side Storage grant (a `storage.rules`
+  change) or a decision to accept the orphan.
+- **`validRewardContent()` in `firestore.rules` does not constrain `contentUrl`/`contentUrls` to a
+  path inside the event.** It checks `title` and `contentType` only. A contributor authoring their
+  own gift controls that field (content tier, author-writable), so they can point it at another
+  gift's Storage object in the same occasion. Two consequences: content spoofing (the celebrant
+  opens gift A and sees gift B's media) and purge collateral (once archived, the celebrant's
+  reward purge deletes gift B's object) — the same failure mode `caf1864` just defended for
+  proofs, but this one is still open. Bounded to one occasion — Storage reads are gated on
+  membership of that event, so it is **not** cross-tenant. Pre-existing, not introduced by the
+  2026-08-28 work; still needs a rules change with mutation-proven tests.
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -338,8 +424,10 @@ assumption they needed the media pipeline. They did not:
 
 ## Direction (as of 2026-08-28)
 
-Five commits landed on `main` (linear, still **unpushed**), closing the remaining App Store
-compliance surface and correcting two stale claims in this file:
+Eight commits landed on `main` (linear). The first five close the remaining App Store compliance
+surface and correct two stale claims in this file; the last three (below) close the two remaining
+media deferrals and ship dark mode. **`main` is now pushed** — `origin/main` matches local `main`
+at `3a25004` (`git rev-list --count origin/main..main` is 0).
 
 - **Sign in with Apple entitlement + encryption exemption (`839cf96`).** New
   `BirthdayQuest/BirthdayQuest.entitlements` + `CODE_SIGN_ENTITLEMENTS` on the app target +
@@ -392,6 +480,22 @@ compliance surface and correcting two stale claims in this file:
   file only existed on the unmerged branch. `docs/superpowers/specs/2026-08-25-privacy-manifest.md`
   has already been corrected with the two-command check to re-run if this is ever doubted again —
   don't re-add the manual step on the strength of the old note.
+- **Gift re-send after media expiry (`53c3e7e`).** Closes the re-send-round-trip deferral from the
+  media-lifecycle slice. See the dedicated Known Gap entry above for the mechanism (two-stage
+  detection, fail-closed probe) and the invariant it establishes (a re-send writes only
+  `contentUrl`/`contentUrls`, never the content-tier text fields — enforced by the payload, not
+  the rules). Also closes the thumbnail-preview deferral: the video row gained a poster frame and
+  the voice row a duration display.
+- **Proof-photo expiry (`caf1864`).** Closes the proof-media purge/expiry deferral. See the
+  dedicated Known Gap entry above for why archive-before-purge was deliberately *not* copied from
+  the reward sweep, and for the path-equality guard that stops a contributor from aiming the
+  celebrant's own sweep at another contributor's gift. Surfaces one new latent gap (also recorded
+  above): deleting a challenge does not delete its proof object.
+- **Dark mode (`3a25004`).** `.preferredColorScheme(.light)` is gone; every `BQDesign` token is
+  scheme-adaptive. See the Design System section for the mechanism and the two deliberately
+  scheme-invariant surfaces, and the Known Gaps accessibility entry for the corrected
+  `textSecondary` contrast note. Visually confirmed in the simulator at 1320×2868, in addition to
+  the new `PaletteContrastTests` suite (resolved-`UIColor` assertions in both appearances).
 
 **Also verified today, running the app against the live project (`birthdayquest-90578`):**
 anonymous auth works, but `fetchMyOccasions` fails with `Missing or insufficient permissions`. The
@@ -400,22 +504,24 @@ migration (subsystem #1), so `firebase deploy --only firestore:rules,storage` wa
 it. This sharpens the standing "manual steps" list below — the live-project blocker right now is
 undeployed rules, not the auth providers, which are already enabled and working.
 
-**Verification baseline, re-run today on the final tree, real exit codes:**
-- Swift unit suite: exit 0, `** TEST SUCCEEDED **`, 307 test-case passes (count test cases with
+**Verification baseline, re-run on the final tree (through `3a25004`), real exit codes:**
+- Swift unit suite: exit 0, `** TEST SUCCEEDED **`, 389 test-case passes (count test cases with
   `xcodebuild ... | grep -c "Test Case '.*' passed"` rather than trusting this number stale).
-- Emulator rules suite: exit 0, 187/187 (`grep -c '^\s*it(' firebase-tests/*.test.js` for the
-  live count).
+- Emulator rules suite: **not** re-run for these last three commits, deliberately — no rules file
+  was touched, and this project gates that suite on rules changes (still 187/187 from the prior
+  entry — `grep -c '^\s*it(' firebase-tests/*.test.js` for the live count).
 - SwiftLint `--strict`: 0 violations, 78 files.
+- Dark mode also visually confirmed in the simulator at 1320×2868.
 
 **The "Genuinely NOT done" human-gated list, corrected:** the Xcode target-membership step for
-`PrivacyInfo.xcprivacy` is gone (see above — it was never actually needed). What remains is
-unchanged in kind: **Apple Developer account** (real `DEVELOPMENT_TEAM` + bundle ID + signing,
-replacing `com.example.birthdayquest`), **deploying the current rules** to the live project
+`PrivacyInfo.xcprivacy` is gone (see above — it was never actually needed), and **pushing `main`
+to origin is done** — `origin/main` is at `3a25004`. What remains is unchanged in kind: **Apple
+Developer account** (real `DEVELOPMENT_TEAM` + bundle ID + signing, replacing
+`com.example.birthdayquest`), **deploying the current rules** to the live project
 (`firebase deploy --only firestore:rules,storage` — newly identified as blocking, not just
 routine), the **EULA/privacy-policy placeholder values** in `LegalCopy.swift` (support email,
 privacy-policy URL — product writing done, legal sign-off is not), **store listing + screenshots**,
-the **live a11y reflow check** for `AccountView`/`TermsView` specifically (above), and **pushing
-`main` to origin**.
+and the **live a11y reflow check** for `AccountView`/`TermsView` specifically (above).
 
 ## Direction (as of 2026-08-25)
 
