@@ -114,7 +114,7 @@ not exist for them. Never reintroduce a root-level content collection.
 |---|---|
 | `events/{eventId}` | `name`, `occasionType`, `celebrantName`, `hostUid`, `occasionDate`, `isOpen`, `createdAt`. Member-readable, so it carries **no secrets** — host-only writes. |
 | `events/{id}/private/codes` | `contributorCode`, `celebrantCode`. **Host-read only.** An invite code is a bearer secret and the event document is member-readable, so the codes cannot live there: a contributor could read the celebrant code, hand it to a fresh uid, and have that impostor claim celebrant and delete every gift. Joins compare against this with a rules-internal `get()`, which is privileged. The celebrant may `update` (clear `celebrantCode`) but never `read`. |
-| `events/{id}/participants/{uid}` | `name`, `avatarId`, `mode` (`contributor`\|`celebrant`), `isHost`, `usedCode`. `mode` and `isHost` are separate — "host who is also the celebrant" is representable. **Read is host-or-self, not member:** `usedCode` is the code its owner presented, so a member-readable roster is the same secret leak one door along. |
+| `events/{id}/participants/{uid}` | `name`, `avatarId`, `mode` (`contributor`\|`celebrant`), `isHost`, `usedCode`. `mode` and `isHost` are separate — "host who is also the celebrant" is representable. **Read is host-or-self, not member:** `usedCode` is the code its owner presented, so a member-readable roster is the same secret leak one door along. **Delete is host-or-self** (2026-08-28): the host ejecting a contributor, or a member deleting their own document — the latter is what in-app account deletion (`deleteMyAccountData`) is built on, since this document is where a uid's name, avatar and `usedCode` live. The self clause is not conditioned on role, so a host can delete their own account too; the accepted cost is an occasion left with no host, since `isHost()` reads this document and host transfer is not a feature. |
 | `events/{id}/challenges/{id}` | Includes secret challenges (`isSecret: true`). `update` is field-scoped: gameplay fields (e.g. `isCompleted`, `proofUrl`) are member-writable, content fields (`title`, `pointValue`, etc.) are host-or-author, and `isSecret`/`createdByUserId`/`createdAt` are immutable by omission from every allow-list. |
 | `events/{id}/rewards/{id}` | Plus `fetchedBy: [String]?` for media purge tracking. `update` is field-scoped the same way: gameplay fields are member-writable, content fields are host-or-author, `pointCost`/`sortOrder` are host-only, and `fromUserId`/`createdAt` are immutable by omission. |
 | `events/{id}/timeline/{id}` | Append-only by rule (`allow update, delete: if false`) |
@@ -167,12 +167,27 @@ Two tiers, and both must stay green:
   the source dir uses folder-synced groups, **dropping it into `BirthdayQuest/BirthdayQuest/` is all
   that is needed** — no Xcode configuration. But there is no explicit pbxproj file reference, so its
   absence is not a build error: the app builds fine and then dies at launch on a raw Firebase
-  assertion from the bare `FirebaseApp.configure()`, with no message pointing anywhere.
+  assertion from the bare `FirebaseApp.configure()`, with no message pointing anywhere. The
+  development copy's `BUNDLE_ID` is `com.yourname.birthdayquest`, which does not match
+  `PRODUCT_BUNDLE_IDENTIFIER` (`com.example.birthdayquest`) — harmless for Firebase (it does not
+  gate on bundle ID for Auth/Firestore/Storage the way it does for push), but worth fixing when the
+  real bundle ID is assigned so the two stop disagreeing.
 - `BirthdayQuest/Info.plist` exists **only** to carry `CFBundleURLTypes`, which registers the
   `birthdayquest://` scheme so shared invite links open the app. `CFBundleURLTypes` is an array of
   dictionaries and so cannot be an `INFOPLIST_KEY_*` build setting. It lives at SOURCE_ROOT, on
   purpose: a plist inside the folder-synced group would also be added to Copy Bundle Resources and
-  fail the build. `GENERATE_INFOPLIST_FILE` stays `YES`, so generated keys merge on top of it.
+  fail the build. `GENERATE_INFOPLIST_FILE` stays `YES`, so generated keys merge on top of it. It
+  also now carries `ITSAppUsesNonExemptEncryption = false` (2026-08-28) — the app uses only
+  HTTPS/TLS via the Firebase SDKs and CryptoKit SHA-256 for the Apple sign-in nonce, both exempt
+  categories, so answering it here avoids the export-compliance prompt on every upload.
+- `BirthdayQuest/BirthdayQuest.entitlements` (2026-08-28) sits at SOURCE_ROOT beside `Info.plist`,
+  not inside the folder-synced group, for the same Copy-Bundle-Resources reason. Unlike
+  `CFBundleURLTypes`, `CODE_SIGN_ENTITLEMENTS` **is** a plain string, so it is safe to add directly
+  to the app target's two pbxproj config blocks as a build setting — the same precedent as
+  `INFOPLIST_KEY_NSMicrophoneUsageDescription`. It is what actually wires the Sign in with Apple
+  capability: the UI (`SignInWithAppleButton`, `ASAuthorizationAppleIDRequest`) existed since the
+  identity work, but with no entitlements file and no `CODE_SIGN_ENTITLEMENTS` setting the
+  capability was never configured and the flow failed at runtime.
 - Security rules live in `firestore.rules` / `storage.rules`, deployed via `firebase deploy --only firestore:rules,storage`.
 
 ## Known Gaps (do not "discover" these as new)
@@ -196,11 +211,15 @@ Two tiers, and both must stay green:
   tier already lets any member flip `isUnlocked` on any reward, so closing create alone would be
   decorative.
 - Accessibility: Dynamic Type, Reduce Motion and AA contrast are now handled (see the Design
-  System section). What is **not** done is any visual confirmation of reflow at the largest
-  accessibility sizes — no snapshot tests exist and the unit suite cannot catch clipping or
-  overlap. `xcrun simctl ui booted content_size accessibility-extra-extra-extra-large` is the
-  command; it needs a live Firebase project, because the app cannot get past launch without the
-  Anonymous provider.
+  System section). Visual confirmation of reflow at the largest accessibility sizes is **partially
+  done, not closed** — no snapshot tests exist and the unit suite cannot catch clipping or overlap.
+  `xcrun simctl ui booted content_size accessibility-extra-extra-extra-large` is the command; it
+  needs a live Firebase project, because the app cannot get past launch without the Anonymous
+  provider. Spot-checked 2026-08-28 on iPhone 17 Pro Max at that size: launch and the empty/failure
+  states (`EmptyOccasionsView`) reflow correctly, no clipping or overlap. **Not yet checked:**
+  `AccountView` and `TermsView` — no UI-automation tap was available in that session, and a system
+  "Open in?" dialog blocks deep-linked navigation to them. Do not read "spot-checked" as "all
+  screens verified."
 - `fetchMyOccasions` fans out **concurrently** (`withTaskGroup`, `@MainActor` children so nothing
   crosses an isolation boundary). Its **skip-on-failure is load-bearing and has no test**: each
   child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
@@ -317,6 +336,87 @@ assumption they needed the media pipeline. They did not:
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
+## Direction (as of 2026-08-28)
+
+Five commits landed on `main` (linear, still **unpushed**), closing the remaining App Store
+compliance surface and correcting two stale claims in this file:
+
+- **Sign in with Apple entitlement + encryption exemption (`839cf96`).** New
+  `BirthdayQuest/BirthdayQuest.entitlements` + `CODE_SIGN_ENTITLEMENTS` on the app target +
+  `ITSAppUsesNonExemptEncryption = false`. See Project Details for the mechanics; the takeaway
+  worth keeping is that a plain-string build setting (`CODE_SIGN_ENTITLEMENTS`, like
+  `INFOPLIST_KEY_NSMicrophoneUsageDescription` before it) is safe to add to the pbxproj — it is
+  specifically array-valued keys like `CFBundleURLTypes` that are not.
+- **In-app Terms of Use, App Store Guideline 1.2 (`c106bf2`).** New `Models/LegalCopy.swift` (a
+  titled-section enum, not one string, so each heading can be marked for VoiceOver) and
+  `Views/Profile/TermsView.swift`. `Views/Profile/TermsAgreementSection.swift` sits on **both**
+  `CreateOccasionView` and `JoinOccasionView` — 1.2 wants agreement at the point of the act, not
+  merely reachable terms. The retention section deliberately does not promise media is deleted at
+  30 days: `purgeExpiredArchived` is celebrant-device-driven and gated on archive-before-purge, so
+  30 days is only when server media becomes *eligible* for cleanup. Anyone editing that copy has to
+  keep it consistent with `MediaLifecycle`. Support email and privacy-policy URL are explicit
+  `REPLACE_WITH_*` placeholders — still human-gated, see below.
+- **In-app account deletion, App Store Guideline 5.1.1(v) (`d2b64b7`).** Policy is
+  anonymise-and-keep: the participant document (name, avatar, `usedCode`) and every membership
+  mirror row are deleted; authored gifts, dares and timeline entries stay, so a celebrant never
+  loses a present because the sender closed their account. **Ordering is load-bearing:** Firestore
+  data first, auth user last — every rule is written against `request.auth.uid`, so a document
+  still naming a deleted uid becomes unreachable and undeletable by anyone afterwards, including its
+  own owner. `deleteMyAccountData` therefore uses a **throwing** task group, the deliberate
+  inversion of `fetchMyOccasions`'s skip-on-failure documented above — the first failure has to
+  propagate so the account stays intact and retryable, and a partial re-issue is safe because
+  deleting an absent document succeeds. `firestore.rules` widens the `participants` delete rule
+  from host-only to host-or-self (see the Collections table); mutation-proven, and a second
+  mutation confirms swapping the two deletion calls reddens exactly the three order-sensitive
+  tests. Known consequence, accepted rather than solved: a host who deletes their account orphans
+  the occasion, since `isHost` reads the participant doc and host transfer is not a feature — the
+  confirmation names affected occasions before the fact, since there's no discovering it after.
+  `AccountView` is deliberately **not** part of `ProfileView` (which is occasion-scoped, takes an
+  `eventId`) — it hangs off both `OccasionListView` and `EmptyOccasionsView` instead, so it stays
+  reachable for someone with no occasions to open, the person likeliest to want to close their
+  account.
+- **README + SECURITY.md corrections (`8113b0d`).** README no longer claims media gifts are
+  unauthorable, no longer lists invite codes as fields on the event document (fixed as a Critical
+  in subsystem #1 — the event doc is member-readable), and no longer calls the transactions
+  untested. SECURITY.md no longer warns that reward-media URLs are public links (closed by the
+  media-pipeline slices) and now discloses the gap that actually stands: any member can rewrite
+  `state/main` and flip `rewards.isUnlocked` (already tracked above in Known Gaps; it just wasn't
+  in the public security doc before).
+- **Privacy manifest merged (`b3f9ccc`) — and the "one-click Xcode step" claim was wrong.**
+  `feat/privacy-manifest` (authored 2026-08-25) is rebased and fast-forwarded into `main`; there
+  are no unmerged branches left. More importantly, **the manual Target Membership step this file
+  and the spec both described never had to happen.** Measured on 2026-08-28: a plain `xcodebuild`
+  bundles `PrivacyInfo.xcprivacy` at the app root, byte-identical to source (md5 match), in **both**
+  Debug and Release, with no pbxproj entry at all. The earlier "sync auto-adds `.xcassets` but not
+  `.xcprivacy`" observation does not reproduce and was most likely taken against a tree where the
+  file only existed on the unmerged branch. `docs/superpowers/specs/2026-08-25-privacy-manifest.md`
+  has already been corrected with the two-command check to re-run if this is ever doubted again —
+  don't re-add the manual step on the strength of the old note.
+
+**Also verified today, running the app against the live project (`birthdayquest-90578`):**
+anonymous auth works, but `fetchMyOccasions` fails with `Missing or insufficient permissions`. The
+cause is not a code bug: the live project is still running rules that predate the event-scoping
+migration (subsystem #1), so `firebase deploy --only firestore:rules,storage` was never run against
+it. This sharpens the standing "manual steps" list below — the live-project blocker right now is
+undeployed rules, not the auth providers, which are already enabled and working.
+
+**Verification baseline, re-run today on the final tree, real exit codes:**
+- Swift unit suite: exit 0, `** TEST SUCCEEDED **`, 307 test-case passes (count test cases with
+  `xcodebuild ... | grep -c "Test Case '.*' passed"` rather than trusting this number stale).
+- Emulator rules suite: exit 0, 187/187 (`grep -c '^\s*it(' firebase-tests/*.test.js` for the
+  live count).
+- SwiftLint `--strict`: 0 violations, 78 files.
+
+**The "Genuinely NOT done" human-gated list, corrected:** the Xcode target-membership step for
+`PrivacyInfo.xcprivacy` is gone (see above — it was never actually needed). What remains is
+unchanged in kind: **Apple Developer account** (real `DEVELOPMENT_TEAM` + bundle ID + signing,
+replacing `com.example.birthdayquest`), **deploying the current rules** to the live project
+(`firebase deploy --only firestore:rules,storage` — newly identified as blocking, not just
+routine), the **EULA/privacy-policy placeholder values** in `LegalCopy.swift` (support email,
+privacy-policy URL — product writing done, legal sign-off is not), **store listing + screenshots**,
+the **live a11y reflow check** for `AccountView`/`TermsView` specifically (above), and **pushing
+`main` to origin**.
+
 ## Direction (as of 2026-08-25)
 
 Session focus: close the remaining media/security work and survey #4. Landed on `main` (FF, linear;
@@ -329,12 +429,13 @@ still **unpushed**):
   download (`ProofImageView` / `ProofMediaLoading`). Security review clean (Sonnet). No rules change.
   See `docs/superpowers/specs/2026-08-25-proof-photo-paths-design.md`.
 
-Authored but **NOT merged** (on branch `feat/privacy-manifest`): the App Store `PrivacyInfo.xcprivacy`.
-It is valid (`plutil` OK) with factual tracking=false + file-timestamp required-reason APIs; the
-`NSPrivacyCollectedDataTypes` declaration needs developer sign-off, and the **one-click Xcode target-
-membership** step to bundle it was left to the human on purpose (the synced-folder project does not
-auto-bundle `.xcprivacy`, and hand-editing pbxproj is what folder-sync exists to avoid). See
-`docs/superpowers/specs/2026-08-25-privacy-manifest.md`.
+Authored on branch `feat/privacy-manifest`, and **now merged** (`b3f9ccc`, 2026-08-28 — see that
+Direction entry above): the App Store `PrivacyInfo.xcprivacy`. It is valid (`plutil` OK) with
+factual tracking=false + file-timestamp required-reason APIs; the `NSPrivacyCollectedDataTypes`
+declaration still needs developer sign-off, but the bundling step that follows does **not** need a
+human — the "one-click Xcode target-membership" requirement below was measured wrong (a plain
+`xcodebuild` bundles it with no pbxproj entry, in both configurations). See
+`docs/superpowers/specs/2026-08-25-privacy-manifest.md`, which has already been corrected.
 
 Also landed on `main` this session (all FF, green, reviewed):
 - **Gift-type picker → `.menu`** — 4 word-labels truncated in a segmented control at large Dynamic
@@ -379,8 +480,11 @@ Also landed on `main` this session (all FF, green, reviewed):
 - **EULA / terms** copy (legal); **occasion-template copy** sign-off (product tone); and the standing
   manual prerequisites — app rename + real bundle ID + signing team, Apple Developer account + store
   listing, Sign in with Apple capability, enabling the Anonymous+Apple providers, `tools/export_media.sh`
-  before deploy, the one-click Xcode target-membership for `PrivacyInfo.xcprivacy`, the live a11y reflow
-  visual check, and **pushing `main` to origin**.
+  before deploy, the live a11y reflow visual check, and **pushing `main` to origin**. *(Superseded
+  2026-08-28: the Xcode target-membership item for `PrivacyInfo.xcprivacy` is gone — see the
+  Direction entry above; that item never actually needed a human. The Sign in with Apple
+  **capability** step below is also now done, via the entitlements file — see above; enabling the
+  Anonymous+Apple **providers** in the Firebase console is a separate, still-open step.)*
 
 ## Direction (as of 2026-08-22)
 
@@ -575,12 +679,18 @@ per-task review alone on the next subsystem:
 
 **Manual steps required before any of this works against a live project** — none are detectable by
 any test, so a fully green suite proves nothing about a live project:
-1. Xcode: add the **Sign in with Apple** capability. The UI now exists and will fail at runtime
-   without it.
+1. ~~Xcode: add the **Sign in with Apple** capability. The UI now exists and will fail at runtime
+   without it.~~ **Done (2026-08-28).** `BirthdayQuest.entitlements` + `CODE_SIGN_ENTITLEMENTS`
+   wire it now — see Project Details and the 2026-08-28 Direction entry.
 2. Firebase console: enable the **Anonymous** and **Apple** providers. Anonymous gates *everything*
-   — without it the app cannot get past launch. Apple gates only the linking path.
+   — without it the app cannot get past launch. Apple gates only the linking path. **Verified
+   2026-08-28 against the live project: Anonymous works.** What still fails there is unrelated —
+   `fetchMyOccasions` returns permission-denied because the deployed rules predate event-scoping
+   (see the 2026-08-28 Direction entry); that's step 3 below plus a rules deploy, not a providers gap.
 3. Run `tools/export_media.sh` **before** `firebase deploy` — the new rules deny all access to the
-   old `rewards/**` and `proofs/**` prefixes.
+   old `rewards/**` and `proofs/**` prefixes. **As of 2026-08-28 the live project has not had
+   `firebase deploy --only firestore:rules,storage` run against it at all**, which is the actual
+   current blocker on that project.
 
 Remaining subsystems, unchanged: #2 host authoring (the 39-item gap list), #3 media pipeline
 (`MediaStore`, server-as-courier), #4 compliance (moderation, `PrivacyInfo.xcprivacy`, real bundle

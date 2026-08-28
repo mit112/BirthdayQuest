@@ -23,16 +23,33 @@ REVIEW REQUIRED before App Store submission (compliance declaration, not a pure 
   anonymous uid). The developer MUST confirm it matches their actual data practices and the App Store
   Connect privacy "nutrition label" before submitting.
 
-## Human step to finish wiring (one click — deliberately NOT hand-edited into pbxproj)
-The project uses Xcode-16 file-system-synchronized folders with an ALL-EMPTY Resources build phase
-(no explicit resource entries — `Assets.xcassets` is auto-bundled by the sync). Empirically the sync
-auto-adds `.xcassets` but does NOT auto-add `.xcprivacy` to Copy Bundle Resources: a clean
-`xcodebuild` leaves the app's manifest out of `BirthdayQuest.app/` (only the Firebase sub-bundles'
-own manifests appear). The manifest file is valid (`plutil -lint` OK) and the app still builds green
-with it present.
+## Bundle wiring — NO human step needed (corrected 2026-08-28)
 
-To bundle it: open the project in Xcode, select `PrivacyInfo.xcprivacy`, and check the **BirthdayQuest**
-target under Target Membership (File Inspector). Xcode writes a `PBXFileSystemSynchronizedBuildFileExceptionSet`
-correctly. Confirm afterward that `BirthdayQuest.app/PrivacyInfo.xcprivacy` exists at the bundle root.
-This was left as a human/Xcode-UI action on purpose — hand-editing the pbxproj is the exact thing this
-project's folder-sync setup avoids, and a wrong UUID edit would break the whole build.
+**The original claim in this file was wrong, and it is left quoted below because it was believed
+for three days and is exactly the kind of thing that gets re-asserted from memory.** It said the
+Xcode-16 file-system-synchronized folder auto-adds `.xcassets` but *not* `.xcprivacy`, so the app's
+manifest would be missing from `BirthdayQuest.app/` until someone opened Xcode and ticked Target
+Membership.
+
+Measured on 2026-08-28 against `main` with the manifest merged, it bundles on its own, in **both**
+configurations, with no pbxproj entry and no target-membership tick:
+
+```
+$ xcodebuild -scheme BirthdayQuest -destination '…iPhone 17 Pro Max' build      # Release
+$ ls "$APP/PrivacyInfo.xcprivacy"                                               # present
+$ plutil -convert xml1 -o - "$APP/PrivacyInfo.xcprivacy" | md5 -q               # 78a0c592…
+$ plutil -convert xml1 -o - BirthdayQuest/BirthdayQuest/PrivacyInfo.xcprivacy | md5 -q
+                                                                                # 78a0c592… (identical)
+$ xcodebuild … -configuration Debug build && ls "$DEBUG_APP/PrivacyInfo.xcprivacy"  # also present
+```
+
+Byte-identical to the source file, at the bundle root, in Debug and Release. So the manifest is
+already shipping and there is nothing left to click. The `grep` for `xcprivacy` in `project.pbxproj`
+still returns nothing — that is expected and is the point of the synced folder, not evidence it is
+unbundled.
+
+Why the original measurement disagreed is not established. The likeliest explanation is that it was
+taken while the manifest existed only on the unmerged `feat/privacy-manifest` branch and the build
+under inspection was made from a tree that did not contain the file at all — which would produce
+exactly the reported symptom (only the Firebase sub-bundles' own manifests present). Do not re-add
+the manual step on the strength of the old note; re-run the two commands above instead.
