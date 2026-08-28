@@ -26,5 +26,10 @@
 			</array>
 		</dict>
 	</array>
+	<!-- The app only uses standard HTTPS/TLS (Firebase SDKs) and Apple's CryptoKit
+	     SHA-256 for the Sign in with Apple nonce, both exempt categories, so this
+	     is declared false to skip the export-compliance prompt on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
