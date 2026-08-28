@@ -45,28 +45,62 @@ occasion, because the path does not exist for them.
 
 ### Any member can rewrite their own occasion's point balance and unlock flags
 
-`events/{eventId}/state/main` updates and `rewards.isUnlocked` are gated on occasion membership
-only. Balance mutations go through transactions with server-side re-checks and idempotency guards,
-so points cannot be *double-spent* — but a member who writes `state/main` directly can set the
-balance to anything and unlock every reward.
+**The risk.** A member of an occasion can cheat the game: grant themselves points they didn't earn,
+or unlock a gift without earning it. `firestore.rules` has, on `events/{eventId}/state/main`:
 
-This is bounded to occasions the user already belongs to; there is no cross-occasion exposure. It is
-the cost of a no-Functions design, and it means **you should only invite people you would trust with
-the surprise.** Relatedly, a participant can rewrite their own `usedCode` field after joining, so
-never build a "revoke this code and remove whoever used it" feature on top of that value.
+```
+allow update: if isMember(eventId);
+```
 
-### Reward media URLs are public links, even though Storage rules gate the objects
+with no field scoping — so any member can write `currentPoints` (or any other field on that
+document) to whatever they like. On `events/{eventId}/rewards/{id}`, the gameplay tier of `update`
+is:
 
-`storage.rules` restricts object reads and writes to members of the owning occasion, denies
-overwrites outright, and permits deletion only by the celebrant. That protects the *objects*.
+```
+affects(['isUnlocked', 'unlockedAt', 'fetchedBy'])
+```
 
-It does not protect the *links*. The app stores long-lived Firebase **download URLs** (the
-`?alt=media&token=…` form, from `StorageReference.downloadURL()`) in Firestore, and those URLs are
-designed to bypass Storage rules — anyone holding one can fetch the media with no credential,
-indefinitely, whether or not they belong to the occasion.
+open to any member regardless of who authored the reward, and `create` does not constrain those two
+fields either — so a member authoring their own gift can create it already `isUnlocked: true`. The
+normal unlock path (`unlockRewardAtomically`) goes through a transaction with a server-side balance
+re-check, so points cannot be *double-spent* through the app's own UI — but nothing stops a member
+from bypassing the app and writing these documents directly with the Firestore SDK or console.
 
-**Do not put anything genuinely private behind a reward.** Assume every video, audio note, and photo
-is publicly reachable by anyone who ever sees its URL.
+**What this is not.** It is not a cross-tenant hole. Isolation between occasions is by **path**: all
+occasion content lives under `events/{eventId}` subcollections, and no rule or query can reach a
+different `eventId`'s data. It also doesn't expose the invite codes that authorize joining an
+occasion in the first place — those live at `events/{id}/private/codes`, readable only by
+`isHost(eventId)`, entirely separate from the gameplay-write gap above. A member who cheats their own
+occasion's score gains nothing against any other occasion.
+
+**Why it's this way.** This project deliberately ships with **no Cloud Functions** — zero server
+ops, and it stays on Firebase's free Spark tier for Firestore. Security rules can restrict *who* may
+write a document, but they cannot validate that a point balance transitions legitimately (e.g. "only
+decrement by exactly `pointCost`, only if it was that high a moment ago") without a trusted
+intermediary re-deriving the correct value — which is exactly what a Cloud Function would be for.
+Rules alone cannot close this gap; the fix is server-side transaction validation, not a stricter
+rule.
+
+**The trade-off.** This is a documented design choice for a small, invite-only app among people who
+already trust each other with the surprise — not an unpatched vulnerability. **You should only
+invite people you would trust with the outcome of the game.**
+Relatedly, a participant can rewrite their own `usedCode` field after joining, so never build a
+"revoke this code and remove whoever used it" feature on top of that value.
+
+### Reward media and proof photos are authenticated, not public links
+
+`storage.rules` restricts object reads and writes to members of the owning occasion
+(`allow read: if isMember(eventId)`), denies overwrites outright, and permits deletion only by the
+celebrant (or the host, for reward media during curation). Firestore stores the Storage **object
+path**, never a tokened download URL — `uploadRewardMedia` and `uploadProofData` both return the
+path from `putDataAsync`, and the client (`MediaStore` for gifts, `ProofImageView` for proof photos)
+fetches the bytes through an authenticated `Storage.storage().reference(withPath:)` call, which is
+subject to the rule above. A revoked member's Storage read is denied along with their Firestore read.
+
+This closes what was previously true of this project — the app used to persist Firebase's
+`?alt=media&token=…` download URLs, which bypass Storage rules by design. That has been replaced
+end-to-end; there is no remaining path in the app that stores or serves one of those tokened URLs
+for reward or proof media.
 
 ### Invite codes are bearer tokens
 

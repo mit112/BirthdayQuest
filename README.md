@@ -52,7 +52,7 @@ Infinite-loop horizontal carousel with three card states: **locked** (frosted gl
 ### Challenge Board
 Challenges carry a point value, one of three difficulty tiers, and one of five categories (physical, social, creative, sentimental, adventure). Any challenge can be **2-in-1** — setting `optionBTitle` makes the detail view present Option A / Option B behind a toggle picker. Submission is universal: every challenge offers Photo, Text, or Done proof options.
 
-A newly created occasion starts with **zero** challenges and **zero** rewards. The host authors challenges in-app, and each contributor authors one text gift; the host then prices, orders, and can delete gifts, but cannot rewrite their text. Media gifts (video/audio/image) aren't authorable in-app yet. See [Customization](#customization).
+A newly created occasion starts with **zero** challenges and **zero** rewards. The host authors challenges in-app, and each contributor authors one gift — a text letter, one or more photos, a video, or a recorded/imported voice note — then the host prices, orders, and can delete gifts, but cannot rewrite their content. See [Customization](#customization).
 
 ### Secret Challenges
 Contributors each create one classified dare through a spy-themed dossier interface with scan-line overlays and monospaced typography. The celebrant discovers these through a hidden "???" entry point that reveals a dark, classified sheet. Secret challenges are created, delivered, and completed through Firestore with real-time sync.
@@ -68,7 +68,7 @@ Every challenge sets its own `pointValue` and every reward its own `pointCost`; 
 
 ### Additional Features
 - **Occasion List** — Active and past occasions, pull to refresh, create or join from the toolbar. Joining works from a pasted invite link or an incoming `birthdayquest://join` URL
-- **Host Panel** — Occasion management for the host: invite links, celebrant-joined status, force-completing challenges, force-unlocking rewards, adjusting points, and triggering the final celebration. Shown in the Profile tab only when `isHost` is true
+- **Host Panel** — Occasion management for the host: invite links, celebrant-joined status, force-completing challenges, force-unlocking rewards, adjusting points, triggering the final celebration, removing a participant, and reviewing content reports filed against gifts or challenges. Shown in the Profile tab only when `isHost` is true
 - **Skeleton Loading** — Screen-matched shimmer placeholders on every data view
 - **Media Playback** — `VideoPlayerView` and `AudioPlayerView` with buffering states, error recovery, and proper AVPlayer lifecycle management
 - **Design System** — Centralized `BQDesign` namespace with color palette, typography scale, spacing tokens, shadow presets, and animation curves
@@ -109,11 +109,12 @@ BirthdayQuest/
 ├── Models/              Occasion, Participant, Challenge, Reward, GameState, TimelineEvent, AvatarCatalog
 ├── Services/            GameBackend + AuthProviding (protocols), FirestoreService, AuthService,
 │                        AppSession, EventSession
-├── ViewModels/          9 @MainActor ObservableObject classes, each injected with a GameBackend
+├── ViewModels/          12 @MainActor ObservableObject classes, each injected with a GameBackend
 ├── Views/
 │   ├── Occasions/       Occasion list, create, join, per-event container
 │   ├── Celebrant/       Rewards carousel, challenge board, submission flow
-│   ├── Contributor/     Secret challenge creation (dossier UI)
+│   ├── Contributor/     Secret challenge creation (dossier UI), gift authoring
+│   ├── Authoring/       Host challenge authoring, gift curation
 │   ├── Timeline/        Animated path, bezier connectors, final badge
 │   ├── Profile/         Stats, participant roster, host panel
 │   └── Components/      Avatar, media players, skeleton loaders, particles
@@ -145,18 +146,22 @@ exist for them.
 
 | Path | Key Fields |
 |------|-----------|
-| `events/{eventId}` | name, occasionType, celebrantName, hostUid, occasionDate, isOpen, createdAt, contributorCode, celebrantCode |
-| `events/{id}/participants/{uid}` | name, avatarId, mode (`contributor`\|`celebrant`), isHost, usedCode |
+| `events/{eventId}` | name, occasionType, celebrantName, hostUid, occasionDate, isOpen, createdAt. Member-readable, so it carries no secrets |
+| `events/{id}/private/codes` | contributorCode, celebrantCode. **Host-read only** |
+| `events/{id}/participants/{uid}` | name, avatarId, mode (`contributor`\|`celebrant`), isHost, usedCode. Read is host-or-self, not member |
 | `events/{id}/challenges/{id}` | title, pointValue, difficulty, category, isSecret, isCompleted, proofUrl, optionBTitle |
 | `events/{id}/rewards/{id}` | fromName, pointCost, contentType, contentUrl/contentUrls, isUnlocked, fetchedBy |
 | `events/{id}/timeline/{id}` | type, referenceId, subtitle, badgeType, timestamp. Append-only by rule |
 | `events/{id}/state/main` | currentPoints, challengesCompleted, rewardsUnlocked, finalBadgeUnlocked |
+| `events/{id}/reports/{id}` | Content reports (App Store 1.2): contentType (`reward`\|`challenge`), contentId, reportedByUserId, reason?, createdAt. Member-create, host-read only, append-only |
 | `memberships/{uid}/events/{id}` | Thin mirror so a user can list their own occasions: role, isHost, joinedAt |
-| `inviteCodes/{CODE}` | Uniqueness reservation and code→event resolution only. `get` is allowed, `list` is denied, so a code you hold resolves but the collection cannot be enumerated |
+| `inviteCodes/{CODE}` | Uniqueness reservation and code→event resolution only. `get` is allowed, `list` is denied, so a code you hold resolves but the collection cannot be enumerated. Authorization does not flow through here — joins are authorized against `events/{id}/private/codes` |
 
-Invite codes live on the event document, not in a client-readable collection, and joins are
-authorized against those fields. The document ID under `participants` is the Firebase uid, which is
-what makes impersonation structurally impossible: the rules only permit writing your own document.
+Invite codes live at `events/{id}/private/codes`, host-read only — not on the member-readable event
+document, and not in a client-readable collection — and joins are authorized against that document
+with a rules-internal `get()`, which is privileged and bypasses these rules. The document ID under
+`participants` is the Firebase uid, which is what makes impersonation structurally impossible: the
+rules only permit writing your own document.
 
 Field names are load-bearing. The rules compare against them literally, so renaming one fails at
 runtime with permission-denied rather than at compile time.
@@ -242,9 +247,9 @@ To personalize an occasion:
 
 - **Challenges** — The host adds them in-app through the challenge authoring screen: title,
   description, point value, difficulty, category, and an optional Option B for a 2-in-1 challenge.
-- **Gifts (rewards)** — Each contributor authors one text gift in-app; the host prices it, sets its
-  order, and can delete it, but cannot rewrite its text. Media gifts (video/audio/image) aren't
-  authorable in-app yet — that's subsystem #3.
+- **Gifts (rewards)** — Each contributor authors one gift in-app — a text letter, photos, a video,
+  or a voice note (recorded in-app or imported) — the host prices it, sets its order, and can
+  delete it, but cannot rewrite its content.
 - **Bulk setup** — For seeding many challenges or rewards at once, you can still add documents
   directly under `events/{eventId}/challenges` / `events/{eventId}/rewards` (see
   `Models/Challenge.swift` / `Models/Reward.swift` for field names). A hand-written document does
@@ -322,19 +327,9 @@ Being upfront, because these will bite you if you deploy it:
   membership only, so any participant in an occasion can rewrite the point balance or flip a reward
   to unlocked. That's the cost of having no Cloud Functions, and it was a family-sized assumption
   that now applies to anyone holding an invite code. See [SECURITY.md](SECURITY.md).
-- **Media URLs are public links.** The Storage rules gate the object *paths* on membership, but the
-  app stores Firebase download URLs, which carry their own token and bypass rules entirely. That
-  applies to proof photos the app uploads and to any reward media URL you paste in by hand: anyone
-  with the URL can view it, forever, with no credential. Don't put anything genuinely private behind
-  a reward.
 - **Sign in with Apple isn't reachable.** Identity is a Firebase anonymous uid. `AuthService` and
   `AppSession` implement linking to an Apple ID in place, preserving the uid, but nothing in the UI
   calls it — so losing the device still means losing every occasion.
-- **The atomic transaction logic is untested.** View models are covered through the `GameBackend`
-  protocol and a mock backend, and the security rules have their own emulator suite, but
-  `unlockRewardAtomically`, `completeChallengeAtomically`, and `adminForceUnlockReward` live inside
-  `FirestoreService` — the mock replaces that logic rather than verifying it. Proving the balance
-  re-check and idempotency guards needs a Swift↔emulator harness that doesn't exist yet.
 - **`birthdayquest://` is registered.** `Info.plist` declares `CFBundleURLTypes` for the scheme, so
   tapping a shared invite link opens the app directly, in addition to pasting it into the join sheet.
 - **Accessibility is largely handled.** All typography is semantic text styles (Dynamic Type
