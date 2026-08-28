@@ -206,7 +206,7 @@ private extension ChallengeCardView {
     
     var cardBackground: some View {
         ZStack {
-            Color.white
+            BQDesign.Colors.cardBackground
             
             if !isCompleted {
                 LinearGradient(

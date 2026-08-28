@@ -31,20 +31,30 @@ struct TimelineBackgroundView: View {
     }
     
     private var animatedGradient: some View {
-        // Color temperature shifts: cool lavender top → warm peach mid → mystical purple bottom
+        // Color temperature shifts: cool lavender top → warm peach mid → mystical purple bottom.
+        //
+        // Authored as a low-opacity brand *tint over* `background` rather than seven fixed pastel
+        // hexes, so the wash follows the appearance: the surface token carries the scheme and the
+        // brand tokens only colour it. The opacities were solved against the original stops, so
+        // light resolves within ~4/255 of what it did before (the two warm stops sit at the page
+        // background's R=251 instead of 255; nothing else moves by more than 6).
+        //
+        // The zero-alpha stop is a `primaryOrange` at 0 rather than `.clear`, because `.clear` is
+        // a transparent *black* and SwiftUI would interpolate the neighbouring stops through it.
         LinearGradient(
             stops: [
-                .init(color: Color(hex: "F5F0FA"), location: 0.0),
-                .init(color: Color(hex: "FBF7F4"), location: 0.15),
-                .init(color: Color(hex: "FFF5EE"), location: 0.35),
-                .init(color: Color(hex: "FFF0E8"), location: 0.55),
-                .init(color: Color(hex: "F5EEFA"), location: 0.75),
-                .init(color: Color(hex: "EDE5F5"), location: 0.9),
-                .init(color: Color(hex: "E8D8F0"), location: 1.0),
+                .init(color: BQDesign.Colors.primaryPurple.opacity(0.06), location: 0.0),
+                .init(color: BQDesign.Colors.primaryOrange.opacity(0), location: 0.15),
+                .init(color: BQDesign.Colors.primaryOrange.opacity(0.03), location: 0.35),
+                .init(color: BQDesign.Colors.primaryOrange.opacity(0.08), location: 0.55),
+                .init(color: BQDesign.Colors.primaryPurple.opacity(0.055), location: 0.75),
+                .init(color: BQDesign.Colors.primaryPurple.opacity(0.115), location: 0.9),
+                .init(color: BQDesign.Colors.primaryPurple.opacity(0.175), location: 1.0),
             ],
             startPoint: .top,
             endPoint: .bottom
         )
+        .background(BQDesign.Colors.background)
     }
 }
 

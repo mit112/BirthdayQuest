@@ -31,7 +31,7 @@ struct StatCard: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
+                    .fill(BQDesign.Colors.cardBackground)
                 
                 // Subtle accent gradient wash from top
                 RoundedRectangle(cornerRadius: 16, style: .continuous)

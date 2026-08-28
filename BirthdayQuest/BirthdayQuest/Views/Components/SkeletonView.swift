@@ -125,8 +125,11 @@ struct RewardsSkeletonView: View {
         }
         .frame(width: 260, height: 380)
         .background(
+            // A ghost card: the card surface at 60% so it reads as "not there yet" in both
+            // appearances. The hex this replaces was a light-page assumption — on a #15131C page
+            // it would have been a pale block brighter than any real card.
             RoundedRectangle(cornerRadius: BQDesign.Radius.xxl, style: .continuous)
-                .fill(Color(hex: "F5F3F8").opacity(0.6))
+                .fill(BQDesign.Colors.cardBackground.opacity(0.6))
         )
     }
 }
@@ -186,7 +189,7 @@ struct ChallengesSkeletonView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.6))
+                .fill(BQDesign.Colors.cardBackground.opacity(0.6))
         )
     }
 }

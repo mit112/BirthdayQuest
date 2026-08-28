@@ -17,9 +17,17 @@ struct RewardCardView: View {
     var body: some View {
         Button(action: onTap) {
             ZStack {
-                // Card background
+                // Card background — an opaque surface token with a translucent tint composited
+                // *on top of it*. Splitting the two is what lets the wash be a low-opacity design
+                // token instead of a fixed cream hex: a translucent stop in a single gradient
+                // would composite over the page instead, and in dark that makes a card fade into
+                // its own background at whichever end the tint is strongest.
                 RoundedRectangle(cornerRadius: BQDesign.Radius.xxl, style: .continuous)
-                    .fill(cardFill)
+                    .fill(cardSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: BQDesign.Radius.xxl, style: .continuous)
+                            .fill(cardTint)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: BQDesign.Radius.xxl, style: .continuous)
                             .stroke(borderColor, lineWidth: isAffordable ? 2 : 0)
@@ -98,7 +106,11 @@ struct RewardCardView: View {
                             Capsule().fill(
                                 isAffordable
                                 ? BQDesign.Colors.gold.opacity(0.15)
-                                : Color.gray.opacity(0.1)
+                                // `textTertiary` is the palette's "faint fill" role. At 15% it
+                                // lands within 2/255 of the system grey this replaced in light,
+                                // and unlike `Color.gray` it lightens on a dark card instead of
+                                // staying a fixed mid grey.
+                                : BQDesign.Colors.textTertiary.opacity(0.15)
                             )
                         )
                     }
@@ -126,32 +138,39 @@ struct RewardCardView: View {
 
 private extension RewardCardView {
     
-    var cardFill: some ShapeStyle {
+    /// The card's opaque base.
+    ///
+    /// A locked gift recedes toward the page in *both* appearances, which is what the original
+    /// cool grey did in light; `background` is the token that means that, and in dark it also
+    /// puts the locked card below `cardBackground` rather than above it.
+    var cardSurface: Color {
+        isLocked ? BQDesign.Colors.background : BQDesign.Colors.cardBackground
+    }
+
+    /// The wash drawn over `cardSurface`. Each opacity was solved so the light composite lands on
+    /// the hex it replaces:
+    ///
+    /// - unlocked: `goldLight` at 50% -> 100% over white is `#FFF9ED` -> `#FFF3DC`, against the
+    ///   original `#FFF8F0` -> `#FFF3E0`.
+    /// - affordable: 30% `goldLight` over white is `#FFFBF4`, one unit off the original
+    ///   `#FFFBF5`. This is the stop that used to mix the (now dynamic) `cardBackground` with a
+    ///   fixed cream and would have seamed visibly in dark.
+    /// - locked: `primaryPurple` at 4% -> 9% over `background` is `#F6F1F4` -> `#F0E9F5`, against
+    ///   the original `#F5F3F8` -> `#EDEBF2` — the same faint violet cast, one token instead of two
+    ///   hexes.
+    var cardTint: LinearGradient {
+        let stops: [Color]
         if isUnlocked {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [Color(hex: "FFF8F0"), Color(hex: "FFF3E0")],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            stops = [BQDesign.Colors.goldLight.opacity(0.5), BQDesign.Colors.goldLight]
         } else if isAffordable {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [BQDesign.Colors.cardBackground, Color(hex: "FFFBF5")],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            stops = [BQDesign.Colors.goldLight.opacity(0), BQDesign.Colors.goldLight.opacity(0.3)]
         } else {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [Color(hex: "F5F3F8"), Color(hex: "EDEBF2")],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            stops = [
+                BQDesign.Colors.primaryPurple.opacity(0.04),
+                BQDesign.Colors.primaryPurple.opacity(0.09)
+            ]
         }
+        return LinearGradient(colors: stops, startPoint: .top, endPoint: .bottom)
     }
     
     var borderColor: Color {
@@ -170,7 +189,9 @@ private extension RewardCardView {
         } else if isAffordable {
             return AnyShapeStyle(BQDesign.Colors.primaryGradient)
         } else {
-            return AnyShapeStyle(Color(hex: "D8D5E0"))
+            // Same faint-fill role as the cost pill: 50% `textTertiary` resolves to `#D5D1DD`
+            // over the locked card in light, against the `#D8D5E0` it replaces.
+            return AnyShapeStyle(BQDesign.Colors.textTertiary.opacity(0.5))
         }
     }
     

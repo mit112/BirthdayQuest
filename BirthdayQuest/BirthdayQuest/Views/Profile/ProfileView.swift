@@ -81,21 +81,39 @@ private struct ProfileBackgroundView: View {
 
     var body: some View {
         ZStack {
+            // Same construction as `TimelineBackgroundView`: a low-opacity brand tint over the
+            // `background` token, so the page follows the appearance instead of being four fixed
+            // pastels. The celebrant/contributor branch is preserved — it is now a choice of
+            // *tint hue* (warm gold-orange for the celebrant, violet for a contributor) rather
+            // than a choice of hex, and the opacities were solved against the original stops.
             LinearGradient(
                 stops: [
-                    .init(color: Color(hex: isCelebrant ? "FFF8EE" : "F5F0FA"), location: 0.0),
-                    .init(color: Color(hex: "FBF7F4"), location: 0.3),
-                    .init(color: Color(hex: "FFF5EE"), location: 0.6),
-                    .init(color: Color(hex: isCelebrant ? "FFF0E0" : "F0EAFA"), location: 1.0),
+                    .init(color: topTint, location: 0.0),
+                    .init(color: BQDesign.Colors.primaryOrange.opacity(0), location: 0.3),
+                    .init(color: BQDesign.Colors.primaryOrange.opacity(0.03), location: 0.6),
+                    .init(color: bottomTint, location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .background(BQDesign.Colors.background)
 
             SparkleFieldView()
                 .opacity(0.3)
         }
         .ignoresSafeArea()
+    }
+
+    private var topTint: Color {
+        isCelebrant
+            ? BQDesign.Colors.primaryOrange.opacity(0.02)
+            : BQDesign.Colors.primaryPurple.opacity(0.06)
+    }
+
+    private var bottomTint: Color {
+        isCelebrant
+            ? BQDesign.Colors.primaryOrange.opacity(0.11)
+            : BQDesign.Colors.primaryPurple.opacity(0.085)
     }
 }
 
@@ -140,7 +158,11 @@ private extension ProfileView {
                     )
                     .frame(width: 128, height: 128)
                     .overlay(
-                        Circle().stroke(Color.white, lineWidth: 3)
+                        // The surface colour, not white: the ring's job is to cut the gradient
+                        // disc away from the page, and `cardBackground` is what does that in both
+                        // appearances — byte-identical white in light, and a dark rim in dark,
+                        // where a white one would bloom against a #15131C page.
+                        Circle().stroke(BQDesign.Colors.cardBackground, lineWidth: 3)
                     )
                     .shadow(
                         color: isCelebrant

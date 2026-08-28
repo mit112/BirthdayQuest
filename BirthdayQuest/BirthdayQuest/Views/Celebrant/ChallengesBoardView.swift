@@ -153,17 +153,26 @@ private extension ChallengesBoardView {
 struct ChallengesBackgroundView: View {
     var body: some View {
         ZStack {
+            // Authored as a low-opacity brand tint *over* `background` rather than five fixed
+            // pastel hexes, so the wash follows the appearance: the surface token carries the
+            // scheme and the brand tokens only colour it. Same construction as
+            // `TimelineBackgroundView`. Opacities were solved against the original stops, so
+            // light resolves within ~6/255 of what it did before.
+            //
+            // The end stops are a brand token at zero alpha, not `.clear` — `.clear` is a
+            // transparent *black*, and SwiftUI would interpolate the neighbours through it.
             LinearGradient(
                 stops: [
-                    .init(color: Color(hex: "FBF7F4"), location: 0.0),
-                    .init(color: Color(hex: "F8F2F0"), location: 0.25),
-                    .init(color: Color(hex: "FFF5EE"), location: 0.5),
-                    .init(color: Color(hex: "F5F0FA"), location: 0.75),
-                    .init(color: Color(hex: "FBF7F4"), location: 1.0),
+                    .init(color: BQDesign.Colors.primaryOrange.opacity(0), location: 0.0),
+                    .init(color: BQDesign.Colors.primaryOrange.opacity(0.026), location: 0.25),
+                    .init(color: BQDesign.Colors.primaryOrange.opacity(0.039), location: 0.5),
+                    .init(color: BQDesign.Colors.primaryPurple.opacity(0.047), location: 0.75),
+                    .init(color: BQDesign.Colors.primaryPurple.opacity(0), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .background(BQDesign.Colors.background)
 
         }
         .ignoresSafeArea()

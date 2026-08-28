@@ -31,14 +31,21 @@ struct BirthdayQuestApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(session)
-                // Every BQDesign colour is a fixed hex with no dark variant, and the tab bar
-                // above is pinned to a light `cardBackground`. Surfaces that lean on a
-                // system-adaptive background instead — the plain `List` in `OccasionListView`,
-                // for one — would put near-black `textPrimary` on dark grey in dark mode, which
-                // measures about 1.1:1. Pin the appearance the palette was actually designed for
-                // rather than shipping unreadable text; a real dark theme means dark variants for
-                // every token, which is its own piece of work.
-                .preferredColorScheme(.light)
+                // The appearance is no longer pinned. Every `BQDesign` colour is now a
+                // `UIColor(dynamicProvider:)` pair whose contrast is measured and pinned in
+                // both schemes by `PaletteContrastTests`, and the page gradients and card
+                // surfaces that used to hardcode light-only hexes are authored as brand tints
+                // over surface tokens, so they follow the scheme too.
+                //
+                // The tab-bar appearance configured above needs no change for the same reason:
+                // `UIColor(BQDesign.Colors.cardBackground)` now returns a dynamic colour, which
+                // UIKit re-resolves per trait collection.
+                //
+                // Two things stay light-independent on purpose. The spy-dossier surfaces
+                // (`secretDark`/`secretDeep`) are dark in BOTH appearances — their ~30 white
+                // glyphs are correct as written, and flipping them would break all of them at
+                // once; they earn separation from the page by lightness instead. And white text
+                // on a saturated brand gradient is scheme-invariant, because the gradient is.
         }
     }
 }

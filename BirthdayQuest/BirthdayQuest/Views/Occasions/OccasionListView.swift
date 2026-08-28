@@ -5,6 +5,11 @@ import SwiftUI
 struct OccasionListView: View {
 
     @EnvironmentObject private var session: AppSession
+
+    /// Read only to pick between Apple's two *provided* Sign in with Apple button styles — see
+    /// `appleLinkControl`. Nothing else in this file may branch on it; every colour is a token.
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var creating = false
     @State private var joining = false
     @State private var showingAccount = false
@@ -198,7 +203,11 @@ struct OccasionListView: View {
             } onCompletion: { result in
                 finish(result)
             }
-            .signInWithAppleButtonStyle(.black)
+            // The one place reading `colorScheme` directly is correct: this selects between two
+            // Apple-*provided* button styles rather than choosing a colour, and Apple's own
+            // guidance is black on light, white on dark. A `.black` button disappears into the
+            // #15131C dark background.
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
             .frame(height: Self.appleButtonHeight)
             .accessibilityHint("Links your Apple ID so these occasions can be opened on another iPhone.")
         }

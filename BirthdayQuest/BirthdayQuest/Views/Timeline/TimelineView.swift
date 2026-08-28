@@ -245,13 +245,21 @@ struct BezierTrailConnector: View {
     
     // Trail colors cycle through the palette
     private var trailColor: Color {
+        // Tints of the palette's own hues, not six fixed pastels. The call sites multiply this
+        // (`.opacity(0.6)` completed, `0.25` pending, `0.2` glow — `Color.opacity` multiplies),
+        // and each base was solved so the *completed* light composite lands within a few units of
+        // the pastel it replaces. Doing it with tokens matters more here than it looks: a pale
+        // fixed pastel is a barely-there wash on a cream page and a bright line on a near-black
+        // one, so the hardcoded version did not degrade in dark, it shouted. Tinting a token
+        // keeps the trail equally faint in both, which is the intent — the completed state is
+        // carried by the node badges, not by this.
         let colors: [Color] = [
-            Color(hex: "D4C5FC"),  // lavender
-            Color(hex: "B8D4F0"),  // sky
-            Color(hex: "FFE0B2"),  // peach
-            Color(hex: "F5C6D0"),  // rose
-            Color(hex: "C5E8D4"),  // mint
-            Color(hex: "DDD0F8"),  // soft purple
+            BQDesign.Colors.primaryPurple.opacity(0.32),   // lavender
+            BQDesign.Colors.challengeBlue.opacity(0.41),   // sky
+            BQDesign.Colors.primaryOrange.opacity(0.35),   // peach
+            BQDesign.Colors.primaryPink.opacity(0.38),     // rose
+            BQDesign.Colors.success.opacity(0.32),         // mint
+            BQDesign.Colors.primaryPurple.opacity(0.25),   // soft purple
         ]
         return colors[index % colors.count]
     }
@@ -262,7 +270,8 @@ struct BezierTrailConnector: View {
             BQDesign.Colors.gold,
             BQDesign.Colors.primaryPurple,
             BQDesign.Colors.primaryPink,
-            Color(hex: "4CD964"),
+            // `4CD964` was the literal light value of `success`; the token is an exact swap.
+            BQDesign.Colors.success,
         ]
         return colors[index % colors.count]
     }
