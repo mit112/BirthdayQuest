@@ -8,7 +8,14 @@ final class MockAuthProviding: AuthProviding {
     var isAnonymous = true
     var anonymousSignInCount = 0
     var appleSignIns: [(idToken: String, nonce: String)] = []
+    var accountDeletionCount = 0
     var errorToThrow: Error?
+
+    /// Fired at the top of `deleteAccount()`, before it records anything. The ordering that
+    /// account deletion depends on — Firestore data first, the auth user last — is the one
+    /// thing two independent mocks cannot prove between them, so this is the shared
+    /// observation point: a test snapshots `MockGameBackend.calls` from here.
+    var onDeleteAccount: (() -> Void)?
 
     func signInAnonymouslyIfNeeded() async throws -> String {
         if let errorToThrow { throw errorToThrow }
@@ -24,5 +31,12 @@ final class MockAuthProviding: AuthProviding {
         appleSignIns.append((idToken, nonce))
         isAnonymous = false
         currentUid = "uid_apple"
+    }
+
+    func deleteAccount() async throws {
+        onDeleteAccount?()
+        if let errorToThrow { throw errorToThrow }
+        accountDeletionCount += 1
+        currentUid = nil
     }
 }

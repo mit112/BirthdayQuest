@@ -215,7 +215,19 @@ service cloud.firestore {
                       && request.resource.data.isHost == resource.data.isHost
                       && request.resource.data.mode == resource.data.mode;
 
-        allow delete: if isHost(eventId);
+        // Two directions on one act — revoking a membership. The isHost half is the host
+        // ejecting a contributor. The self half is a member leaving, which is what in-app
+        // account deletion is built on (App Store 5.1.1(v)): this document is where a uid's
+        // name, avatar and usedCode live, so deleting it IS the erasure — and because
+        // isMember() is exists(participantPath), the same delete revokes every read and
+        // write that uid had here, with no second write to get wrong.
+        //
+        // The self half is deliberately not conditioned on role, because an account has to
+        // be deletable by anyone who holds one, host included. The cost is understood and
+        // accepted: isHost() reads this document, so a departed host leaves an occasion
+        // nobody can administer. Everything they authored stays — a celebrant must not lose
+        // a gift because the person who sent it closed their account.
+        allow delete: if isHost(eventId) || (signedIn() && request.auth.uid == uid);
       }
 
       // Split into a gameplay half and a content half. The gameplay list is verbatim the

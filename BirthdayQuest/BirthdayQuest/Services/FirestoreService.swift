@@ -339,6 +339,49 @@ final class FirestoreService: GameBackend {
         try await participantsRef(eventId).document(uid).delete()
     }
 
+    /// The Firestore half of account deletion. See `GameBackend.deleteMyAccountData` for the
+    /// anonymise-and-keep policy this implements.
+    func deleteMyAccountData() async throws {
+        let uid = try currentUid()
+        let memberships = try await db.collection(Collections.memberships).document(uid)
+            .collection(Collections.events).getDocuments()
+
+        // Concurrent for the same reason `fetchMyOccasions` is — a serial loop is two round
+        // trips deep per occasion — and `@MainActor` children for the same reason too: no
+        // value crosses an isolation boundary, and the requests still overlap because the
+        // deletes suspend.
+        //
+        // The failure semantics are the deliberate inversion of `fetchMyOccasions`. There, a
+        // membership that will not load is SKIPPED, because one stale row must not blank a
+        // whole list. Here a swallowed failure would leave a participant document — a name,
+        // an avatar, an invite code — behind while the caller went on to delete the auth
+        // user, and every rule guarding that document is written against `request.auth.uid`,
+        // so it would then be unreachable and undeletable forever, by anyone, including its
+        // owner. So this is a THROWING group: the first failure cancels its siblings and
+        // propagates, and the auth user survives to try again.
+        //
+        // A partially-completed run is safe to re-issue: every step is a delete, and
+        // Firestore treats deleting an absent document as success.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for membership in memberships.documents {
+                let eventId = membership.documentID
+                group.addTask { @MainActor in
+                    // Participant first, mirror second. The participant document is the one
+                    // holding personal data and the one `isMember()` reads, so deleting it
+                    // is both the erasure and the revocation; if the mirror delete then
+                    // fails, what is left over is a row naming an occasion this uid can no
+                    // longer read — which is the already-understood stale-mirror state that
+                    // `fetchMyOccasions` skips over.
+                    try await self.participantsRef(eventId).document(uid).delete()
+                    try await self.membershipRef(uid: uid, eventId: eventId).delete()
+                }
+            }
+            try await group.waitForAll()
+        }
+
+        logger.info("Deleted account data across \(memberships.documents.count) occasions")
+    }
+
     /// A field update, never a `setData`. `hostUid` is pinned immutable by the rules
     /// (`request.resource.data.hostUid == resource.data.hostUid`), so a full replace that
     /// omitted it would be denied.

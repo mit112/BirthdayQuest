@@ -15,6 +15,14 @@ protocol AuthProviding: AnyObject {
     var isAnonymous: Bool { get }
     func signInAnonymouslyIfNeeded() async throws -> String
     func signInWithApple(idToken: String, nonce: String) async throws
+
+    /// Deletes the signed-in Firebase Auth user. Identity only — it touches no Firestore
+    /// document, because the two halves of account deletion have to be ordered and the
+    /// ordering is one-way: every rule in this app is written against `request.auth.uid`,
+    /// so once this returns nothing can satisfy any of them again. Whatever Firestore data
+    /// still names that uid is then unreachable even by the person it describes. Call
+    /// `GameBackend.deleteMyAccountData()` first, and only call this if it succeeded.
+    func deleteAccount() async throws
 }
 
 // MARK: - AuthService
@@ -59,6 +67,14 @@ final class AuthService: AuthProviding {
         logger.info("Signed in with Apple")
     }
 
+    /// Closes the account for good. Logged because it is the one action in the app with no
+    /// undo and no server-side record left to consult afterwards — the uid is the key to
+    /// everything, so once it is gone there is nothing to look the user up by.
+    func deleteAccount() async throws {
+        try await provider.deleteAccount()
+        logger.info("Deleted the signed-in account")
+    }
+
     /// Raw nonce for Sign in with Apple. Apple receives its SHA-256; Firebase receives this.
     /// Uses `SecRandomCopyBytes` rather than `Int.random` because the nonce must resist
     /// replay — a PRNG seeded predictably would defeat the point of having one.
@@ -83,6 +99,11 @@ enum AuthError: LocalizedError {
     case sessionExpired
     case accountDisabled
     case signInFailed
+    /// Firebase refuses to delete a user whose sign-in is stale, and the only cure is to
+    /// sign in again — retrying the delete cannot ever clear it. Its own case rather than
+    /// `signInFailed` so the deletion UI can say what to do instead of offering a retry
+    /// that is guaranteed to fail the same way.
+    case requiresRecentLogin
 
     init(_ error: Error) {
         switch AuthErrorCode(rawValue: (error as NSError).code) {
@@ -90,6 +111,8 @@ enum AuthError: LocalizedError {
             self = .sessionExpired
         case .userDisabled:
             self = .accountDisabled
+        case .requiresRecentLogin:
+            self = .requiresRecentLogin
         default:
             self = .signInFailed
         }
@@ -100,6 +123,8 @@ enum AuthError: LocalizedError {
         case .sessionExpired:  return "Your session expired. Sign in again to continue."
         case .accountDisabled: return "This account has been disabled."
         case .signInFailed:    return "Couldn't sign in. Check your connection and try again."
+        case .requiresRecentLogin:
+            return "For your security, sign in again before deleting your account."
         }
     }
 }
@@ -148,6 +173,19 @@ private final class FirebaseAuthProvider: AuthProviding {
             } catch {
                 throw AuthError(error)
             }
+        } catch {
+            throw AuthError(error)
+        }
+    }
+
+    /// No `currentUser` means there is no account to close. Reported as `sessionExpired`
+    /// rather than swallowed as success: the caller has already deleted this uid's Firestore
+    /// data by the time it gets here, and "it worked" would hide an identity that outlived
+    /// the erasure.
+    func deleteAccount() async throws {
+        guard let user = Auth.auth().currentUser else { throw AuthError.sessionExpired }
+        do {
+            try await user.delete()
         } catch {
             throw AuthError(error)
         }

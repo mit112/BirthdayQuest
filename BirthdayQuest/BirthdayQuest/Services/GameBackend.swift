@@ -74,6 +74,24 @@ protocol GameBackend: AnyObject {
     /// user's list on their next fetch.
     func removeParticipant(eventId: String, uid: String) async throws
 
+    /// Erases the calling uid's identity from every occasion it belongs to: the participant
+    /// document — which carries `name`, `avatarId` and `usedCode` — and the membership
+    /// mirror row, for each event named by `memberships/{uid}/events`. The Firestore half of
+    /// in-app account deletion (App Store 5.1.1(v)).
+    ///
+    /// One of the few methods here that cannot take an `eventId`, for the same reason
+    /// `fetchMyOccasions` cannot: the set of occasions is the thing being enumerated.
+    ///
+    /// Deliberately anonymise-and-keep. The gifts, dares, timeline entries and proof media
+    /// this uid authored stay with their occasions — a celebrant must not lose a present
+    /// because the person who sent it closed their account. What leaves is who they were.
+    ///
+    /// Throws on the first failure and does not press on, which is the whole reason this is
+    /// separate from `AuthProviding.deleteAccount()`: the caller must not delete the auth
+    /// user unless this returned cleanly. Safe to re-issue after a partial run — every step
+    /// is a delete, and Firestore treats deleting an absent document as success.
+    func deleteMyAccountData() async throws
+
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws
 
     /// The occasion's two invite codes, read from `events/{eventId}/private/codes`.

@@ -7,6 +7,7 @@ struct OccasionListView: View {
     @EnvironmentObject private var session: AppSession
     @State private var creating = false
     @State private var joining = false
+    @State private var showingAccount = false
     @State private var openEventId: String?
 
     /// The raw nonce has to survive from `onRequest` to `onCompletion`. Apple is handed its
@@ -55,6 +56,12 @@ struct OccasionListView: View {
             .navigationTitle("My Occasions")
             .refreshable { await session.refreshOccasions() }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingAccount = true } label: {
+                        Image(systemName: "person.crop.circle")
+                    }
+                    .accessibilityLabel("Account")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Create an occasion") { creating = true }
@@ -67,6 +74,7 @@ struct OccasionListView: View {
             }
             .sheet(isPresented: $creating) { CreateOccasionView() }
             .sheet(isPresented: $joining) { JoinOccasionView() }
+            .sheet(isPresented: $showingAccount) { AccountView() }
             .navigationDestination(item: $openEventId) { eventId in
                 EventContainerView(eventId: eventId)
             }

@@ -167,6 +167,17 @@ final class MockGameBackend: GameBackend {
         try throwIfNeeded()
     }
 
+    /// Counted before `throwIfNeeded()`, so a stubbed failure still proves the attempt was
+    /// made — which is exactly what "a Firestore failure must not delete the auth user"
+    /// needs to distinguish from "nothing happened at all".
+    private(set) var accountDataDeletionCount = 0
+
+    func deleteMyAccountData() async throws {
+        calls.append("deleteMyAccountData")
+        accountDataDeletionCount += 1
+        try throwIfNeeded()
+    }
+
     func setOccasionOpen(eventId: String, isOpen: Bool) async throws {
         record("setOccasionOpen", eventId: eventId)
         try throwIfNeeded()

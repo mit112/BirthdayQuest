@@ -42,6 +42,7 @@ struct EmptyOccasionsView: View {
     @State private var creating = false
     @State private var joining = false
     @State private var isRetrying = false
+    @State private var showingAccount = false
 
     @ScaledMetric private var crownSize: CGFloat = 56
     @ScaledMetric private var errorIconSize: CGFloat = 48
@@ -55,8 +56,22 @@ struct EmptyOccasionsView: View {
                 empty
             }
         }
+        // Overlaid on the ZStack rather than placed inside either branch, so the account —
+        // and with it the terms and account deletion — stays reachable whether this screen is
+        // showing "no occasions yet" or a failed load. Someone with nothing to open is the
+        // likeliest person to want to close their account, and this is the only root they see.
+        .overlay(alignment: .topTrailing) {
+            Button { showingAccount = true } label: {
+                Image(systemName: "person.crop.circle")
+                    .font(BQDesign.Typography.sectionTitle)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+            }
+            .accessibilityLabel("Account")
+            .padding(BQDesign.Spacing.lg)
+        }
         .sheet(isPresented: $creating) { CreateOccasionView() }
         .sheet(isPresented: $joining) { JoinOccasionView() }
+        .sheet(isPresented: $showingAccount) { AccountView() }
     }
 
     private var empty: some View {

@@ -1377,15 +1377,30 @@ describe('privilege escalation chain is broken', () => {
   });
 });
 
-describe('participant deletion (host removal)', () => {
+describe('participant deletion (host removal and self-delete)', () => {
   beforeEach(seed);
 
+  // The pre-existing capability. Host removal is built entirely on this one clause, so it
+  // stays pinned independently of the self-delete half added beside it.
   it("the host can delete a contributor's participant doc", async () => {
     await joinAsContributor(GUEST);
     const db = testEnv.authenticatedContext(HOST).firestore();
     await assertSucceeds(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
   });
 
+  // In-app account deletion (App Store 5.1.1(v)) is exactly this write, once per occasion.
+  // This case used to assert the opposite — self-delete was denied, which is what blocked
+  // a member erasing themselves — so if the self clause is ever removed as "redundant with
+  // isHost", this is the test that goes red.
+  it('a member can delete their own participant doc (leaving / account deletion)', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  // The self clause is scoped to the caller's own uid and nothing wider. Without this, a
+  // clause of `isMember(eventId)` would read as an equally plausible way to let people
+  // leave, and would hand every contributor the host's ejection power.
   it('a non-host member cannot delete another participant', async () => {
     await joinAsContributor(GUEST);
     await joinAsContributor(OUTSIDER);
@@ -1393,16 +1408,39 @@ describe('participant deletion (host removal)', () => {
     await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${OUTSIDER}`)));
   });
 
-  it('a non-host member cannot delete their own participant doc', async () => {
-    await joinAsContributor(GUEST);
-    const db = testEnv.authenticatedContext(GUEST).firestore();
-    await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
-  });
-
   it('an outsider (non-member) cannot delete a participant', async () => {
     await joinAsContributor(GUEST);
     const db = testEnv.authenticatedContext(OUTSIDER).firestore();
     await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  it('an unauthenticated caller cannot delete a participant', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(deleteDoc(doc(db, `events/${EVENT}/participants/${GUEST}`)));
+  });
+
+  // The other half of the erasure. `deleteMyAccountData` deletes the participant doc AND the
+  // membership mirror for every occasion; the mirror's delete rule was never exercised, so a
+  // narrowing there would have failed at runtime as permission-denied with the suite green.
+  it('a member can delete their own membership mirror row', async () => {
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await joinAsContributor(GUEST);
+    await setDoc(doc(db, `memberships/${GUEST}/events/${EVENT}`), {
+      role: 'contributor', isHost: false, joinedAt: new Date(),
+    });
+    await assertSucceeds(deleteDoc(doc(db, `memberships/${GUEST}/events/${EVENT}`)));
+  });
+
+  it("a member cannot delete someone else's membership mirror row", async () => {
+    await joinAsContributor(GUEST);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `memberships/${OUTSIDER}/events/${EVENT}`), {
+        role: 'contributor', isHost: false, joinedAt: new Date(),
+      });
+    });
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(deleteDoc(doc(db, `memberships/${OUTSIDER}/events/${EVENT}`)));
   });
 });
 
