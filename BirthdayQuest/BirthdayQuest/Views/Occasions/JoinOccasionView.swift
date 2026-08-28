@@ -26,6 +26,8 @@ struct JoinOccasionView: View {
                         formError(errorMessage)
                     }
                 }
+
+                TermsAgreementSection(act: "Joining an occasion")
             }
             .navigationTitle("Join an occasion")
             .toolbar {

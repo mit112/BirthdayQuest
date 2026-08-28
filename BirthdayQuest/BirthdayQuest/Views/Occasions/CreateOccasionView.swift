@@ -47,6 +47,8 @@ struct CreateOccasionView: View {
                         .accessibilityLabel("Error: \(errorMessage)")
                     }
                 }
+
+                TermsAgreementSection(act: "Creating an occasion")
             }
             .navigationTitle("New occasion")
             .toolbar {
