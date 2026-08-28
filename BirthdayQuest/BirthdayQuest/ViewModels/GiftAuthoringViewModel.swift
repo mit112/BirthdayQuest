@@ -5,6 +5,44 @@ import CoreTransferable
 import UniformTypeIdentifiers
 import Combine
 import OSLog
+import FirebaseStorage
+
+// MARK: - RewardMediaProbing
+
+/// Answers one question about a reward's media: is the Storage object still there?
+///
+/// Deliberately **not** a `GameBackend` method. That seam is Firestore CRUD plus the two
+/// uploads; this is a Storage metadata read with different failure semantics, and widening the
+/// backend protocol for it would push a change into a file this work has no other reason to
+/// touch. It is narrow and injectable for the same reason `ProofMediaLoading` is: so the
+/// re-send carve-out can be tested without a network.
+protocol RewardMediaProbing: Sendable {
+    /// `true` **only** when the object at `path` is confirmed absent.
+    ///
+    /// Every other outcome — present, unauthorized, offline, malformed path — must answer
+    /// `false`. This drives an editability carve-out on a gift the celebrant has already
+    /// opened, so the two errors are not symmetric: a wrong `false` merely preserves today's
+    /// behaviour, while a wrong `true` hands someone a rewrite of a gift that was already read.
+    /// Fail closed.
+    func isObjectMissing(path: String) async -> Bool
+}
+
+/// Production probe. `getMetadata()` is a small metadata request, not a download — the point of
+/// using it rather than `MediaStore` is that confirming absence must not cost a media transfer.
+/// The Storage rules grant reward-media `read` to any member, so a contributor is authorised to
+/// ask about their own gift's objects.
+struct FirebaseRewardMediaProbe: RewardMediaProbing {
+    func isObjectMissing(path: String) async -> Bool {
+        do {
+            _ = try await Storage.storage().reference(withPath: path).getMetadata()
+            return false
+        } catch let error as NSError {
+            // Same narrow test `MediaStore` uses to raise `objectMissing`: only a genuine
+            // 404 counts. Anything else (permission, network) falls through to `false`.
+            return error.code == StorageErrorCode.objectNotFound.rawValue
+        }
+    }
+}
 
 /// A movie picked from the photo library, materialised as a local file URL so its size can be
 /// checked against the 200 MB Storage cap without loading the whole clip into memory. PhotosUI
@@ -112,13 +150,20 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// back onto a blank form that invites writing a gift into an occasion that has stopped
     /// answering.
     @Published private(set) var loadFailure: String?
+    /// Set only once this gift's Storage objects have been **confirmed gone** — never from the
+    /// expiry date alone. See `checkMediaExpiry(occasionDate:now:)`.
+    @Published private(set) var mediaExpired = false
 
     /// Every gift in the occasion, held only to place a new one at the end of the order.
     private var allGifts: [Reward] = []
     private var userId: String?
     private var authorName: String = ""
+    /// `checkMediaExpiry` is one-shot per screen: the answer cannot change while the form is
+    /// open except through a re-send, which sets `mediaExpired` itself.
+    private var didCheckMediaExpiry = false
 
     private let service: GameBackend
+    private let mediaProbe: RewardMediaProbing
     private let eventId: String
     private let listenerKey: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "GiftAuthoring")
@@ -127,9 +172,14 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// the default only has to be a price rather than a hole.
     private static let defaultPointCost = 100
 
-    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+    init(
+        eventId: String,
+        service: GameBackend = FirestoreService.shared,
+        mediaProbe: RewardMediaProbing = FirebaseRewardMediaProbe()
+    ) {
         self.eventId = eventId
         self.service = service
+        self.mediaProbe = mediaProbe
         self.listenerKey = ListenerKey.myGift(eventId)
     }
 
@@ -138,6 +188,53 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// Locked once the celebrant has opened it. Rewriting a gift someone has already read
     /// would silently change what they were given.
     var isEditable: Bool { !(existingGift?.isUnlocked ?? false) }
+
+    /// Whether media may be attached at all: normally only while the gift is still unopened,
+    /// plus the one carve-out below.
+    ///
+    /// The carve-out is deliberately narrow. `isEditable` exists so a contributor cannot
+    /// rewrite a gift the celebrant has already read, and that intent survives whole: this
+    /// permits **replacing media that no longer exists** — the celebrant is at this moment
+    /// looking at "isn't available anymore" — and nothing else.
+    ///
+    /// What it still forbids, in the `isResendOnly` state:
+    /// - rewriting `title`, `teaser` or the letter text (the form keeps them disabled *and*
+    ///   `save()` never puts them in the payload — the rules would happily accept them, since
+    ///   they sit in the same content tier, so only this code stops it);
+    /// - changing `contentType` (the picker is hidden once a gift exists, and neither write
+    ///   path sends the key);
+    /// - touching `pointCost`/`sortOrder` (host tier) or `isUnlocked`/`fetchedBy` (gameplay
+    ///   tier) — a write spanning two tiers is rejected by the rules at runtime anyway;
+    /// - re-sending on suspicion. `mediaExpired` is set only by a probe that *confirmed* the
+    ///   objects are gone, never by the expiry date on its own.
+    var canAttachMedia: Bool { isEditable || mediaExpired }
+
+    /// Exactly the carve-out state: the celebrant has opened this gift, so its words are
+    /// frozen, but its media is gone and may be sent again.
+    var isResendOnly: Bool { !isEditable && mediaExpired }
+
+    /// Whether the contributor has picked something new in this session, as opposed to the
+    /// gift merely having a stored (and possibly dead) path.
+    var hasNewMediaSelection: Bool {
+        switch contentMode {
+        case .letter: return false
+        case .photos: return !photoPreviews.isEmpty
+        case .video:  return selectedVideoURL != nil
+        case .voice:  return selectedAudioURL != nil
+        }
+    }
+
+    /// Banner copy for a gift whose media is confirmed gone, or `nil`. Name-free by the
+    /// convention the other status strings here follow — the view owns the celebrant's name.
+    var expiredMediaMessage: String? {
+        guard mediaExpired else { return nil }
+        switch contentMode {
+        case .photos: return "These photos are no longer on the server. Add them again to send this gift back."
+        case .video:  return "This video is no longer on the server. Add it again to send this gift back."
+        case .voice:  return "This voice gift is no longer on the server. Record or choose it again to send it back."
+        case .letter: return nil
+        }
+    }
 
     var contentState: ContentState {
         if let loadFailure { return .failed(loadFailure) }
@@ -166,6 +263,11 @@ final class GiftAuthoringViewModel: ObservableObject {
     }
 
     var isValid: Bool {
+        // In the re-send carve-out the only thing being written is replacement media, so the
+        // already-stored path must not satisfy validity — it is the very path that is dead.
+        // The title is not re-validated either: it is not in the payload and cannot be edited.
+        if isResendOnly { return hasNewMediaSelection }
+
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         switch contentMode {
         case .letter:
@@ -184,9 +286,50 @@ final class GiftAuthoringViewModel: ObservableObject {
 
     var statusText: String {
         if loadFailure != nil { return "Couldn't load your gift" }
+        if mediaExpired { return "Expired — send it again" }
         if existingGift?.isUnlocked == true { return "Opened — they've read it" }
         if hasExisting { return "Saved — edit any time" }
         return "Write your gift"
+    }
+
+    // MARK: Media expiry
+
+    /// Detects that this contributor's own media gift can no longer be delivered.
+    ///
+    /// Two stages, and both are load-bearing:
+    ///
+    /// 1. **Date.** `MediaLifecycle.isExpired` is the same policy the celebrant's purge is
+    ///    gated on, so before that instant nothing can have been deleted and no request is
+    ///    worth making. This is also why the check is essentially free for every live occasion.
+    /// 2. **Evidence.** Past that instant the media is only *eligible* for cleanup. The purge
+    ///    runs on the celebrant's device and only for objects it has already archived, so a
+    ///    gift can be months past expiry with its objects perfectly intact. Inferring from the
+    ///    date alone would both lie to the contributor and — since this unlocks an editability
+    ///    carve-out — hand them a rewrite of a gift that has already been read. So each stored
+    ///    path is probed for real, and only a confirmed absence counts.
+    ///
+    /// Any path missing is enough, matching `RewardContentPresentation.resolve`: it raises
+    /// `.expired` on the *first* object it cannot fetch, so a gallery with one dead photo is
+    /// already broken from the celebrant's side.
+    ///
+    /// Runs at most once per screen and only for an existing gift that actually has media.
+    /// Deliberately not conditioned on `isUnlocked`: an unopened gift can expire too, and
+    /// while its form is already editable, nothing else would tell the contributor to act.
+    func checkMediaExpiry(occasionDate: Date?, now: Date = Date()) async {
+        guard !didCheckMediaExpiry, !mediaExpired else { return }
+        guard let occasionDate, let gift = existingGift else { return }
+        // Same union `GiftCurationViewModel` uses when purging: a text gift yields nothing.
+        let paths = (gift.contentUrls ?? []) + [gift.contentUrl].compactMap { $0 }
+        guard !paths.isEmpty else { return }
+        guard MediaLifecycle.isExpired(occasionDate: occasionDate, now: now) else { return }
+
+        didCheckMediaExpiry = true
+        for path in paths where !mediaExpired {
+            if await mediaProbe.isObjectMissing(path: path) {
+                logger.info("Gift media is gone from Storage; offering a re-send")
+                mediaExpired = true
+            }
+        }
     }
 
     // MARK: Load
@@ -272,7 +415,7 @@ final class GiftAuthoringViewModel: ObservableObject {
     // MARK: Save
 
     func save() async {
-        guard !isSaving, isEditable, let userId else { return }
+        guard !isSaving, canAttachMedia, let userId else { return }
         guard isValid else {
             showValidation = true
             BQDesign.Haptics.error()
@@ -285,45 +428,53 @@ final class GiftAuthoringViewModel: ObservableObject {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTeaser = teaser.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLetter = letter.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Read once: `resendMedia` clears `mediaExpired` on success, which would otherwise
+        // change the branch out from under the code that follows it.
+        let resendOnly = isResendOnly
 
         do {
-            switch contentMode {
-            case .letter:
-                if let existing = existingGift, let id = existing.id {
-                    // Content keys only. pointCost and sortOrder are the host's tier, and the
-                    // rules reject a write that reaches across tiers.
-                    try await service.updateReward(eventId: eventId, rewardId: id, fields: [
-                        "title": trimmedTitle,
-                        "teaser": trimmedTeaser,
-                        "contentText": trimmedLetter,
-                    ])
-                } else {
-                    let gift = Reward(
-                        fromUserId: userId,
-                        fromName: authorName,
-                        title: trimmedTitle,
-                        teaser: trimmedTeaser,
-                        pointCost: Self.defaultPointCost,
-                        contentType: .text,
-                        contentUrl: nil,
-                        contentUrls: nil,
-                        contentText: trimmedLetter,
-                        isUnlocked: false,
-                        unlockedAt: nil,
-                        sortOrder: allGifts.count,
-                        badgeIllustration: "envelope.fill",
-                        createdAt: Date()
+            if resendOnly {
+                guard let rewardId = existingGift?.id else { return }
+                try await resendMedia(rewardId: rewardId)
+            } else {
+                switch contentMode {
+                case .letter:
+                    if let existing = existingGift, let id = existing.id {
+                        // Content keys only. pointCost and sortOrder are the host's tier, and
+                        // the rules reject a write that reaches across tiers.
+                        try await service.updateReward(eventId: eventId, rewardId: id, fields: [
+                            "title": trimmedTitle,
+                            "teaser": trimmedTeaser,
+                            "contentText": trimmedLetter,
+                        ])
+                    } else {
+                        let gift = Reward(
+                            fromUserId: userId,
+                            fromName: authorName,
+                            title: trimmedTitle,
+                            teaser: trimmedTeaser,
+                            pointCost: Self.defaultPointCost,
+                            contentType: .text,
+                            contentUrl: nil,
+                            contentUrls: nil,
+                            contentText: trimmedLetter,
+                            isUnlocked: false,
+                            unlockedAt: nil,
+                            sortOrder: allGifts.count,
+                            badgeIllustration: "envelope.fill",
+                            createdAt: Date()
+                        )
+                        _ = try await service.createReward(eventId: eventId, reward: gift)
+                    }
+                case .photos:
+                    try await savePhotos(
+                        userId: userId, title: trimmedTitle, teaser: trimmedTeaser
                     )
-                    _ = try await service.createReward(eventId: eventId, reward: gift)
+                case .video:
+                    try await saveVideo(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
+                case .voice:
+                    try await saveAudio(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
                 }
-            case .photos:
-                try await savePhotos(
-                    userId: userId, title: trimmedTitle, teaser: trimmedTeaser
-                )
-            case .video:
-                try await saveVideo(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
-            case .voice:
-                try await saveAudio(userId: userId, title: trimmedTitle, teaser: trimmedTeaser)
             }
 
             isSaving = false
@@ -337,6 +488,69 @@ final class GiftAuthoringViewModel: ObservableObject {
             showError = true
             BQDesign.Haptics.error()
         }
+    }
+
+    /// Re-sends a gift whose media the server no longer holds: uploads the replacement and
+    /// writes **only** the media key.
+    ///
+    /// The payload is the whole point of this method existing separately from `savePhotos` /
+    /// `saveVideo` / `saveAudio`, which all also carry `title` and `teaser`. `title`/`teaser`
+    /// sit in the same content tier as `contentUrl`, so the rules would accept them here —
+    /// the thing that keeps a re-send from becoming a silent rewrite of an opened gift is this
+    /// dictionary, not the backend. Nothing gameplay-side (`isUnlocked`, `fetchedBy`) may ride
+    /// along either: that write spans two tiers and the rules reject it at runtime.
+    ///
+    /// A fresh UUID folder, never the old path: the Storage rules deny overwrites outright.
+    /// The dead objects are already gone, so there is nothing left to clean up server-side.
+    private func resendMedia(rewardId: String) async throws {
+        var fields: [String: Any] = [:]
+        var temporaryFile: URL?
+
+        switch contentMode {
+        case .letter:
+            // Unreachable — a text gift owns no Storage objects, so `mediaExpired` can never
+            // become true for one. Returning is still the right answer if that ever changes.
+            return
+        case .photos:
+            let group = UUID().uuidString
+            var uploaded: [String] = []
+            for image in photoPreviews {
+                guard let data = compressImage(image) else { continue }
+                uploaded.append(try await service.uploadRewardMedia(
+                    eventId: eventId, rewardId: group, data: data, contentType: "image/jpeg"
+                ))
+            }
+            // Replacing a dead gallery with an empty array would leave the celebrant on
+            // `.unavailable` — a different, and equally wrong, dead end.
+            guard !uploaded.isEmpty else { throw GiftAuthoringError.noPhotosUploaded }
+            fields["contentUrls"] = uploaded
+        case .video:
+            guard let url = selectedVideoURL else { return }
+            temporaryFile = url
+            fields["contentUrl"] = try await service.uploadRewardMedia(
+                eventId: eventId, rewardId: UUID().uuidString,
+                data: try Data(contentsOf: url), contentType: videoContentType(for: url)
+            )
+        case .voice:
+            guard let url = selectedAudioURL else { return }
+            temporaryFile = url
+            fields["contentUrl"] = try await service.uploadRewardMedia(
+                eventId: eventId, rewardId: UUID().uuidString,
+                data: try Data(contentsOf: url), contentType: audioContentType(for: url)
+            )
+        }
+
+        try await service.updateReward(eventId: eventId, rewardId: rewardId, fields: fields)
+
+        // Only after the write lands — an earlier throw leaves the file for a retry.
+        if let temporaryFile {
+            try? FileManager.default.removeItem(at: temporaryFile)
+            selectedVideoURL = nil
+            selectedAudioURL = nil
+        }
+        // The gift is deliverable again, so the carve-out closes and the form re-locks. The
+        // celebrant's next resolve sees a live path and stops rendering `.expired`.
+        mediaExpired = false
     }
 
     /// Uploads any newly-selected photos to a client-generated storage folder, then writes

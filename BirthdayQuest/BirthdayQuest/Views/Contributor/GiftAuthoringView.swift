@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
+import AVFoundation
 
 /// The contributor's gift to the celebrant: a letter they unlock with points.
 ///
@@ -20,6 +21,15 @@ struct GiftAuthoringView: View {
     @StateObject private var recorder = AudioRecorderController()
     @State private var recordingDotOn = false
     @Environment(\.bqMotionLevel) private var motionLevel
+    /// A poster frame for the picked clip, or nil while it is being generated or if generation
+    /// failed. Purely confirmatory, so a failure falls back to the icon rather than an error.
+    @State private var videoThumbnail: UIImage?
+    /// Duration of the picked/recorded voice clip, formatted. A waveform is out of scope; the
+    /// length is the one fact that distinguishes "I recorded the right take" from the wrong one.
+    @State private var audioDurationText: String?
+    // Dimensions, not text sizes: @ScaledMetric is what scales a glyph or a thumbnail with the
+    // user's content size category (a fixed `Font.system(size:)` would not be overridable).
+    @ScaledMetric private var mediaThumbnailSize: CGFloat = 56
 
     init(eventId: String) {
         _viewModel = StateObject(wrappedValue: GiftAuthoringViewModel(eventId: eventId))
@@ -55,6 +65,12 @@ struct GiftAuthoringView: View {
                 let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
                 viewModel.acceptAudio(url: url, sizeBytes: size)
             }
+        }
+        // Keyed on the loaded gift's id so it runs once the listener has actually delivered it,
+        // rather than on the empty state `onAppear` sees. `occasionDate` is the expiry anchor
+        // and lives on the session, the same way `RewardsView` feeds the celebrant's purge.
+        .task(id: viewModel.existingGift?.id) {
+            await viewModel.checkMediaExpiry(occasionDate: event.occasion?.occasionDate)
         }
         .onDisappear {
             viewModel.stopListening()
@@ -114,14 +130,10 @@ struct GiftAuthoringView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BQDesign.Colors.primaryPurple)
-                .disabled(!viewModel.isEditable)
+                .disabled(!viewModel.canAttachMedia)
             } footer: {
-                Text(
-                    viewModel.isEditable
-                    ? "Your host sets what it costs to unlock."
-                    : "\(event.celebrantName) has opened this, so it can't be changed now."
-                )
-                .font(BQDesign.Typography.captionSmall)
+                Text(saveFooter)
+                    .font(BQDesign.Typography.captionSmall)
             }
         }
         .scrollContentBackground(.hidden)
@@ -161,19 +173,27 @@ struct GiftAuthoringView: View {
 
     private var photosSection: some View {
         Section("Your photos") {
-            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
-                TextField("", text: $viewModel.title, prompt: Text("Photos from me"))
-                    .accessibilityLabel("Title")
-            }
-            if viewModel.showValidation
-                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                fieldError("Give your gift a title.")
-            }
+            expiredMediaBanner()
 
-            labelled("Teaser", hint: "One line, shown while it's still locked") {
-                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
-                    .accessibilityLabel("Teaser")
+            // The text half stays governed by `isEditable`. The section-level modifier below
+            // uses the wider `canAttachMedia`, and `.disabled` only ever accumulates going
+            // down the tree, so this is what keeps the words frozen while the media unlocks.
+            Group {
+                labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                    TextField("", text: $viewModel.title, prompt: Text("Photos from me"))
+                        .accessibilityLabel("Title")
+                }
+                if viewModel.showValidation
+                    && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    fieldError("Give your gift a title.")
+                }
+
+                labelled("Teaser", hint: "One line, shown while it's still locked") {
+                    TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                        .accessibilityLabel("Teaser")
+                }
             }
+            .disabled(!viewModel.isEditable)
 
             PhotosPicker(
                 selection: $viewModel.selectedPhotos,
@@ -214,24 +234,29 @@ struct GiftAuthoringView: View {
                 fieldError("Add at least one photo.")
             }
         }
-        .disabled(!viewModel.isEditable)
+        .disabled(!viewModel.canAttachMedia)
     }
 
     private var videoSection: some View {
         Section("Your video") {
-            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
-                TextField("", text: $viewModel.title, prompt: Text("A video from me"))
-                    .accessibilityLabel("Title")
-            }
-            if viewModel.showValidation
-                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                fieldError("Give your gift a title.")
-            }
+            expiredMediaBanner()
 
-            labelled("Teaser", hint: "One line, shown while it's still locked") {
-                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
-                    .accessibilityLabel("Teaser")
+            Group {
+                labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                    TextField("", text: $viewModel.title, prompt: Text("A video from me"))
+                        .accessibilityLabel("Title")
+                }
+                if viewModel.showValidation
+                    && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    fieldError("Give your gift a title.")
+                }
+
+                labelled("Teaser", hint: "One line, shown while it's still locked") {
+                    TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                        .accessibilityLabel("Teaser")
+                }
             }
+            .disabled(!viewModel.isEditable)
 
             PhotosPicker(selection: $viewModel.selectedVideoItem, matching: .videos) {
                 HStack(spacing: BQDesign.Spacing.sm) {
@@ -243,16 +268,34 @@ struct GiftAuthoringView: View {
             }
             .accessibilityLabel("Add a video")
 
-            if viewModel.selectedVideoURL != nil {
-                HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.xs) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(BQDesign.Colors.success)
-                        .accessibilityHidden(true)
+            if let videoURL = viewModel.selectedVideoURL {
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    if let videoThumbnail {
+                        Image(uiImage: videoThumbnail)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: mediaThumbnailSize, height: mediaThumbnailSize)
+                            .clipShape(
+                                RoundedRectangle(cornerRadius: BQDesign.Radius.md, style: .continuous)
+                            )
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(BQDesign.Colors.success)
+                            .accessibilityHidden(true)
+                    }
                     Text("Video selected")
                         .font(BQDesign.Typography.captionSmall)
                         .foregroundStyle(BQDesign.Colors.textPrimary)
+                    Spacer()
                 }
                 .accessibilityElement(children: .combine)
+                // Keyed on the URL so re-picking regenerates; cleared first so the previous
+                // clip's frame is never shown next to the new selection.
+                .task(id: videoURL) {
+                    videoThumbnail = nil
+                    videoThumbnail = await Self.videoThumbnail(for: videoURL)
+                }
             } else if let existing = viewModel.existingGiftHasVideo {
                 Text(existing)
                     .font(BQDesign.Typography.captionSmall)
@@ -274,19 +317,24 @@ struct GiftAuthoringView: View {
 
     private var voiceSection: some View {
         Section("Your voice gift") {
-            labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
-                TextField("", text: $viewModel.title, prompt: Text("A voice note from me"))
-                    .accessibilityLabel("Title")
-            }
-            if viewModel.showValidation
-                && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                fieldError("Give your gift a title.")
-            }
+            expiredMediaBanner()
 
-            labelled("Teaser", hint: "One line, shown while it's still locked") {
-                TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
-                    .accessibilityLabel("Teaser")
+            Group {
+                labelled("Title", hint: "What \(event.celebrantName) sees before unlocking") {
+                    TextField("", text: $viewModel.title, prompt: Text("A voice note from me"))
+                        .accessibilityLabel("Title")
+                }
+                if viewModel.showValidation
+                    && viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    fieldError("Give your gift a title.")
+                }
+
+                labelled("Teaser", hint: "One line, shown while it's still locked") {
+                    TextField("", text: $viewModel.teaser, prompt: Text("Open this one last"))
+                        .accessibilityLabel("Teaser")
+                }
             }
+            .disabled(!viewModel.isEditable)
 
             if recorder.isRecording {
                 recordingRow
@@ -347,7 +395,7 @@ struct GiftAuthoringView: View {
                 fieldError("Record or choose a voice gift.")
             }
         }
-        .disabled(!viewModel.isEditable)
+        .disabled(!viewModel.canAttachMedia)
     }
 
     private var recordingRow: some View {
@@ -413,14 +461,24 @@ struct GiftAuthoringView: View {
             }
             .accessibilityLabel(reviewPlayer.isPlaying ? "Pause review" : "Play review")
 
-            Text("Voice gift ready")
-                .font(BQDesign.Typography.captionSmall)
+            // A waveform is out of scope; the length is the fact that tells a contributor they
+            // kept the right take. Monospaced digits so the row does not jitter as it loads.
+            Text(audioDurationText.map { "Voice gift ready · \($0)" } ?? "Voice gift ready")
+                .font(BQDesign.Typography.captionSmall.monospacedDigit())
                 .foregroundStyle(BQDesign.Colors.textPrimary)
+                // The middle dot is a visual separator; VoiceOver gets a sentence instead.
+                .accessibilityLabel(
+                    audioDurationText.map { "Voice gift ready, length \($0)" } ?? "Voice gift ready"
+                )
             Spacer()
         }
         .accessibilityElement(children: .combine)
         .onAppear { reviewPlayer.loadAudio(from: url) }
         .onChange(of: url) { _, newURL in reviewPlayer.loadAudio(from: newURL) }
+        .task(id: url) {
+            audioDurationText = nil
+            audioDurationText = await Self.audioDuration(for: url)
+        }
         .onDisappear { reviewPlayer.pause() }
     }
 
@@ -447,7 +505,71 @@ struct GiftAuthoringView: View {
 
     private var saveLabel: String {
         if viewModel.saveSuccess { return "Saved" }
+        if viewModel.isResendOnly { return "Send it again" }
         return viewModel.hasExisting ? "Update gift" : "Save gift"
+    }
+
+    /// Three states, not two. The middle one is the whole point of the re-send carve-out: the
+    /// gift is still locked as far as its words go, and the footer has to say so rather than
+    /// reading as a general unlock.
+    private var saveFooter: String {
+        if viewModel.isResendOnly {
+            return """
+                \(event.celebrantName) already opened this, so the words stay as they were — \
+                only the missing file is replaced.
+                """
+        }
+        if viewModel.isEditable { return "Your host sets what it costs to unlock." }
+        return "\(event.celebrantName) has opened this, so it can't be changed now."
+    }
+
+    /// A one-line, honest explanation of why the media controls are live on an opened gift.
+    /// Rendered inside the media sections so it sits with the control it unlocks.
+    @ViewBuilder
+    private func expiredMediaBanner() -> some View {
+        if let message = viewModel.expiredMediaMessage {
+            HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.xs) {
+                Image(systemName: "clock.badge.exclamationmark")
+                    // The icon carries the colour; the sentence stays on textPrimary. Colors.error
+                    // measures 3.59:1 and is large-text-only — same split the field errors use.
+                    .foregroundStyle(BQDesign.Colors.error)
+                    .accessibilityHidden(true)
+                Text(message)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textPrimary)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// A poster frame for a picked clip.
+    ///
+    /// `nonisolated` and `static`: the decode must not run on the main actor, and a
+    /// MainActor-isolated instance method would carry the isolation with it (the target builds
+    /// with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`).
+    ///
+    /// Returns nil rather than surfacing an error. A generator legitimately fails on files that
+    /// play perfectly well — no video track, protected content, an unusual container — and a
+    /// confirmation thumbnail is not worth blocking a save over.
+    nonisolated private static func videoThumbnail(for url: URL) async -> UIImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 240, height: 240)
+        // Not .zero: some encodes have no displayable frame exactly at zero, and the tolerances
+        // let the generator settle for the nearest keyframe rather than failing.
+        guard let image = try? await generator.image(
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        ).image else { return nil }
+        return UIImage(cgImage: image)
+    }
+
+    /// The picked voice clip's length, `m:ss`, or nil if it cannot be read.
+    nonisolated private static func audioDuration(for url: URL) async -> String? {
+        guard let duration = try? await AVURLAsset(url: url).load(.duration) else { return nil }
+        let seconds = duration.seconds
+        guard seconds.isFinite, seconds > 0 else { return nil }
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     private func labelled<Content: View>(
