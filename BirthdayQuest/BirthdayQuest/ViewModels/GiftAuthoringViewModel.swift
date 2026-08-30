@@ -464,7 +464,11 @@ final class GiftAuthoringViewModel: ObservableObject {
                             badgeIllustration: "envelope.fill",
                             createdAt: Date()
                         )
-                        _ = try await service.createReward(eventId: eventId, reward: gift)
+                        // A text gift owns no media, but the id is still caller-chosen so
+                        // every gift is created the same way as the media ones.
+                        _ = try await service.createReward(
+                            eventId: eventId, rewardId: UUID().uuidString, reward: gift
+                        )
                     }
                 case .photos:
                     try await savePhotos(
@@ -500,8 +504,10 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// dictionary, not the backend. Nothing gameplay-side (`isUnlocked`, `fetchedBy`) may ride
     /// along either: that write spans two tiers and the rules reject it at runtime.
     ///
-    /// A fresh UUID folder, never the old path: the Storage rules deny overwrites outright.
-    /// The dead objects are already gone, so there is nothing left to clean up server-side.
+    /// Uploads into the gift's own `rewards/{rewardId}/…` folder (so the rules' path binding
+    /// holds) under a fresh UUID *filename*, never the old path: the Storage rules deny
+    /// overwrites outright. The dead objects are already gone, so there is nothing left to
+    /// clean up server-side.
     private func resendMedia(rewardId: String) async throws {
         var fields: [String: Any] = [:]
         var temporaryFile: URL?
@@ -512,12 +518,11 @@ final class GiftAuthoringViewModel: ObservableObject {
             // become true for one. Returning is still the right answer if that ever changes.
             return
         case .photos:
-            let group = UUID().uuidString
             var uploaded: [String] = []
             for image in photoPreviews {
                 guard let data = compressImage(image) else { continue }
                 uploaded.append(try await service.uploadRewardMedia(
-                    eventId: eventId, rewardId: group, data: data, contentType: "image/jpeg"
+                    eventId: eventId, rewardId: rewardId, data: data, contentType: "image/jpeg"
                 ))
             }
             // Replacing a dead gallery with an empty array would leave the celebrant on
@@ -528,14 +533,14 @@ final class GiftAuthoringViewModel: ObservableObject {
             guard let url = selectedVideoURL else { return }
             temporaryFile = url
             fields["contentUrl"] = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: UUID().uuidString,
+                eventId: eventId, rewardId: rewardId,
                 data: try Data(contentsOf: url), contentType: videoContentType(for: url)
             )
         case .voice:
             guard let url = selectedAudioURL else { return }
             temporaryFile = url
             fields["contentUrl"] = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: UUID().uuidString,
+                eventId: eventId, rewardId: rewardId,
                 data: try Data(contentsOf: url), contentType: audioContentType(for: url)
             )
         }
@@ -553,20 +558,20 @@ final class GiftAuthoringViewModel: ObservableObject {
         mediaExpired = false
     }
 
-    /// Uploads any newly-selected photos to a client-generated storage folder, then writes
-    /// the reward exactly once. A new gift's Firestore id does not exist until `createReward`
-    /// returns, so the upload folder is a `UUID` the rules only check `eventId` against — it
-    /// need not equal the eventual document id. This keeps `totalRewards` incrementing exactly
-    /// once and never leaves an empty image reward behind.
+    /// Uploads any newly-selected photos into the gift's own `rewards/{rewardId}/…` folder,
+    /// then writes the reward exactly once. For a new gift the id is chosen up front (a UUID
+    /// is a valid document id) so the upload lands in the gift's own folder before the document
+    /// exists — which is what lets the rules bind `contentUrls` to it. This keeps `totalRewards`
+    /// incrementing exactly once and never leaves an empty image reward behind.
     private func savePhotos(userId: String, title: String, teaser: String) async throws {
+        let rewardId = existingGift?.id ?? UUID().uuidString
         var paths: [String]?
         if !photoPreviews.isEmpty {
-            let group = UUID().uuidString
             var uploaded: [String] = []
             for image in photoPreviews {
                 guard let data = compressImage(image) else { continue }
                 let path = try await service.uploadRewardMedia(
-                    eventId: eventId, rewardId: group, data: data, contentType: "image/jpeg"
+                    eventId: eventId, rewardId: rewardId, data: data, contentType: "image/jpeg"
                 )
                 uploaded.append(path)
             }
@@ -602,7 +607,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                 badgeIllustration: "photo.fill",
                 createdAt: Date()
             )
-            _ = try await service.createReward(eventId: eventId, reward: gift)
+            _ = try await service.createReward(eventId: eventId, rewardId: rewardId, reward: gift)
         }
     }
 
@@ -641,20 +646,21 @@ final class GiftAuthoringViewModel: ObservableObject {
         selectedVideoURL = url
     }
 
-    /// Uploads the selected clip (if any) to a client-generated folder, then writes the reward
-    /// once. Mirrors `savePhotos`: the folder is a `UUID`, independent of the eventual document id.
-    /// Video uses the single `contentUrl` field, never `contentUrls`. There is no partial-failure
-    /// path to guard as in `savePhotos` — a single upload either throws (caught by `save`) or
-    /// returns a path — and `isValid` guarantees `selectedVideoURL` for a new gift, so a `.video`
-    /// reward is never created empty.
+    /// Uploads the selected clip (if any) into the gift's own `rewards/{rewardId}/…` folder,
+    /// then writes the reward once. Mirrors `savePhotos`: the id is chosen up front so the media
+    /// lands in the gift's own folder and the rules can bind `contentUrl` to it. Video uses the
+    /// single `contentUrl` field, never `contentUrls`. There is no partial-failure path to guard
+    /// as in `savePhotos` — a single upload either throws (caught by `save`) or returns a path —
+    /// and `isValid` guarantees `selectedVideoURL` for a new gift, so a `.video` reward is never
+    /// created empty.
     private func saveVideo(userId: String, title: String, teaser: String) async throws {
+        let rewardId = existingGift?.id ?? UUID().uuidString
         var path: String?
         let uploadedURL = selectedVideoURL
         if let url = uploadedURL {
             let data = try Data(contentsOf: url)
-            let group = UUID().uuidString
             path = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: group, data: data,
+                eventId: eventId, rewardId: rewardId, data: data,
                 contentType: videoContentType(for: url)
             )
         }
@@ -680,7 +686,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                 badgeIllustration: "video.fill",
                 createdAt: Date()
             )
-            _ = try await service.createReward(eventId: eventId, reward: gift)
+            _ = try await service.createReward(eventId: eventId, rewardId: rewardId, reward: gift)
         }
 
         // Only after the whole write succeeds — an earlier throw leaves the file for a retry.
@@ -718,18 +724,19 @@ final class GiftAuthoringViewModel: ObservableObject {
         selectedAudioURL = url
     }
 
-    /// Uploads the selected clip (if any) to a client-generated folder, then writes the reward
-    /// once. Mirrors `saveVideo`: the folder is a `UUID`, independent of the eventual document id.
-    /// Voice uses the single `contentUrl` field, never `contentUrls`. `isValid` guarantees
-    /// `selectedAudioURL` for a new gift, so a `.audio` reward is never created empty.
+    /// Uploads the selected clip (if any) into the gift's own `rewards/{rewardId}/…` folder,
+    /// then writes the reward once. Mirrors `saveVideo`: the id is chosen up front so the media
+    /// lands in the gift's own folder and the rules can bind `contentUrl` to it. Voice uses the
+    /// single `contentUrl` field, never `contentUrls`. `isValid` guarantees `selectedAudioURL`
+    /// for a new gift, so a `.audio` reward is never created empty.
     private func saveAudio(userId: String, title: String, teaser: String) async throws {
+        let rewardId = existingGift?.id ?? UUID().uuidString
         var path: String?
         let uploadedURL = selectedAudioURL
         if let url = uploadedURL {
             let data = try Data(contentsOf: url)
-            let group = UUID().uuidString
             path = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: group, data: data,
+                eventId: eventId, rewardId: rewardId, data: data,
                 contentType: audioContentType(for: url)
             )
         }
@@ -755,7 +762,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                 badgeIllustration: "waveform",
                 createdAt: Date()
             )
-            _ = try await service.createReward(eventId: eventId, reward: gift)
+            _ = try await service.createReward(eventId: eventId, rewardId: rewardId, reward: gift)
         }
 
         if let uploadedURL {

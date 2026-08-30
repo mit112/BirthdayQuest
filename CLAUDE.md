@@ -383,15 +383,21 @@ Two tiers, and both must stay green:
   iterates *live* challenges, so a proof orphaned by challenge deletion is unreachable forever.
   Closing it needs either a purge-on-delete with a host-side Storage grant (a `storage.rules`
   change) or a decision to accept the orphan.
-- **`validRewardContent()` in `firestore.rules` does not constrain `contentUrl`/`contentUrls` to a
-  path inside the event.** It checks `title` and `contentType` only. A contributor authoring their
-  own gift controls that field (content tier, author-writable), so they can point it at another
-  gift's Storage object in the same occasion. Two consequences: content spoofing (the celebrant
-  opens gift A and sees gift B's media) and purge collateral (once archived, the celebrant's
-  reward purge deletes gift B's object) — the same failure mode `caf1864` just defended for
-  proofs, but this one is still open. Bounded to one occasion — Storage reads are gated on
-  membership of that event, so it is **not** cross-tenant. Pre-existing, not introduced by the
-  2026-08-28 work; still needs a rules change with mutation-proven tests.
+- **`validRewardContent()` reward-media path binding — CLOSED (2026-08-30).** A reward's media must
+  now live under that gift's **own** Storage folder, `events/{eventId}/rewards/{rewardId}/…`.
+  `validRewardContent(eventId, rewardId)` (was arg-less) calls a new `rewardMediaScoped` that pins
+  `contentUrl` and every `contentUrls[i]` to a `events/{eventId}/rewards/{rewardId}/` prefix (via a
+  string-slice `hasStoragePrefix`, injection-safe — no regex built from data). This required an
+  **authoring restructure**, because the media used to upload into a random-UUID folder unrelated to
+  the doc: `GiftAuthoringViewModel` now derives `rewardId = existingGift?.id ?? UUID().uuidString`
+  and uses it as **both** the upload folder and the created doc id (a UUID is a valid Firestore doc
+  id), and `createReward` gained a `rewardId:` param (uses `.document(rewardId)`). Enforced on create
+  **and** update, mutation-proven — neutering `rewardMediaScoped` reddens exactly the three
+  foreign-path denial tests while the three own-folder allowances stay green. **Known limit of the
+  rules layer:** Firestore rules cannot iterate an arbitrary list, so `contentUrls` is capped at the
+  app's photo limit (`maxPhotoCount = 10`) and each slot index-checked — a gallery over 10 would be
+  denied, which the app never produces. Bounded to one occasion regardless (cross-event paths already
+  403 at Storage read time); this closes the same-occasion cross-gift spoof + purge-collateral.
 
 ### Audit bugs — status after the event-scoping migration
 

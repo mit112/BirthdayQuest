@@ -88,11 +88,49 @@ service cloud.firestore {
              && request.resource.data.pointValue <= 1000;
     }
 
-    function validRewardContent() {
+    function hasStoragePrefix(value, prefix) {
+      return value is string
+             && value.size() >= prefix.size()
+             && value[0:prefix.size()] == prefix;
+    }
+
+    // Every media path a gift carries must live under that gift's OWN Storage folder,
+    // events/{eventId}/rewards/{rewardId}/… . contentUrl and contentUrls are author-writable
+    // (content tier), so without this a contributor authoring their own gift could point it at
+    // ANOTHER gift's object in the same occasion — the celebrant then opens gift A and is shown
+    // gift B (content spoofing), and once archived the celebrant's own reward purge deletes B.
+    // (Cross-EVENT paths are already dead: Storage reads are membership-gated on the event in
+    // the path, so a foreign-event path just 403s at read time. Same-occasion is the exposure.)
+    //
+    // Firestore rules cannot iterate an arbitrary list, so contentUrls is capped at the app's
+    // photo limit (GiftAuthoringViewModel.maxPhotoCount = 10) and each slot that exists is
+    // checked. An absent or null field is fine — a text gift carries neither; a video/audio gift
+    // carries only contentUrl; an image gift only contentUrls.
+    function rewardMediaScoped(eventId, rewardId) {
+      let d = request.resource.data;
+      let prefix = 'events/' + eventId + '/rewards/' + rewardId + '/';
+      return (!('contentUrl' in d) || d.contentUrl == null || hasStoragePrefix(d.contentUrl, prefix))
+             && (!('contentUrls' in d) || d.contentUrls == null || (
+                  d.contentUrls.size() <= 10
+                  && (d.contentUrls.size() < 1 || hasStoragePrefix(d.contentUrls[0], prefix))
+                  && (d.contentUrls.size() < 2 || hasStoragePrefix(d.contentUrls[1], prefix))
+                  && (d.contentUrls.size() < 3 || hasStoragePrefix(d.contentUrls[2], prefix))
+                  && (d.contentUrls.size() < 4 || hasStoragePrefix(d.contentUrls[3], prefix))
+                  && (d.contentUrls.size() < 5 || hasStoragePrefix(d.contentUrls[4], prefix))
+                  && (d.contentUrls.size() < 6 || hasStoragePrefix(d.contentUrls[5], prefix))
+                  && (d.contentUrls.size() < 7 || hasStoragePrefix(d.contentUrls[6], prefix))
+                  && (d.contentUrls.size() < 8 || hasStoragePrefix(d.contentUrls[7], prefix))
+                  && (d.contentUrls.size() < 9 || hasStoragePrefix(d.contentUrls[8], prefix))
+                  && (d.contentUrls.size() < 10 || hasStoragePrefix(d.contentUrls[9], prefix))
+                ));
+    }
+
+    function validRewardContent(eventId, rewardId) {
       return request.resource.data.title is string
              && request.resource.data.title.size() > 0
              && request.resource.data.title.size() <= 120
-             && request.resource.data.contentType in ['video', 'audio', 'text', 'image'];
+             && request.resource.data.contentType in ['video', 'audio', 'text', 'image']
+             && rewardMediaScoped(eventId, rewardId);
     }
 
     // Code uniqueness registry and code -> eventId lookup. `get` so a typed code can be
@@ -288,7 +326,7 @@ service cloud.firestore {
         allow create: if isMember(eventId)
                       && (isHost(eventId)
                           || request.resource.data.get('fromUserId', '') == request.auth.uid)
-                      && validRewardContent()
+                      && validRewardContent(eventId, rewardId)
                       && request.resource.data.fromName is string
                       && request.resource.data.fromName.size() > 0
                       && request.resource.data.pointCost is int
@@ -305,7 +343,7 @@ service cloud.firestore {
                             'title', 'teaser', 'contentText', 'contentType',
                             'contentUrl', 'contentUrls', 'badgeIllustration'
                           ])
-                          && validRewardContent()
+                          && validRewardContent(eventId, rewardId)
                         )
                       );
 

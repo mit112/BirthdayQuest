@@ -786,6 +786,67 @@ describe('content is author-scoped, gameplay is member-scoped', () => {
   it('denies an author raising their challenge past the point cap', async () => {
     await assertChallengeEditRejected({ pointValue: 9999999 });
   });
+
+  // ── Media paths must live under the gift's OWN folder (rewardMediaScoped) ──
+  // The upload folder is the reward's own document id, so contentUrl/contentUrls must be
+  // events/{EVENT}/rewards/{docId}/… . Pointing them at another gift's folder in the SAME
+  // occasion is the documented content-spoof + purge-collateral gap: both objects are
+  // legitimately the celebrant's to read and later purge, so only this path binding stops it.
+  // Wrong value chosen against the mutation: a foreign-but-well-formed path still answers
+  // size()/slicing, so deleting rewardMediaScoped ALLOWS these writes rather than erroring.
+  it('lets a member create a video gift whose media is in its own folder', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/rewards/r_vid`), giftFrom(GUEST, {
+      contentType: 'video', contentUrl: `events/${EVENT}/rewards/r_vid/clip.mp4`,
+    })));
+  });
+
+  it("denies a video gift whose media points at another gift's folder in the same event", async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r_vid2`), giftFrom(GUEST, {
+      contentType: 'video', contentUrl: `events/${EVENT}/rewards/r_other/clip.mp4`,
+    })));
+  });
+
+  it('lets a member create an image gift whose photos are all in its own folder', async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(setDoc(doc(db, `events/${EVENT}/rewards/r_img`), giftFrom(GUEST, {
+      contentType: 'image',
+      contentUrls: [`events/${EVENT}/rewards/r_img/a.jpg`, `events/${EVENT}/rewards/r_img/b.jpg`],
+    })));
+  });
+
+  it("denies an image gift where one photo points at another gift's folder", async () => {
+    await joinAsContributor(GUEST);
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(setDoc(doc(db, `events/${EVENT}/rewards/r_img2`), giftFrom(GUEST, {
+      contentType: 'image',
+      contentUrls: [`events/${EVENT}/rewards/r_img2/a.jpg`, `events/${EVENT}/rewards/r_other/b.jpg`],
+    })));
+  });
+
+  // The binding is enforced on update too — otherwise a re-send is one updateDoc away from
+  // pointing an opened gift at someone else's media.
+  it("denies re-sending media that points at another gift on update", async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertFails(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      contentType: 'video', contentUrl: `events/${EVENT}/rewards/r_other/clip.mp4`,
+    }));
+  });
+
+  it("lets a member re-send media into the gift's own folder on update", async () => {
+    await joinAsContributor(GUEST);
+    await seedGuestGift();
+    const db = testEnv.authenticatedContext(GUEST).firestore();
+    await assertSucceeds(updateDoc(doc(db, `events/${EVENT}/rewards/r_guest`), {
+      contentType: 'video', contentUrl: `events/${EVENT}/rewards/r_guest/clip.mp4`,
+    }));
+  });
 });
 
 // The architectural claim the whole subcollection layout rests on: belonging to one occasion

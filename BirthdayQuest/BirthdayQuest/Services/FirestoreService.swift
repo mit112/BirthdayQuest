@@ -547,8 +547,11 @@ final class FirestoreService: GameBackend {
         }
     }
 
-    func createReward(eventId: String, reward: Reward) async throws -> String {
-        let ref = try rewardsRef(eventId).document()
+    func createReward(eventId: String, rewardId: String, reward: Reward) async throws -> String {
+        // The id is chosen by the caller, not auto-assigned, so the reward's media can be
+        // uploaded into `events/{eventId}/rewards/{rewardId}/…` *before* this write — which is
+        // what lets the rules bind `contentUrl`/`contentUrls` to the gift's own document.
+        let ref = try rewardsRef(eventId).document(rewardId)
         let state = try stateRef(eventId)
         let batch = db.batch()
         try batch.setData(from: reward, forDocument: ref)

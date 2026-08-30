@@ -147,7 +147,11 @@ protocol GameBackend: AnyObject {
     ///
     /// `reward.fromUserId` must be the calling uid unless the caller is the host: it is the
     /// field the content-edit rule reads to decide who may edit this gift later.
-    func createReward(eventId: String, reward: Reward) async throws -> String
+    ///
+    /// `rewardId` is chosen by the caller so a gift's media can be uploaded into that gift's
+    /// own `events/{eventId}/rewards/{rewardId}/…` folder before the document exists — the
+    /// rules bind `contentUrl`/`contentUrls` to it.
+    func createReward(eventId: String, rewardId: String, reward: Reward) async throws -> String
 
     /// Partial edit. `fields` must contain only content keys, only `pointCost`/`sortOrder`,
     /// or only gameplay keys — the rules reject a mixture, and the three tiers have

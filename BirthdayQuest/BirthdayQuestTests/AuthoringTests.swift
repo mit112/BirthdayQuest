@@ -337,7 +337,7 @@ struct GiftAuthoringTests {
         }
     }
 
-    @Test("a new photo gift uploads every image once, to one shared folder, then creates once")
+    @Test("a new photo gift uploads every image into the gift's own folder, then creates once")
     func newPhotoGiftUploadsThenCreatesOnce() async {
         let mock = MockGameBackend()
         let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
@@ -354,6 +354,9 @@ struct GiftAuthoringTests {
         let groups = Set(mock.uploadedRewardMedia.map(\.rewardId))
         #expect(groups.count == 1, "all three images should share one storage folder")
         #expect(mock.callCount("createReward") == 1)
+        // The upload folder must be the gift's OWN document id — that binding is what lets the
+        // rules pin contentUrls to this reward and refuse a path aimed at another gift.
+        #expect(groups == Set(mock.createdRewardIds), "media uploads into the gift's own folder")
 
         let created = mock.createdRewards.first
         #expect(created?.contentType == .image)
@@ -467,6 +470,9 @@ struct GiftAuthoringTests {
         #expect(mock.callCount("uploadRewardMedia") == 1)
         #expect(mock.uploadedRewardMedia.first?.contentType == "video/quicktime")
         #expect(mock.callCount("createReward") == 1)
+        // The clip uploads into the gift's own folder (its document id), so the rules bind
+        // contentUrl to this reward.
+        #expect(mock.uploadedRewardMedia.first?.rewardId == mock.createdRewardIds.first)
         let created = mock.createdRewards.first
         #expect(created?.contentType == .video)
         #expect(created?.contentUrl != nil, "video uses the single contentUrl field")

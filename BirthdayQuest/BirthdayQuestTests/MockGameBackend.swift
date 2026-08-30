@@ -249,11 +249,12 @@ final class MockGameBackend: GameBackend {
         unlockedRewardIds.append(rewardId)
     }
 
-    func createReward(eventId: String, reward: Reward) async throws -> String {
+    func createReward(eventId: String, rewardId: String, reward: Reward) async throws -> String {
         record("createReward", eventId: eventId)
         createdRewards.append(reward)
+        createdRewardIds.append(rewardId)
         try throwIfNeeded()
-        return stubbedCreatedRewardId
+        return rewardId
     }
 
     var stubbedCreatedRewardId = "gift-1"
@@ -261,6 +262,10 @@ final class MockGameBackend: GameBackend {
     /// stubbed failure still leaves this non-empty. Assert on view-model state for the
     /// failure path, not on this array's absence.
     private(set) var createdRewards: [Reward] = []
+    /// The caller-chosen id passed to each `createReward`. Paired index-for-index with
+    /// `createdRewards`. Lets a test assert the reward's media was uploaded into the gift's
+    /// own folder (upload `rewardId` == create `rewardId`).
+    private(set) var createdRewardIds: [String] = []
 
     func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws {
         record("updateReward", eventId: eventId)
