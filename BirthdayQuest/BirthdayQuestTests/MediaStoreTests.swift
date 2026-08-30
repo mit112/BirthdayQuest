@@ -618,4 +618,76 @@ struct MediaStoreTests {
 
         #expect(transfer.deletedPaths.count == 2)
     }
+
+    // MARK: purgeProof — single challenge, host moderation, NO expiry gate
+
+    @Test("purgeProof deletes a matching proof object and reports success")
+    func purgeProofDeletesMatchingProof() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        // No occasionDate/now: this path is deliberately ungated on expiry — the host deleting a
+        // challenge should reclaim its proof whether the occasion has passed expiry or not.
+        let deleted = await store.purgeProof(for: makeProofChallenge(), eventId: "e1")
+
+        #expect(deleted)
+        #expect(transfer.deletedPaths == ["events/e1/proofs/c1/photo.jpg"])
+    }
+
+    @Test("purgeProof refuses a proofUrl aimed at reward media in the same event")
+    func purgeProofRefusesForeignPathInSameEvent() async throws {
+        // The same guard as purgeExpiredProofs, and load-bearing for the same reason: proofUrl is
+        // member-writable, and the host now deletes both proofs AND reward media, so only the path
+        // reconstruction stops a challenge delete from taking out another contributor's gift.
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let hostile = makeProofChallenge(proofUrl: "events/e1/rewards/r1/gift.mp4")
+
+        let deleted = await store.purgeProof(for: hostile, eventId: "e1")
+
+        #expect(!deleted)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("purgeProof refuses a proofUrl aimed at another challenge's proof")
+    func purgeProofRefusesOtherChallengesProof() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let hostile = makeProofChallenge(id: "c1", proofUrl: "events/e1/proofs/c2/photo.jpg")
+
+        let deleted = await store.purgeProof(for: hostile, eventId: "e1")
+
+        #expect(!deleted)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("purgeProof on a challenge with no proof is a no-op")
+    func purgeProofSkipsChallengeWithoutProof() async throws {
+        let transfer = FakeMediaTransfer()
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let deletedNil = await store.purgeProof(for: makeProofChallenge(proofUrl: nil), eventId: "e1")
+        let deletedEmpty = await store.purgeProof(for: makeProofChallenge(proofUrl: ""), eventId: "e1")
+
+        #expect(!deletedNil)
+        #expect(!deletedEmpty)
+        #expect(transfer.deletedPaths.isEmpty)
+    }
+
+    @Test("purgeProof survives a failing delete without throwing and reports failure")
+    func purgeProofIsBestEffort() async throws {
+        let transfer = FakeMediaTransfer()
+        transfer.deleteErrorToThrow = NSError(domain: "test", code: 1)
+        let (store, baseDirectory) = makeStore(transfer: transfer)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let deleted = await store.purgeProof(for: makeProofChallenge(), eventId: "e1")
+
+        #expect(!deleted)
+        #expect(transfer.deletedPaths == ["events/e1/proofs/c1/photo.jpg"])  // attempted, then failed
+    }
 }

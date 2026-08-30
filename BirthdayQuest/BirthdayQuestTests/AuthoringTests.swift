@@ -3,6 +3,23 @@ import UIKit
 import FirebaseFirestore
 @testable import BirthdayQuest
 
+/// Records `purgeProof` calls so a challenge-delete test can assert the proof object is purged
+/// without touching Storage. `purgeProofResult` stays false, which also exercises the VM's
+/// best-effort contract: a purge that deletes nothing must not fail the deletion.
+private final class ChallengeProofPurgeSpy: ProofMediaPurging, @unchecked Sendable {
+    private(set) var purgedChallengeIds: [String] = []
+    var purgeProofResult = false
+
+    func purgeExpiredProofs(
+        challenges: [Challenge], eventId: String, occasionDate: Date, now: Date
+    ) async -> Int { 0 }
+
+    func purgeProof(for challenge: Challenge, eventId: String) async -> Bool {
+        if let id = challenge.id { purgedChallengeIds.append(id) }
+        return purgeProofResult
+    }
+}
+
 @Suite("Challenge wire shape")
 struct ChallengeWireShapeTests {
 
@@ -93,11 +110,37 @@ struct AuthoringCounterTests {
     @Test("deleting a challenge asks the backend to delete it")
     func deleteCallsBackend() async {
         let mock = MockGameBackend()
-        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock)
+        let vm = ChallengeAuthoringViewModel(
+            eventId: "evt_1", service: mock, proofMedia: ChallengeProofPurgeSpy()
+        )
 
         await vm.delete(.fixture(id: "c9"))
 
         #expect(mock.deletedChallengeIds == ["c9"])
+    }
+
+    @Test("deleting a challenge purges its proof object, which the expiry sweep can no longer reach")
+    func deletePurgesProofObject() async {
+        let mock = MockGameBackend()
+        let purger = ChallengeProofPurgeSpy()
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock, proofMedia: purger)
+
+        await vm.delete(.fixture(id: "c9", proofUrl: "events/evt_1/proofs/c9/photo.jpg"))
+
+        #expect(mock.deletedChallengeIds == ["c9"])
+        #expect(purger.purgedChallengeIds == ["c9"])
+    }
+
+    @Test("a proof purge that deletes nothing still reports the delete as a success")
+    func proofPurgeIsBestEffort() async {
+        let mock = MockGameBackend()
+        let purger = ChallengeProofPurgeSpy()  // purgeProofResult stays false
+        let vm = ChallengeAuthoringViewModel(eventId: "evt_1", service: mock, proofMedia: purger)
+
+        await vm.delete(.fixture(id: "c9", proofUrl: "events/evt_1/proofs/c9/photo.jpg"))
+
+        #expect(mock.deletedChallengeIds == ["c9"])
+        #expect(vm.actionResult?.isError == false)
     }
 
     @Test("an edit sends only content fields, never a gameplay field")

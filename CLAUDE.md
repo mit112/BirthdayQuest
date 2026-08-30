@@ -378,11 +378,18 @@ Two tiers, and both must stay green:
   same `StoragePaths.proof(...)` constructor the upload uses and requiring exact equality before
   deleting anything. Mutation-proven by three tests. A purged proof now presents as `.expired`
   ("isn't kept anymore") via a new `ProofImagePresentation` enum, rather than as a load failure.
-  **Latent gap, not closed by this commit:** deleting a challenge (host moderation,
-  `FirestoreService.deleteChallenge`) does not delete its proof Storage object. The sweep only
-  iterates *live* challenges, so a proof orphaned by challenge deletion is unreachable forever.
-  Closing it needs either a purge-on-delete with a host-side Storage grant (a `storage.rules`
-  change) or a decision to accept the orphan.
+  **Challenge-delete proof orphan — CLOSED (2026-08-30).** Deleting a challenge (host moderation,
+  `FirestoreService.deleteChallenge`) now purges its proof Storage object: `ChallengeAuthoringViewModel.delete`
+  calls a new `ProofMediaPurging.purgeProof(for:eventId:)` on `MediaStore` after the doc delete
+  lands (best-effort — a failed purge just re-orphans it, never blocks the moderation). The purge
+  shares `MediaStore`'s reconstruct-then-equality guard with `purgeExpiredProofs` (a single private
+  `purgeProofObject` helper), so a `proofUrl` aimed at another object is refused; it is deliberately
+  **not** expiry-gated (host moderation deletes regardless of expiry). `storage.rules` widened proof
+  delete from `isCelebrant` to `isCelebrant || isHost` (challenge delete is host-only, so the
+  principal matches); mutation-proven — dropping `|| isHost` reddens exactly the host-delete test,
+  and a `denies a plain member deleting a proof` test guards against over-widening to `isMember`.
+  Accepted cost of the host grant: a host can now delete a proof object while leaving the challenge
+  marked complete (recorded in the `storage.rules` comment).
 - **`validRewardContent()` reward-media path binding — CLOSED (2026-08-30).** A reward's media must
   now live under that gift's **own** Storage folder, `events/{eventId}/rewards/{rewardId}/…`.
   `validRewardContent(eventId, rewardId)` (was arg-less) calls a new `rewardMediaScoped` that pins

@@ -551,6 +551,7 @@ extension Challenge {
         createdByUserId: String? = nil,
         isDelivered: Bool = false,
         isCompleted: Bool = false,
+        proofUrl: String? = nil,
         optionBTitle: String? = nil
     ) -> Challenge {
         var challenge = Challenge(
@@ -565,7 +566,7 @@ extension Challenge {
             isDelivered: isDelivered,
             isCompleted: isCompleted,
             completedAt: nil,
-            proofUrl: nil,
+            proofUrl: proofUrl,
             proofType: nil,
             proofText: nil,
             createdAt: Date(timeIntervalSince1970: 0),

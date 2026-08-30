@@ -105,13 +105,19 @@ final class ChallengeAuthoringViewModel: ObservableObject {
     private(set) var editingId: String?
 
     private let service: GameBackend
+    private let proofMedia: ProofMediaPurging
     private let eventId: String
     private let listenerKey: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "Authoring")
 
-    init(eventId: String, service: GameBackend = FirestoreService.shared) {
+    init(
+        eventId: String,
+        service: GameBackend = FirestoreService.shared,
+        proofMedia: ProofMediaPurging = MediaStore()
+    ) {
         self.eventId = eventId
         self.service = service
+        self.proofMedia = proofMedia
         self.listenerKey = ListenerKey.authoringChallenges(eventId)
     }
 
@@ -245,6 +251,10 @@ final class ChallengeAuthoringViewModel: ObservableObject {
 
         do {
             try await service.deleteChallenge(eventId: eventId, challengeId: challengeId)
+            // The doc is gone, so its proof object is now unreachable by the celebrant's expiry
+            // sweep (that only iterates live challenges). Purge it here, best-effort — a failure
+            // just re-orphans it, the prior behaviour, and never blocks the moderation.
+            _ = await proofMedia.purgeProof(for: challenge, eventId: eventId)
             actionResult = AdminActionResult(
                 message: "Deleted \"\(challenge.title)\".", isError: false
             )

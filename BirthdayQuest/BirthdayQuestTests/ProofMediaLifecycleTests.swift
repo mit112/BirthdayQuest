@@ -35,6 +35,8 @@ private final class SpyProofMediaPurging: ProofMediaPurging, @unchecked Sendable
         calls.append((challenges.compactMap(\.id), eventId, occasionDate, now))
         return 0
     }
+
+    func purgeProof(for challenge: Challenge, eventId: String) async -> Bool { false }
 }
 
 // MARK: - ChallengesViewModel proof lifecycle

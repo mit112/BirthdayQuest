@@ -219,6 +219,32 @@ describe('storage membership gate', () => {
     await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`)));
   });
 
+  // The host now deletes proofs too, so deleting a challenge can reclaim its orphaned proof
+  // object (the expiry sweep never reaches it, since it only iterates live challenges). This is
+  // the mutation-proof for the `|| isHost` clause: drop it and this reddens. CONTRIBUTOR is the
+  // host in this suite (isHost: true).
+  it('lets the host delete a proof object', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(CONTRIBUTOR).storage();
+    await assertSucceeds(deleteObject(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`)));
+  });
+
+  // The grant is celebrant-or-host, NOT any member — a plain contributor must still be refused,
+  // or a member could destroy another's proof evidence. Guards against over-widening to isMember.
+  it('denies a plain member deleting a proof object', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {
+        contentType: 'image/jpeg',
+      });
+    });
+    const s = testEnv.authenticatedContext(MEMBER).storage();
+    await assertFails(deleteObject(ref(s, `events/${EVENT}/proofs/c1/proof.jpg`)));
+  });
+
   it('lets a member read a proof object', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(ref(ctx.storage(), `events/${EVENT}/proofs/c1/proof.jpg`), IMG, {

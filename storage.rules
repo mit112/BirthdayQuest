@@ -66,10 +66,18 @@ service firebase.storage {
     }
 
     // Challenge proof photos. Images only, 10 MB cap. Same overwrite-denial rationale as above.
+    //
+    // Delete is the celebrant OR the host. The host is here for exactly one reason: deleting a
+    // challenge (host-only moderation) leaves its proof object orphaned forever — no live
+    // challenge references it, so the celebrant's expiry sweep never reaches it — and the host's
+    // delete path (ChallengeAuthoringViewModel) purges it alongside. That purge reconstructs the
+    // proof path from the challengeId and demands equality, the same guard MediaStore uses, so a
+    // proofUrl aimed at another object cannot ride along. The accepted cost of this grant: a
+    // host can now delete a proof object while leaving the challenge marked complete.
     match /events/{eventId}/proofs/{challengeId}/{fileName} {
       allow read: if isMember(eventId);
       allow write: if request.resource == null
-                     ? isCelebrant(eventId)
+                     ? isCelebrant(eventId) || isHost(eventId)
                      : resource == null
                        && isMember(eventId)
                        && request.resource.size < 10 * 1024 * 1024

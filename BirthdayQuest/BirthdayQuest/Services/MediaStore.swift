@@ -62,6 +62,13 @@ protocol ProofMediaPurging: Sendable {
     /// Celebrant-only. Delete the remote proof objects for every challenge whose occasion is past
     /// media expiry. Idempotent and best-effort. Returns the number of objects actually deleted.
     func purgeExpiredProofs(challenges: [Challenge], eventId: String, occasionDate: Date, now: Date) async -> Int
+
+    /// Delete a single challenge's proof object, with no expiry gate — the host calls this when
+    /// deleting a challenge (host moderation), because the doc delete would otherwise orphan the
+    /// proof object forever (the expiry sweep only iterates *live* challenges). Same path
+    /// reconstruction guard as `purgeExpiredProofs`, so a `proofUrl` aimed elsewhere is refused.
+    /// Idempotent and best-effort. Returns whether an object was deleted.
+    func purgeProof(for challenge: Challenge, eventId: String) async -> Bool
 }
 
 // MARK: - MediaStore
@@ -228,30 +235,51 @@ actor MediaStore: MediaStoring, ProofMediaLoading, ProofMediaPurging {
         guard MediaLifecycle.isExpired(occasionDate: occasionDate, now: now) else { return 0 }
 
         var purgedCount = 0
-        for challenge in challenges {
-            guard let challengeId = challenge.id else { continue }
-            guard let path = challenge.proofUrl, !path.isEmpty else { continue }
-
-            let expectedPath = StoragePaths.proof(
-                eventId: eventId,
-                challengeId: challengeId,
-                fileName: URL(fileURLWithPath: path).lastPathComponent
-            )
-            guard path == expectedPath else {
-                logger.error("Refusing to purge proofUrl outside this challenge's own proof path")
-                continue
-            }
-
-            do {
-                try await transfer.delete(path: path)
-                purgedCount += 1
-            } catch {
-                // Best-effort: a failed delete is retried on the next sweep, and the count stays
-                // honest about what actually left the server.
-                logger.error("purgeExpiredProofs delete failed for \(path): \(error.localizedDescription)")
-            }
+        for challenge in challenges where await purgeProofObject(for: challenge, eventId: eventId) {
+            purgedCount += 1
         }
         return purgedCount
+    }
+
+    func purgeProof(for challenge: Challenge, eventId: String) async -> Bool {
+        // No expiry gate: this is host moderation deleting one challenge, not the celebrant's
+        // time-based sweep. The path reconstruction guard is the whole safety story here.
+        await purgeProofObject(for: challenge, eventId: eventId)
+    }
+
+    /// The reconstruct-then-equality guard shared by both proof-purge entry points.
+    ///
+    /// `challenge.proofUrl` sits in the *gameplay* tier of the Firestore rules, so **any member
+    /// can write it to any string**, and whoever runs this purge (celebrant, or host on a
+    /// challenge delete) is authorised by the Storage rules to delete both proof objects and
+    /// reward media in their own event. So a contributor who wrote another contributor's gift
+    /// path into `proofUrl` would have this purge destroy that gift — the Storage rules cannot
+    /// catch it, because the delete is legitimately the caller's to make. Rebuilding the expected
+    /// path with the same `StoragePaths.proof` constructor the upload uses, and demanding exact
+    /// equality, makes the purge unable to aim anywhere but this challenge's own proof.
+    private func purgeProofObject(for challenge: Challenge, eventId: String) async -> Bool {
+        guard let challengeId = challenge.id else { return false }
+        guard let path = challenge.proofUrl, !path.isEmpty else { return false }
+
+        let expectedPath = StoragePaths.proof(
+            eventId: eventId,
+            challengeId: challengeId,
+            fileName: URL(fileURLWithPath: path).lastPathComponent
+        )
+        guard path == expectedPath else {
+            logger.error("Refusing to purge proofUrl outside this challenge's own proof path")
+            return false
+        }
+
+        do {
+            try await transfer.delete(path: path)
+            return true
+        } catch {
+            // Best-effort: a failed delete is retried on the next sweep, and the count stays
+            // honest about what actually left the server.
+            logger.error("Proof purge delete failed for \(path): \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Private
