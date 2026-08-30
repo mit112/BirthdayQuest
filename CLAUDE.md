@@ -328,8 +328,10 @@ Two tiers, and both must stay green:
     contributor can now re-send a gift whose media expired — see the dedicated Known Gap entry
     below for the mechanism and the new invariant it establishes. Video and audio "selected" rows
     also gained a poster frame and a duration display respectively, closing the thumbnail-preview
-    deferral. **Still open:** streaming/file-URL upload (the ≤200MB clip still loads fully into
-    memory via `Data(contentsOf:)` before upload — an API change, not a slice change).
+    deferral. ~~**Still open:** streaming/file-URL upload (the ≤200MB clip still loads fully into
+    memory via `Data(contentsOf:)` before upload — an API change, not a slice change).~~
+    **CLOSED (2026-08-30)** together with client-side video transcoding — see the dedicated Known
+    Gap entry below. Subsystem #3 now has no open deferrals.
   - **Proof-photo leak — CLOSED.** `uploadProofData` now returns the Storage **path** (not a tokened
     download URL); `challenge.proofUrl` holds a path; a new `ProofImageView` renders it via
     `MediaStore.localURL(forPath:eventId:)` (a narrow `ProofMediaLoading` protocol — authenticated
@@ -405,6 +407,46 @@ Two tiers, and both must stay green:
   app's photo limit (`maxPhotoCount = 10`) and each slot index-checked — a gallery over 10 would be
   denied, which the app never produces. Bounded to one occasion regardless (cross-event paths already
   403 at Storage read time); this closes the same-occasion cross-gift spoof + purge-collateral.
+- **Video transcoding + streaming upload — CLOSED (2026-08-30).** A modern phone clip is no longer
+  refused for being large; it is **shrunk on select** and then streamed off disk.
+  - **Transcode.** New `Services/VideoTranscoder.swift`: a `VideoTranscoding` seam (injectable like
+    `MediaTransferring`, because the encode itself is hardware-bound and untestable) and
+    `AVFoundationVideoTranscoder`, which exports at `AVAssetExportPresetHEVC1920x1080` into an
+    `.mp4`, falling back to `AVAssetExportPreset1920x1080` when the SDK's own
+    `compatibility(ofExportPreset:with:outputFileType:)` says the source cannot take HEVC. Presets
+    scale **down** only, so a 720p source is not upscaled. Progress comes from
+    `states(updateInterval:)`; cancellation is plain `Task.cancel()` — `cancelExport()` is
+    deprecated in iOS 27 in favour of exactly that.
+  - **`GiftAuthoringViewModel.prepareVideo(source:)`** is the unit-testable seam (a
+    `PhotosPickerItem` cannot be built in a test, so `loadVideoSelection` only feeds this). It keeps
+    **whichever file is smaller** — a short, already-efficient clip can come out of a 1080p
+    re-encode *larger* than it went in — and on a failed export **falls back to the original**, so
+    an encoder problem is never a refused gift. Each pick cancels the previous preparation *and
+    awaits it* before starting; two overlapping preparations would otherwise race on
+    `isTranscoding` / `transcodeProgress` / `selectedVideoURL`.
+  - **Cancellation is checked on the SUCCESS path too, not only in `catch`.** An exporter may
+    notice a cancellation and return normally rather than throw, and the guarantee — a superseded
+    pick never writes to the selection — has to hold either way. Not hypothetical: the first green
+    run failed on exactly that, which is also this guard's mutation proof.
+  - **Streaming upload.** `GameBackend`/`FirestoreService` gained a `fileURL:` overload of
+    `uploadRewardMedia` backed by `putFileAsync`. Video, audio and re-send use it; **photos stay on
+    the `data:` overload** because they are compressed in memory from a `UIImage` and would
+    otherwise be written to a temp file only to be read straight back. Both overloads share one
+    private `rewardMediaDestination` helper, so the path the rules bind `contentUrl`/`contentUrls`
+    to is still built in exactly one place.
+  - **The 200 MB cap is unchanged and is now a POST-transcode backstop**, so `storage.rules` was
+    **not** touched and the two caps still agree. `GiftAuthoringViewModel.maxVideoBytes` and
+    `request.resource.size < 200 * 1024 * 1024` must keep moving together — a mismatch surfaces
+    only at runtime, as permission-denied after a full upload, and nothing catches it at compile
+    time.
+  - Tests use **sparse files** (`FileHandle.truncate`) so a "600 MB" source measures 600 MB while
+    allocating nothing. Do not replace them with real writes.
+- **A video gift's authoring section was gated on `isEditable`, not `canAttachMedia`** — fixed
+  2026-08-30 alongside the transcoding work. The photo and voice sections already used
+  `canAttachMedia`; `videoSection` did not, so on an expired video gift the banner said "Add it
+  again to send this gift back" while the picker beside it was disabled. The gift **re-send
+  carve-out was unreachable for video**, the one gift type it was designed around. View-only, so
+  no unit test covers it — the VM half (`canAttachMedia`) was already correct and tested.
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -465,10 +507,22 @@ prefixes are archived at `~/bq-media-archive`** before the cutover stranded them
 repeatedly on an **ADC quota-project** misconfig (a throwaway `project-73ed9413-…`), fixed with
 `GOOGLE_CLOUD_QUOTA_PROJECT=birthdayquest-90578` on the deploy command — **not** an account switch.
 
-**Next session's first task (agreed):** client-side video **transcoding** (`AVAssetExportSession`,
-~1080p) + `putFile` streaming upload, so modern >200 MB camera clips are accepted and shrunk instead
-of rejected. Just raising the 200 MB cap OOM-crashes (the upload loads the whole clip into memory via
-`Data(contentsOf:)`), and the client cap + the `storage.rules` cap must move together.
+~~**Next session's first task (agreed):** client-side video transcoding + `putFile` streaming
+upload.~~ **DONE, later the same day** — see the "Video transcoding + streaming upload" Known Gap
+entry above for the mechanism and the invariants. Headline: a picked clip is re-encoded to ~1080p
+HEVC on select, whichever of {source, export} is smaller wins, a failed export falls back to the
+original, and video/audio/re-send now upload via `putFileAsync` instead of `Data(contentsOf:)`. The
+200 MB cap did **not** move, so `storage.rules` is untouched and the emulator suite was correctly
+not re-run. A determinate transcode-progress row was added to `GiftAuthoringView` (native
+`ProgressView(value:)`, one combined VoiceOver element whose *value* is the percentage, no bespoke
+animation — the fill moves only when the export reports progress, so it does not re-derive the
+Reduce Motion decision `MotionLevel` owns). One pre-existing bug fell out of it and is fixed: the
+video section was disabled on `isEditable` rather than `canAttachMedia`, which made gift re-send
+unreachable for video (also recorded above).
+
+**Next up, in rough order:** the remaining human-gated items (Apple Developer account + real
+`DEVELOPMENT_TEAM` and bundle id, the two `REPLACE_WITH_*` placeholders in `LegalCopy.swift`, store
+listing), and the still-open a11y reflow check for `AccountView` / `TermsView`.
 
 ## Direction (as of 2026-08-28)
 
