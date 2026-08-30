@@ -318,7 +318,13 @@ struct GiftAuthoringView: View {
                 fieldError("Add a video.")
             }
         }
-        .disabled(!viewModel.isEditable)
+        // `canAttachMedia`, matching the photo and voice sections — NOT `isEditable`, which is
+        // what this was. On an expired video gift the banner above says "Add it again to send
+        // this gift back" while `isEditable` is false, so gating the section on it disabled the
+        // picker the banner was pointing at: the re-send carve-out was unreachable for video,
+        // the one gift type it was designed around. The title and teaser stay frozen either way
+        // — the inner Group already gates those on `isEditable`.
+        .disabled(!viewModel.canAttachMedia)
     }
 
     private var voiceSection: some View {
