@@ -435,6 +435,41 @@ assumption they needed the media pipeline. They did not:
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
+## Direction (as of 2026-08-30)
+
+Two security-rules gaps closed, merged to `main` (linear, `2a63353`, **pushed** — `origin/main` in
+sync), and **deployed live**. Both are recorded as CLOSED in Known Gaps above; the mechanisms:
+- **`a6b23aa` — reward media bound to the gift's own Storage folder.** `validRewardContent()` took
+  only `title`/`contentType`; a contributor could aim their own gift's `contentUrl`/`contentUrls` at
+  another gift's object in the same occasion (content spoof + purge collateral). The proof-photo
+  reconstruction pattern did **not** transfer, because reward media uploaded into a random-UUID
+  folder unrelated to the doc — so the restructure was the real work: `GiftAuthoringViewModel` now
+  chooses `rewardId = existingGift?.id ?? UUID().uuidString` up front and uses it as **both** the
+  upload folder and the created doc id (`createReward` gained a `rewardId:` param), and
+  `validRewardContent(eventId, rewardId)` pins every path under `events/{eventId}/rewards/{rewardId}/`.
+  `contentUrls` is capped at `maxPhotoCount` and index-checked (rules can't iterate a list).
+- **`2a63353` — proof photo purged on challenge delete.** `storage.rules` proof-delete widened to
+  `isCelebrant || isHost`; `ChallengeAuthoringViewModel.delete` calls `MediaStore.purgeProof(for:eventId:)`
+  (best-effort, no expiry gate, same reconstruct-then-equality guard).
+
+Both rule clauses are mutation-proven. Gates on the merged tree: Swift **396** passes, rules **195**,
+SwiftLint **0**/78 — all exit 0. (Derive counts with the documented commands rather than trusting these.)
+
+**The live project `birthdayquest-90578` is now on current rules — the long-standing "runs stale
+rules" blocker is CLEARED.** `firebase deploy --only firestore:rules,storage` shipped the full
+event-scoping ruleset (never deployed before) + both fixes, which resolves the live
+`fetchMyOccasions` permission-denied. Two things worth keeping: (1) Blaze had to be re-enabled first
+(Storage requires it), and the deploy's own `tools/export_media.sh` prerequisite was honoured —
+**27 legacy objects (17 rewards + 10 proofs, ~88 MB) under the old top-level `rewards/**`/`proofs/**`
+prefixes are archived at `~/bq-media-archive`** before the cutover stranded them; (2) the deploy 403'd
+repeatedly on an **ADC quota-project** misconfig (a throwaway `project-73ed9413-…`), fixed with
+`GOOGLE_CLOUD_QUOTA_PROJECT=birthdayquest-90578` on the deploy command — **not** an account switch.
+
+**Next session's first task (agreed):** client-side video **transcoding** (`AVAssetExportSession`,
+~1080p) + `putFile` streaming upload, so modern >200 MB camera clips are accepted and shrunk instead
+of rejected. Just raising the 200 MB cap OOM-crashes (the upload loads the whole clip into memory via
+`Data(contentsOf:)`), and the client cap + the `storage.rules` cap must move together.
+
 ## Direction (as of 2026-08-28)
 
 Eight commits landed on `main` (linear). The first five close the remaining App Store compliance
