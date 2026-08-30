@@ -93,6 +93,16 @@ final class GiftAuthoringViewModel: ObservableObject {
 
     /// The Storage rules reject an upload of 200 MB or more (`request.resource.size <
     /// 200 * 1024 * 1024`), so a bigger clip would 403 after a long upload. Reject it up front.
+    ///
+    /// **This number and the one in `storage.rules` have to move together** — a mismatch shows
+    /// up only at runtime, as a permission-denied after the whole upload, and nothing catches it
+    /// at compile time.
+    ///
+    /// It is now a *backstop*, not the gate a contributor meets. A picked clip is re-encoded to
+    /// ~1080p first (see `prepareVideo(source:)`), so what is measured here is the transcode's
+    /// output; a 4K phone clip that used to be turned away at 600 MB now arrives well inside the
+    /// cap. Reaching this check at all means either the transcode failed and the original is
+    /// being measured, or the source was long enough that even 1080p HEVC does not fit.
     static let maxVideoBytes = 200 * 1024 * 1024
 
     /// Same 200 MB Storage cap as video. A recorded AAC/.m4a is only a few MB, but an *imported*
@@ -124,9 +134,26 @@ final class GiftAuthoringViewModel: ObservableObject {
     @Published var photoPreviews: [UIImage] = []
     /// The library item the contributor picked. Loading it produces `selectedVideoURL`; tests set
     /// that directly, since a `PhotosPickerItem` cannot be built outside PhotosUI's live picker.
+    ///
+    /// Each pick cancels the one before it and *waits* for it to unwind before starting. Two
+    /// overlapping preparations would race on `isTranscoding`, `transcodeProgress` and
+    /// `selectedVideoURL` — and the loser, finishing last, would clear the winner's progress
+    /// flag while its own transcode was still running.
     @Published var selectedVideoItem: PhotosPickerItem? {
-        didSet { Task { await loadVideoSelection() } }
+        didSet {
+            let previous = videoPreparation
+            videoPreparation = Task { [weak self] in
+                previous?.cancel()
+                await previous?.value
+                await self?.loadVideoSelection()
+            }
+        }
     }
+    /// Set while a picked clip is being re-encoded — not instant on a long 4K source, and
+    /// nothing else on screen would explain the wait.
+    @Published private(set) var isTranscoding = false
+    /// 0…1, meaningful only while `isTranscoding`.
+    @Published private(set) var transcodeProgress: Double = 0
     /// The loaded, size-checked local file the video was copied to. Settable for tests.
     @Published var selectedVideoURL: URL?
     /// Set when the picked video is at or over `maxVideoBytes`; drives the inline error and keeps
@@ -161,9 +188,12 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// `checkMediaExpiry` is one-shot per screen: the answer cannot change while the form is
     /// open except through a re-send, which sets `mediaExpired` itself.
     private var didCheckMediaExpiry = false
+    /// The in-flight load-and-transcode for the most recent pick. See `selectedVideoItem`.
+    private var videoPreparation: Task<Void, Never>?
 
     private let service: GameBackend
     private let mediaProbe: RewardMediaProbing
+    private let transcoder: VideoTranscoding
     private let eventId: String
     private let listenerKey: String
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "GiftAuthoring")
@@ -175,11 +205,13 @@ final class GiftAuthoringViewModel: ObservableObject {
     init(
         eventId: String,
         service: GameBackend = FirestoreService.shared,
-        mediaProbe: RewardMediaProbing = FirebaseRewardMediaProbe()
+        mediaProbe: RewardMediaProbing = FirebaseRewardMediaProbe(),
+        transcoder: VideoTranscoding = AVFoundationVideoTranscoder()
     ) {
         self.eventId = eventId
         self.service = service
         self.mediaProbe = mediaProbe
+        self.transcoder = transcoder
         self.listenerKey = ListenerKey.myGift(eventId)
     }
 
@@ -534,14 +566,14 @@ final class GiftAuthoringViewModel: ObservableObject {
             temporaryFile = url
             fields["contentUrl"] = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId,
-                data: try Data(contentsOf: url), contentType: videoContentType(for: url)
+                fileURL: url, contentType: videoContentType(for: url)
             )
         case .voice:
             guard let url = selectedAudioURL else { return }
             temporaryFile = url
             fields["contentUrl"] = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId,
-                data: try Data(contentsOf: url), contentType: audioContentType(for: url)
+                fileURL: url, contentType: audioContentType(for: url)
             )
         }
 
@@ -617,14 +649,91 @@ final class GiftAuthoringViewModel: ObservableObject {
         guard let item = selectedVideoItem else { return }
         do {
             guard let movie = try await item.loadTransferable(type: Movie.self) else { return }
-            let size = (try? FileManager.default.attributesOfItem(atPath: movie.url.path))?[.size] as? Int ?? 0
-            acceptVideo(url: movie.url, sizeBytes: size)
-            if videoTooLarge {
-                try? FileManager.default.removeItem(at: movie.url)
-            }
+            await prepareVideo(source: movie.url)
         } catch {
             logger.error("Video load error: \(error.localizedDescription)")
         }
+    }
+
+    /// Re-encodes a picked clip, then hands whichever file is smaller to `acceptVideo`.
+    ///
+    /// This is what makes a modern phone clip sendable at all. A minute of 4K/60 is comfortably
+    /// past 400 MB, and used to be turned away with "pick a shorter one" — a fail-safe answer,
+    /// but the wrong one, since the same footage at 1080p HEVC is a fraction of that and is what
+    /// the celebrant would watch either way.
+    ///
+    /// Three outcomes, and the ordering of the file deletes matters in each:
+    /// - **Transcoded smaller.** The re-encode wins, the picked original is deleted.
+    /// - **Transcoded no smaller.** A short, already-efficient clip can come out of a 1080p
+    ///   re-encode *larger* than it went in. Keep the original and delete the export — the point
+    ///   of this is to upload less, not to normalise containers.
+    /// - **Transcode failed.** Fall back to the picked original and let `acceptVideo` size-check
+    ///   it, which is exactly the behaviour that shipped before. An export failing is not a
+    ///   reason to refuse a clip that would have been fine.
+    ///
+    /// Cancellation drops both files and clears the progress flag, but never touches
+    /// `selectedVideoURL`: the pick that replaced this one owns the selection now.
+    ///
+    /// Split out from the PhotosUI load so it is unit-testable — a `PhotosPickerItem` cannot be
+    /// constructed outside PhotosUI's live picker.
+    func prepareVideo(source: URL) async {
+        isTranscoding = true
+        transcodeProgress = 0
+        defer { isTranscoding = false }
+
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+
+        do {
+            try await transcoder.transcode(source: source, destination: destination) { fraction in
+                // Strong, deliberately: the enclosing closure already holds `self` for the
+                // duration of a call this method is awaiting, so a weak capture would only
+                // disagree with it. Nothing outlives `transcode`, so there is no cycle to break.
+                Task { @MainActor in self.transcodeProgress = fraction }
+            }
+            // Asked of the task, not of the error, and asked on the *success* path too: an
+            // exporter is free to notice a cancellation and return normally rather than throw,
+            // and the guarantee here — a superseded pick never writes to the selection — has to
+            // hold either way. Checking only in `catch` would let a cancelled preparation hand
+            // its abandoned clip to `acceptVideo` behind the pick that replaced it.
+            guard !Task.isCancelled else { return Self.discard(destination, source) }
+            let sourceSize = Self.fileSize(of: source)
+            let transcodedSize = Self.fileSize(of: destination)
+            if transcodedSize > 0 && transcodedSize < sourceSize {
+                Self.discard(source)
+                accept(preparedVideo: destination, sizeBytes: transcodedSize)
+            } else {
+                Self.discard(destination)
+                accept(preparedVideo: source, sizeBytes: sourceSize)
+            }
+        } catch {
+            Self.discard(destination)
+            guard !Task.isCancelled else { return Self.discard(source) }
+            logger.error("Video transcode failed, offering the original: \(error.localizedDescription)")
+            accept(preparedVideo: source, sizeBytes: Self.fileSize(of: source))
+        }
+    }
+
+    /// Best-effort removal of temp files this screen created. A leftover clip in the temp
+    /// directory is harmless; failing a gift over one would not be.
+    private static func discard(_ urls: URL...) {
+        for url in urls { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// `acceptVideo` plus the rejected file's cleanup. A refused clip is left on disk by
+    /// `acceptVideo` — it only deletes the *previous* selection — so whoever produced the file
+    /// has to remove it, and after a transcode that is no longer always the picked original.
+    private func accept(preparedVideo url: URL, sizeBytes: Int) {
+        acceptVideo(url: url, sizeBytes: sizeBytes)
+        if videoTooLarge { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// Bytes on disk, or 0 if the file cannot be measured. A 0 never reads as "small enough":
+    /// the smaller-file comparison requires a positive size, so an unmeasurable export is
+    /// discarded in favour of the original rather than silently uploaded.
+    private static func fileSize(of url: URL) -> Int {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
     }
 
     /// Accepts a picked video only if it is under the Storage cap, so an oversized clip is rejected
@@ -658,9 +767,8 @@ final class GiftAuthoringViewModel: ObservableObject {
         var path: String?
         let uploadedURL = selectedVideoURL
         if let url = uploadedURL {
-            let data = try Data(contentsOf: url)
             path = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: rewardId, data: data,
+                eventId: eventId, rewardId: rewardId, fileURL: url,
                 contentType: videoContentType(for: url)
             )
         }
@@ -734,9 +842,8 @@ final class GiftAuthoringViewModel: ObservableObject {
         var path: String?
         let uploadedURL = selectedAudioURL
         if let url = uploadedURL {
-            let data = try Data(contentsOf: url)
             path = try await service.uploadRewardMedia(
-                eventId: eventId, rewardId: rewardId, data: data,
+                eventId: eventId, rewardId: rewardId, fileURL: url,
                 contentType: audioContentType(for: url)
             )
         }

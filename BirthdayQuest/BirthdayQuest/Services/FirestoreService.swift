@@ -947,20 +947,51 @@ final class FirestoreService: GameBackend {
         data: Data,
         contentType: String
     ) async throws -> String {
+        let (ref, path) = try rewardMediaDestination(
+            eventId: eventId, rewardId: rewardId, contentType: contentType
+        )
+        _ = try await ref.putDataAsync(data, metadata: Self.metadata(contentType))
+        return path
+    }
+
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        fileURL: URL,
+        contentType: String
+    ) async throws -> String {
+        let (ref, path) = try rewardMediaDestination(
+            eventId: eventId, rewardId: rewardId, contentType: contentType
+        )
+        // putFile, not putData: the bytes are streamed off disk, so a clip larger than the
+        // device could hold in memory still uploads. Same metadata requirement as putData —
+        // neither infers a content type from the path.
+        _ = try await ref.putFileAsync(from: fileURL, metadata: Self.metadata(contentType))
+        return path
+    }
+
+    /// The Storage reference and object path a reward's media uploads to. Shared by both upload
+    /// overloads so the path — which `firestore.rules` binds `contentUrl`/`contentUrls` to — is
+    /// built in exactly one place. `eventRef` is called for its validation, which is what keeps a
+    /// malformed id out of `document(_:)` and its uncatchable exception.
+    private func rewardMediaDestination(
+        eventId: String, rewardId: String, contentType: String
+    ) throws -> (StorageReference, String) {
         _ = try eventRef(eventId)
         let fileName = "\(UUID().uuidString).\(fileExtension(forContentType: contentType))"
         let path = StoragePaths.rewardMedia(
             eventId: eventId, rewardId: rewardId, fileName: fileName
         )
-        let ref = Storage.storage().reference().child(path)
+        return (Storage.storage().reference().child(path), path)
+    }
 
-        // Required. putData does not infer a content type from the path, so without this
-        // the object uploads as application/octet-stream and the Storage rule rejects it.
+    /// Required on every upload. Neither `putData` nor `putFile` infers a content type from the
+    /// path, so without this the object lands as application/octet-stream and the Storage rule
+    /// demanding playable media rejects it.
+    private static func metadata(_ contentType: String) -> StorageMetadata {
         let metadata = StorageMetadata()
         metadata.contentType = contentType
-
-        _ = try await ref.putDataAsync(data, metadata: metadata)
-        return path
+        return metadata
     }
 
     func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws {

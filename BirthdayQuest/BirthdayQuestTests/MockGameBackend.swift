@@ -486,7 +486,13 @@ final class MockGameBackend: GameBackend {
 
     /// Every `(rewardId, contentType)` a reward-media upload was attempted for, recorded
     /// before `throwIfNeeded()`, so a stubbed failure still proves the attempt happened.
+    /// Both overloads append here, and both `record()` as `"uploadRewardMedia"`: which one a
+    /// caller reached for is a question about *streaming*, asked through
+    /// `uploadedRewardMediaFileURLs` below, not about whether media was uploaded at all.
     private(set) var uploadedRewardMedia: [(rewardId: String, contentType: String)] = []
+    /// The file URLs handed to the streaming overload. Empty means every upload went through
+    /// the in-memory `data:` path — which is what a video or audio upload must never do.
+    private(set) var uploadedRewardMediaFileURLs: [URL] = []
     /// Every `storagePaths` array a delete was attempted for, recorded before
     /// `throwIfNeeded()`, so a stubbed failure still proves the attempt happened.
     private(set) var deletedRewardMediaPaths: [[String]] = []
@@ -501,6 +507,19 @@ final class MockGameBackend: GameBackend {
         uploadedRewardMedia.append((rewardId: rewardId, contentType: contentType))
         try throwIfNeeded()
         return "events/\(eventId)/rewards/\(rewardId)/mock.jpg"
+    }
+
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        fileURL: URL,
+        contentType: String
+    ) async throws -> String {
+        record("uploadRewardMedia", eventId: eventId)
+        uploadedRewardMedia.append((rewardId: rewardId, contentType: contentType))
+        uploadedRewardMediaFileURLs.append(fileURL)
+        try throwIfNeeded()
+        return "events/\(eventId)/rewards/\(rewardId)/mock.\(fileURL.pathExtension)"
     }
 
     /// Stubbed independently of `errorToThrow` so a test can fail this call alone and prove

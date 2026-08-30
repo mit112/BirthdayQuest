@@ -283,6 +283,22 @@ protocol GameBackend: AnyObject {
         contentType: String
     ) async throws -> String
 
+    /// Same contract as the `data:` overload — returns the Storage OBJECT PATH — but streams
+    /// the bytes off disk instead of taking them pre-loaded.
+    ///
+    /// This is the one video and audio use. Reading a clip in with `Data(contentsOf:)` first is
+    /// what made the acceptable size a function of free memory rather than of the Storage rules'
+    /// cap: a 200 MB `Data` on a loaded device is an OOM kill, not an error anyone can catch.
+    /// `putFile` streams from the file, so the ceiling is the rules' cap and nothing else.
+    /// Photos keep the `data:` overload — they are compressed in memory from a `UIImage` and
+    /// would have to be written to a temp file just to be read straight back.
+    func uploadRewardMedia(
+        eventId: String,
+        rewardId: String,
+        fileURL: URL,
+        contentType: String
+    ) async throws -> String
+
     /// Deletes the Storage objects at the given full object paths. Idempotent: an already-absent
     /// object counts as success (a re-issued or partial curation delete must not throw).
     func deleteRewardMedia(eventId: String, storagePaths: [String]) async throws

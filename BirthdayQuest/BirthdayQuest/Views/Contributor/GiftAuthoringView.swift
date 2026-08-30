@@ -268,6 +268,10 @@ struct GiftAuthoringView: View {
             }
             .accessibilityLabel("Add a video")
 
+            if viewModel.isTranscoding {
+                transcodingRow
+            }
+
             if let videoURL = viewModel.selectedVideoURL {
                 HStack(spacing: BQDesign.Spacing.sm) {
                     if let videoThumbnail {
@@ -303,7 +307,9 @@ struct GiftAuthoringView: View {
             }
 
             if viewModel.videoTooLarge {
-                fieldError("That video is over 200 MB. Please pick a shorter one.")
+                // Reaching this now means the clip was already shrunk and still does not fit,
+                // so "pick a shorter one" is the only remaining advice that is actually true.
+                fieldError("Even shrunk, that video is over 200 MB. Please pick a shorter one.")
             }
 
             if viewModel.showValidation
@@ -396,6 +402,46 @@ struct GiftAuthoringView: View {
             }
         }
         .disabled(!viewModel.canAttachMedia)
+    }
+
+    /// The wait while a picked clip is re-encoded.
+    ///
+    /// Determinate, not a spinner: the export reports a real fraction, and a long 4K source is a
+    /// wait of tens of seconds, where a bare spinner would say nothing about whether it is nearly
+    /// done or barely started.
+    ///
+    /// It carries **no animation of its own**. The fill moves only when the export reports
+    /// progress — the one thing motion is allowed to mean here — and a bespoke transition would
+    /// re-derive the Reduce Motion decision that `MotionLevel` owns in one place.
+    ///
+    /// The copy names the quality trade rather than hiding it behind "Processing…": the file the
+    /// celebrant receives is genuinely not the file that was picked.
+    private var transcodingRow: some View {
+        VStack(alignment: .leading, spacing: BQDesign.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: BQDesign.Spacing.sm) {
+                Text("Shrinking your video so it can be sent")
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textPrimary)
+                    // Wrap rather than truncate at the largest content sizes.
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Text(transcodeProgressText)
+                    .font(BQDesign.Typography.captionSmall)
+                    .foregroundStyle(BQDesign.Colors.textSecondary)
+                    .monospacedDigit()
+            }
+            ProgressView(value: viewModel.transcodeProgress, total: 1)
+                .tint(BQDesign.Colors.primaryPurple)
+        }
+        // One VoiceOver stop, whose *value* is the percentage — so progress is announced as the
+        // row updates instead of only when someone re-focuses it.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Shrinking your video so it can be sent")
+        .accessibilityValue(transcodeProgressText)
+    }
+
+    private var transcodeProgressText: String {
+        "\(Int((viewModel.transcodeProgress * 100).rounded()))%"
     }
 
     private var recordingRow: some View {
