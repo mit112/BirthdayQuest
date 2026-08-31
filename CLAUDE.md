@@ -236,15 +236,28 @@ Two tiers, and both must stay green:
   tier already lets any member flip `isUnlocked` on any reward, so closing create alone would be
   decorative.
 - Accessibility: Dynamic Type, Reduce Motion and AA contrast are now handled (see the Design
-  System section). Visual confirmation of reflow at the largest accessibility sizes is **partially
-  done, not closed** — no snapshot tests exist and the unit suite cannot catch clipping or overlap.
-  `xcrun simctl ui booted content_size accessibility-extra-extra-extra-large` is the command; it
-  needs a live Firebase project, because the app cannot get past launch without the Anonymous
-  provider. Spot-checked 2026-08-28 on iPhone 17 Pro Max at that size: launch and the empty/failure
-  states (`EmptyOccasionsView`) reflow correctly, no clipping or overlap. **Not yet checked:**
-  `AccountView` and `TermsView` — no UI-automation tap was available in that session, and a system
-  "Open in?" dialog blocks deep-linked navigation to them. Do not read "spot-checked" as "all
-  screens verified."
+  System section). **Reflow at the largest accessibility sizes — CLOSED 2026-08-30 for the screens
+  that were open, and the earlier "reflow correctly" claim was WRONG.** Still no snapshot tests, so
+  the unit suite catches none of this; it is a visual pass and has to be re-run by eye.
+  - **Measure on the NARROWEST device, not the widest.** The 2026-08-28 pass ran on iPhone 17 Pro
+    Max and reported `EmptyOccasionsView` clean. Re-run at 390pt (iPhone 17e), the same screen
+    truncated in two places: the invitation read "or join w…" and the primary button "Create an
+    occ…". A Pro Max is wide enough to hide exactly the defect this check exists to find. Fixed —
+    see the reflow entry below.
+  - `AccountView` and `TermsView` **verified clean** at `accessibility-extra-extra-extra-large` on
+    iPhone 17e, top and scrolled: every label wraps, the `Label` + chevron row and the destructive
+    button both grow to two lines, nothing clips or overlaps.
+  - **How to drive it, since the last two sessions both stalled here.** `xcrun simctl ui booted
+    content_size accessibility-extra-extra-extra-large` sets the size, and a live Firebase project
+    is required (the app cannot pass launch without the Anonymous provider). The blocker was never
+    the deep link — `AccountView` is a plain sheet off `OccasionListView`/`EmptyOccasionsView` and
+    `TermsView` is a row inside it, so it is all plain taps. What is missing is a **tap tool**:
+    this XcodeBuildMCP config exposes `screenshot`/`snapshot_ui` but no `tap`, and the Simulator
+    runs headless (no `Simulator.app` window for AppleScript to click). The way through is a
+    throwaway `XCUITest` in `BirthdayQuestUITests/` that taps, calls `add(XCTAttachment(screenshot:))`
+    with `.keepAlways`, and is extracted with `xcrun xcresulttool export attachments --test-id …`.
+    Delete the probe afterwards — the folder-synced group means leaving it there enrols an
+    assertion-free test in the target.
 - `fetchMyOccasions` fans out **concurrently** (`withTaskGroup`, `@MainActor` children so nothing
   crosses an isolation boundary). Its **skip-on-failure is load-bearing and has no test**: each
   child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
@@ -447,6 +460,29 @@ Two tiers, and both must stay green:
   again to send this gift back" while the picker beside it was disabled. The gift **re-send
   carve-out was unreachable for video**, the one gift type it was designed around. View-only, so
   no unit test covers it — the VM half (`canAttachMedia`) was already correct and tested.
+- **A save taken while the picked clip was still being prepared silently dropped it — CLOSED
+  (2026-08-31).** Found by the whole-branch review of the transcoding lane, which that lane had
+  shipped without. Transcoding turned the pick→selection window from a PhotosUI copy into tens of
+  seconds the UI actively advertises with a progress row, and `save()` was gated on nothing to do
+  with it. On an **existing** video gift `isValid` is satisfied by the old `contentUrl` alone, so
+  `saveVideo` uploaded nothing, wrote `title`/`teaser`, and reported success — the contributor
+  watched the progress row finish and read "Video selected" for a clip that was never sent. A new
+  gift merely failed validation loudly; the existing-gift case is the silent wrong write.
+  - **Two guards, and neither covers the other.** `guard !isTranscoding` covers the export and is
+    the half a test can reach (`prepareVideo` + the stub's `holdUntilReleased`) and the half the
+    disabled Save button mirrors. `await videoPreparation?.value` covers the `loadTransferable`
+    copy that runs *before* `prepareVideo` in `loadVideoSelection`, which is seconds of its own on
+    a 4K clip and sets nothing observable. Dropping either re-opens a narrower version of the bug.
+  - **`isSaving` is set before the await, deliberately.** The `!isSaving` guard runs before any
+    suspension, so setting the flag after it would let two taps both pass and double-save.
+  - **The content sections are frozen during an upload** (`.disabled(viewModel.isSaving)` on the
+    mode switch). `acceptVideo` and `acceptAudio` both unlink the selection they supersede, and
+    since video/voice/re-send moved to `putFileAsync` that file has to survive the whole transfer,
+    not just long enough to be read into memory — a re-pick mid-save could delete it underneath.
+  - Mutation-proven: dropping `!isTranscoding` reddens `saveMidTranscodeDropsNothing` (verified,
+    exit 65). The test asserts **both** halves — refusal while held, *then* the new clip actually
+    uploaded after release — because a refusal-only test passes just as happily against a `save()`
+    that never saves anything.
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -520,9 +556,41 @@ Reduce Motion decision `MotionLevel` owns). One pre-existing bug fell out of it 
 video section was disabled on `isEditable` rather than `canAttachMedia`, which made gift re-send
 unreachable for video (also recorded above).
 
-**Next up, in rough order:** the remaining human-gated items (Apple Developer account + real
-`DEVELOPMENT_TEAM` and bundle id, the two `REPLACE_WITH_*` placeholders in `LegalCopy.swift`, store
-listing), and the still-open a11y reflow check for `AccountView` / `TermsView`.
+## Direction (as of 2026-08-31)
+
+Two commits on top of the transcoding lane, and **the a11y reflow gap is closed** — the last item
+in Known Gaps that did not need a human.
+
+- **`70a5d73` — a save taken mid-preparation no longer drops the clip.** See the dedicated Known
+  Gap entry for the mechanism (two guards, `isSaving` before the await, frozen content sections)
+  and the mutation proof. **Worth reading as a process lesson, not just a bug:** the transcoding
+  lane was the only lane in this project shipped *without* a whole-branch review, and this is what
+  the review found on the first pass. It is precisely the cross-cutting shape
+  (`GameBackend` overload + `FirestoreService` + VM + view) that per-task review misses. Do not
+  push a lane here on green gates alone — green was never in question; the suite had no test that
+  could see this.
+- **`ec1a1b5` — the launch screen reflows instead of truncating.** And a correction that matters
+  more than the fix: the 2026-08-28 pass reported `EmptyOccasionsView` clean at AX5, but it ran on
+  an **iPhone 17 Pro Max**. At 390pt the same screen truncated the invitation to "or join w…" and
+  the primary button to "Create an occ…". **Measure reflow on the narrowest device.** A ScrollView
+  with a `minHeight` of the container keeps it centred while it fits and lets it scroll once it
+  doesn't; `Button("…")`'s string form renders a single truncating line, so both buttons now carry
+  an explicit `Text` label.
+- **`AccountView` / `TermsView` verified clean** at AX5 on iPhone 17e, top and scrolled. The Known
+  Gaps entry records how to drive this, since two sessions in a row stalled on it: the blocker was
+  never the deep link, it is that no `tap` tool is exposed and the Simulator runs headless — a
+  throwaway `XCUITest` with screenshot attachments is the way through.
+
+**Gates on this tree, real exit codes:** Swift **349 passed / 4 skipped** (the emulator-gated
+`TransactionIntegrationTests`) / 0 failed, exit 0. SwiftLint `--strict` **0 violations, 79 files**.
+The emulator rules suite (**195**) was correctly **not** re-run — `git diff` over `firestore.rules`
+and `storage.rules` is empty across everything since `5b91034`. (Derive all four with the
+documented commands rather than trusting these.)
+
+**Next up:** only human-gated items remain — Apple Developer account + real `DEVELOPMENT_TEAM` and
+bundle id (still `com.example.birthdayquest`, `DEVELOPMENT_TEAM` empty in all seven pbxproj
+blocks), the two `REPLACE_WITH_*` placeholders in `LegalCopy.swift`, enabling the **Apple** auth
+provider in the Firebase console (Anonymous is verified working), and the store listing.
 
 ## Direction (as of 2026-08-28)
 
