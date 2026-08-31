@@ -106,7 +106,10 @@ struct ChallengeEditorView: View {
                     Text(level.rawValue.capitalized).tag(level)
                 }
             }
-            .pickerStyle(.segmented)
+            // .menu, not .segmented: three word-labels (Easy/Medium/Hard) truncate in a
+            // segmented control at large Dynamic Type sizes on narrow devices; a menu picker
+            // shows the current selection and never clips.
+            .pickerStyle(.menu)
 
             Picker("Category", selection: $viewModel.draft.category) {
                 ForEach(ChallengeCategory.allCases, id: \.self) { category in

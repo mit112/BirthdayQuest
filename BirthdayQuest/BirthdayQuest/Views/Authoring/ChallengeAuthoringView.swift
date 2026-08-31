@@ -98,43 +98,60 @@ struct ChallengeAuthoringView: View {
     /// The first thing a host sees in a brand-new occasion, so it carries the instruction
     /// rather than decorating the absence of one.
     private var emptyState: some View {
-        VStack(spacing: BQDesign.Spacing.md) {
-            Text("No challenges yet")
-                .font(BQDesign.Typography.sectionTitle)
-                .foregroundStyle(BQDesign.Colors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
+        // Somewhere to overflow *to*: at the largest accessibility sizes this content is
+        // taller than a 390pt-wide phone's screen, and a plain frame compresses it instead of
+        // letting it scroll. `minHeight` keeps it optically centred while it fits.
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: BQDesign.Spacing.md) {
+                    Text("No challenges yet")
+                        .font(BQDesign.Typography.sectionTitle)
+                        .foregroundStyle(BQDesign.Colors.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
 
-            Text("""
-                Challenges are how \(event.celebrantName) earns points. Add a few, and keep \
-                the total just short of what the gifts cost — the secret dares close the gap.
-                """)
-                .font(BQDesign.Typography.body)
-                .foregroundStyle(BQDesign.Colors.textSecondary)
-                .multilineTextAlignment(.center)
+                    Text("""
+                        Challenges are how \(event.celebrantName) earns points. Add a few, and keep \
+                        the total just short of what the gifts cost — the secret dares close the gap.
+                        """)
+                        .font(BQDesign.Typography.body)
+                        .foregroundStyle(BQDesign.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            Button("Create your first challenge") {
-                viewModel.beginCreating()
-            }
-            .font(BQDesign.Typography.bodyBold)
-            .buttonStyle(.borderedProminent)
-            .tint(BQDesign.Colors.primaryPurple)
+                    Button {
+                        viewModel.beginCreating()
+                    } label: {
+                        Text("Create your first challenge")
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(BQDesign.Typography.bodyBold)
+                    .buttonStyle(.borderedProminent)
+                    .tint(BQDesign.Colors.primaryPurple)
 
-            if let occasionType = event.occasion?.occasionType {
-                Button("Add starter challenges") {
-                    Task {
-                        await viewModel.addStarterChallenges(
-                            for: occasionType, authorUid: event.participant?.id ?? ""
-                        )
+                    if let occasionType = event.occasion?.occasionType {
+                        Button {
+                            Task {
+                                await viewModel.addStarterChallenges(
+                                    for: occasionType, authorUid: event.participant?.id ?? ""
+                                )
+                            }
+                        } label: {
+                            Text("Add starter challenges")
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(BQDesign.Typography.body)
+                        .buttonStyle(.bordered)
+                        .tint(BQDesign.Colors.primaryPurple)
+                        .disabled(viewModel.isPerformingAction)
                     }
                 }
-                .font(BQDesign.Typography.body)
-                .buttonStyle(.bordered)
-                .tint(BQDesign.Colors.primaryPurple)
-                .disabled(viewModel.isPerformingAction)
+                .padding(BQDesign.Spacing.xl)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(BQDesign.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {

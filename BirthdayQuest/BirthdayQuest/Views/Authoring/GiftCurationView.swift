@@ -92,22 +92,31 @@ struct GiftCurationView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: BQDesign.Spacing.md) {
-            Text("No gifts yet")
-                .font(BQDesign.Typography.sectionTitle)
-                .foregroundStyle(BQDesign.Colors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
+        // Somewhere to overflow *to*: at the largest accessibility sizes this content is
+        // taller than a 390pt-wide phone's screen, and a plain frame compresses it instead of
+        // letting it scroll. `minHeight` keeps it optically centred while it fits.
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: BQDesign.Spacing.md) {
+                    Text("No gifts yet")
+                        .font(BQDesign.Typography.sectionTitle)
+                        .foregroundStyle(BQDesign.Colors.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
 
-            Text("""
-                Gifts come from your guests — each of them can write one. Share the \
-                contributor link and they'll appear here for you to price.
-                """)
-                .font(BQDesign.Typography.body)
-                .foregroundStyle(BQDesign.Colors.textSecondary)
-                .multilineTextAlignment(.center)
+                    Text("""
+                        Gifts come from your guests — each of them can write one. Share the \
+                        contributor link and they'll appear here for you to price.
+                        """)
+                        .font(BQDesign.Typography.body)
+                        .foregroundStyle(BQDesign.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(BQDesign.Spacing.xl)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(BQDesign.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {
