@@ -279,6 +279,12 @@ Two tiers, and both must stay green:
     which is why one scroll container fixed all of it. Both use the `ec1a1b5` pattern
     (`GeometryReader` + `ScrollView` + `minHeight: proxy.size.height`), so the `Spacer()`s still
     centre the layout while it fits.
+    **What was rendered, precisely:** the sheet's `.unavailable` branch, and the carousel's
+    `.ready` branch with three gift cards *and* the timeline prompt. **Not** rendered: the
+    carousel's expiry-reminder banner (the tallest optional element, and it sits above the points
+    header). That is a deliberate gap, not an oversight — the banner is additive to a layout that
+    already scrolls, so it cannot reintroduce the compression the scroll container removed — but it
+    is unrendered, and this file does not get to call unrendered layout verified.
   - **Extract the content property BEFORE adding the scroll container.** Two nesting levels is
     what pushes a SwiftUI body over the type-checker's budget; both of these bodies were near it
     already (`RewardsCarouselView.body` carries six presentation modifiers). Extracting first is

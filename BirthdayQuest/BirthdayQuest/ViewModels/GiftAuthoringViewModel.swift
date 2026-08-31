@@ -593,6 +593,12 @@ final class GiftAuthoringViewModel: ObservableObject {
             // Every upload-then-write path converges here, so this is the one place the
             // compensation belongs — it also covers a gallery that failed part-way through
             // uploading, which no single write site can see.
+            //
+            // `isSaving` is still true here: it is cleared by the `defer`, which runs when this
+            // method returns, not before the `await` below. That is deliberate and load-bearing
+            // across two otherwise-separate changes — the content sections stay frozen while the
+            // cleanup runs, and media arriving during that window hits `acceptAudio`/
+            // `acceptVideo`'s own `!isSaving` guard instead of unlinking a selection mid-cleanup.
             await discardUploads(uploadsThisSave)
             logger.error("Saving the gift failed: \(error.localizedDescription)")
             errorMessage = "Couldn't save your gift. Try again."

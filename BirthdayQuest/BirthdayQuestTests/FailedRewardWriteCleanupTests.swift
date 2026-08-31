@@ -96,10 +96,36 @@ struct FailedRewardWriteCleanupTests {
         #expect(mock.deletedRewardMediaPaths.isEmpty)
     }
 
-    /// A second save after a failure must not delete the first attempt's paths again — they are
-    /// already gone, and by then `uploadsThisSave` describes a different attempt entirely.
-    @Test("a retry discards only its own uploads")
+    /// Covers `uploadsThisSave = []` at the top of `save()`, and it has to be shaped this way to
+    /// cover it at all. The obvious version — fail, then succeed, then assert one discard — is
+    /// **vacuous**: without the reset, the retry appends to attempt 1's paths and then succeeds, so
+    /// nothing discards and the count is still 1. Failing *both* attempts is what separates them,
+    /// because attempt 2's discard would otherwise carry attempt 1's path along with its own and
+    /// delete an object that was already deleted.
+    @Test("each failed attempt discards only the upload it made itself")
     func retryDiscardsOnlyItsOwnUploads() async {
+        let mock = MockGameBackend()
+        mock.createRewardError = CleanupTestError.writeRefused
+        let vm = await newGift(mock)
+        vm.contentMode = .voice
+        vm.title = "A song for you"
+        vm.acceptAudio(url: tempFile(ext: "m4a"), sizeBytes: 1024)
+
+        await vm.save()
+        await vm.save()
+
+        #expect(mock.uploadedRewardMedia.count == 2, "both attempts uploaded")
+        #expect(mock.deletedRewardMediaPaths.count == 2, "and both discarded")
+        #expect(mock.deletedRewardMediaPaths.allSatisfy { $0.count == 1 },
+                "each naming exactly one path — its own")
+        // A new id is minted per attempt, so the two paths must differ. If they did not, the
+        // count-of-one assertion above could hold while still naming the wrong object.
+        #expect(Set(mock.deletedRewardMediaPaths.flatMap { $0 }).count == 2)
+    }
+
+    /// The complement: a retry that succeeds discards nothing further.
+    @Test("a retry that succeeds adds no discard")
+    func successfulRetryDiscardsNothingFurther() async {
         let mock = MockGameBackend()
         mock.createRewardError = CleanupTestError.writeRefused
         let vm = await newGift(mock)
@@ -111,6 +137,7 @@ struct FailedRewardWriteCleanupTests {
         mock.createRewardError = nil
         await vm.save()
 
+        #expect(mock.createdRewards.count == 2, "the retry really did attempt the write")
         #expect(mock.deletedRewardMediaPaths.count == 1,
                 "only the failed attempt discarded anything")
     }
