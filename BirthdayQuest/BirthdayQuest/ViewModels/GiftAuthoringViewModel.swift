@@ -222,6 +222,11 @@ final class GiftAuthoringViewModel: ObservableObject {
     private var videoPreparation: Task<Void, Never>?
     private var photoPreparation: Task<Void, Never>?
 
+    /// Storage paths uploaded by the save currently in flight, so a failed write can hand them
+    /// to `discardUploads`. Reset at the top of every `save()`, so a previous failure's paths
+    /// can never be deleted on the back of a later success.
+    private var uploadsThisSave: [String] = []
+
     private let service: GameBackend
     private let mediaProbe: RewardMediaProbing
     private let transcoder: VideoTranscoding
@@ -512,6 +517,7 @@ final class GiftAuthoringViewModel: ObservableObject {
 
         isSaving = true
         defer { isSaving = false }
+        uploadsThisSave = []
 
         await videoPreparation?.value
         await photoPreparation?.value
@@ -584,6 +590,10 @@ final class GiftAuthoringViewModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(1500))
             saveSuccess = false
         } catch {
+            // Every upload-then-write path converges here, so this is the one place the
+            // compensation belongs — it also covers a gallery that failed part-way through
+            // uploading, which no single write site can see.
+            await discardUploads(uploadsThisSave)
             logger.error("Saving the gift failed: \(error.localizedDescription)")
             errorMessage = "Couldn't save your gift. Try again."
             showError = true
@@ -601,6 +611,35 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// dictionary, not the backend. Nothing gameplay-side (`isUnlocked`, `fetchedBy`) may ride
     /// along either: that write spans two tiers and the rules reject it at runtime.
     ///
+    /// Deletes media uploaded for a reward write that then failed, so it is not stranded.
+    ///
+    /// Every purge path — host curation, the celebrant's expiry sweep — builds its delete list
+    /// from the *document's* own `contentUrl`/`contentUrls`, so an object no document names can
+    /// never be reached again by anyone. That is the actual mechanism, and it is worth being
+    /// precise about because the obvious guess is wrong: pinning `rewardId` across a retry so
+    /// both attempts share a folder does **not** rescue the first attempt's object, because
+    /// `uploadRewardMedia` mints a fresh UUID *filename* every time (which the re-send path
+    /// needs — `MediaStore` keys its cache on `lastPathComponent`). A stable folder would only
+    /// keep the rules' path binding valid; the stranding is per-object, not per-folder.
+    ///
+    /// Best-effort, and it must not mask the original error: the contributor needs to be told
+    /// the save failed, not that a cleanup failed. Accepted ambiguity — if a write throws but
+    /// did land server-side, this deletes media the document now names. Reward writes are
+    /// atomic batches and their errors are effectively definitive (permission-denied,
+    /// invalid-argument, unauthenticated), Firestore does not surface a lost connection as a
+    /// throw, and the bad case is recoverable: the listener delivers the gift and the retry goes
+    /// down the existing-gift path and re-uploads. A permanently unreachable object is not.
+    private func discardUploads(_ paths: [String]) async {
+        guard !paths.isEmpty else { return }
+        do {
+            try await service.deleteRewardMedia(eventId: eventId, storagePaths: paths)
+        } catch {
+            logger.error(
+                "Couldn't clean up media for a failed gift save: \(error.localizedDescription)"
+            )
+        }
+    }
+
     /// Uploads into the gift's own `rewards/{rewardId}/…` folder (so the rules' path binding
     /// holds) under a fresh UUID *filename*, never the old path: the Storage rules deny
     /// overwrites outright. The dead objects are already gone, so there is nothing left to
@@ -618,9 +657,11 @@ final class GiftAuthoringViewModel: ObservableObject {
             var uploaded: [String] = []
             for image in photoPreviews {
                 guard let data = compressImage(image) else { continue }
-                uploaded.append(try await service.uploadRewardMedia(
+                let path = try await service.uploadRewardMedia(
                     eventId: eventId, rewardId: rewardId, data: data, contentType: "image/jpeg"
-                ))
+                )
+                uploaded.append(path)
+                uploadsThisSave.append(path)
             }
             // Replacing a dead gallery with an empty array would leave the celebrant on
             // `.unavailable` — a different, and equally wrong, dead end.
@@ -629,17 +670,21 @@ final class GiftAuthoringViewModel: ObservableObject {
         case .video:
             guard let url = selectedVideoURL else { return }
             temporaryFile = url
-            fields["contentUrl"] = try await service.uploadRewardMedia(
+            let path = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId,
                 fileURL: url, contentType: videoContentType(for: url)
             )
+            uploadsThisSave.append(path)
+            fields["contentUrl"] = path
         case .voice:
             guard let url = selectedAudioURL else { return }
             temporaryFile = url
-            fields["contentUrl"] = try await service.uploadRewardMedia(
+            let path = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId,
                 fileURL: url, contentType: audioContentType(for: url)
             )
+            uploadsThisSave.append(path)
+            fields["contentUrl"] = path
         }
 
         try await service.updateReward(eventId: eventId, rewardId: rewardId, fields: fields)
@@ -671,6 +716,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                     eventId: eventId, rewardId: rewardId, data: data, contentType: "image/jpeg"
                 )
                 uploaded.append(path)
+                uploadsThisSave.append(path)
             }
             paths = uploaded
         }
@@ -845,10 +891,12 @@ final class GiftAuthoringViewModel: ObservableObject {
         var path: String?
         let uploadedURL = selectedVideoURL
         if let url = uploadedURL {
-            path = try await service.uploadRewardMedia(
+            let uploadedPath = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId, fileURL: url,
                 contentType: videoContentType(for: url)
             )
+            uploadsThisSave.append(uploadedPath)
+            path = uploadedPath
         }
 
         if let existing = existingGift, let id = existing.id {
@@ -934,10 +982,12 @@ final class GiftAuthoringViewModel: ObservableObject {
         var path: String?
         let uploadedURL = selectedAudioURL
         if let url = uploadedURL {
-            path = try await service.uploadRewardMedia(
+            let uploadedPath = try await service.uploadRewardMedia(
                 eventId: eventId, rewardId: rewardId, fileURL: url,
                 contentType: audioContentType(for: url)
             )
+            uploadsThisSave.append(uploadedPath)
+            path = uploadedPath
         }
 
         if let existing = existingGift, let id = existing.id {

@@ -249,10 +249,16 @@ final class MockGameBackend: GameBackend {
         unlockedRewardIds.append(rewardId)
     }
 
+    /// Stubbed independently of `errorToThrow` so a test can fail the reward *write* while its
+    /// media upload still succeeds — the only way to reach the orphaned-upload path, since
+    /// `errorToThrow` would fail the upload first and leave nothing to strand.
+    var createRewardError: Error?
+
     func createReward(eventId: String, rewardId: String, reward: Reward) async throws -> String {
         record("createReward", eventId: eventId)
         createdRewards.append(reward)
         createdRewardIds.append(rewardId)
+        if let createRewardError { throw createRewardError }
         try throwIfNeeded()
         return rewardId
     }
@@ -267,9 +273,13 @@ final class MockGameBackend: GameBackend {
     /// own folder (upload `rewardId` == create `rewardId`).
     private(set) var createdRewardIds: [String] = []
 
+    /// The `createRewardError` counterpart, for the existing-gift half of the same path.
+    var updateRewardError: Error?
+
     func updateReward(eventId: String, rewardId: String, fields: [String: Any]) async throws {
         record("updateReward", eventId: eventId)
         updatedRewards.append((rewardId, fields))
+        if let updateRewardError { throw updateRewardError }
         try throwIfNeeded()
     }
 
