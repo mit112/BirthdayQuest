@@ -125,8 +125,10 @@ struct EmptyOccasionsView: View {
     private func failure(_ message: String) -> some View {
         VStack(spacing: BQDesign.Spacing.lg) {
             // The glyph carries the severity in colour so the sentence does not have to.
-            // `Colors.error` measures 3.83:1 on this background, below the 4.5:1 floor for
-            // body text, which is why the message itself is `textPrimary`.
+            // `Colors.error` measures 3.59:1 on THIS surface — `Colors.background`, the app
+            // page — below the 4.5:1 floor for body text, which is why the message itself is
+            // `textPrimary`. The 3.83:1 figure the sibling error rows quote is the same token
+            // on white, i.e. inside a `List` row; it does not apply here.
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: errorIconSize))
                 .foregroundStyle(BQDesign.Colors.error)
