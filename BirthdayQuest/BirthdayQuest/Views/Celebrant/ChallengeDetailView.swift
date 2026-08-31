@@ -121,7 +121,7 @@ private extension ChallengeDetailView {
             
             Image(systemName: challenge.category.icon)
                 .font(.system(size: categoryIconSize))
-                .foregroundColor(.white)
+                .foregroundColor(BQDesign.Colors.badgeGlyph)
         }
         .bqShadow(BQDesign.Shadows.glow)
         .padding(.top, BQDesign.Spacing.md)

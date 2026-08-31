@@ -186,6 +186,27 @@ enum BQDesign {
         /// all ten stops fixed is as defensible as making all ten adaptive — and either way the
         /// result has to be checked by eye in both appearances, which is why this commit does not
         /// guess at eight dark values it cannot verify.
+        /// The glyph drawn inside a challenge badge — the category icon, and the checkmark that
+        /// replaces it once the challenge is done.
+        ///
+        /// Scheme-INVARIANT on purpose, by the same argument as the spy-dossier surfaces: the
+        /// disc it sits on is itself scheme-invariant, so an adaptive ink would invert to
+        /// near-white in dark and reinstate the exact failure it replaces. `textPrimary` is
+        /// therefore the wrong token here despite being the right colour in light.
+        ///
+        /// It replaced `Color.white`, which measured **1.73:1 – 2.78:1** against the ten
+        /// `categoryTint` stops and 1.81:1 / 2.35:1 against `completedBadgeTint` — under the 3:1
+        /// WCAG 1.4.11 floor on every one, in both appearances. The floor applies because
+        /// `ChallengeCardView` names the category nowhere in text: the glyph and its tint are the
+        /// only thing distinguishing one category from another. `PaletteContrastTests` pins it.
+        static let badgeGlyph = invariant(0x1C_1B_2E)
+
+        /// The two stops of a *completed* challenge's badge, replacing a pair of hexes inlined in
+        /// `ChallengeCardView`. Moved here so the glyph that sits on it is covered by the same
+        /// contrast test as the category stops; the values are unchanged, and it stays
+        /// scheme-invariant for the same reason `categoryTint` largely is.
+        static let completedBadgeTint: [Color] = [invariant(0xC5_C0_B8), invariant(0xB0_A8_9E)]
+
         static func categoryTint(_ category: ChallengeCategory) -> [Color] {
             switch category {
             case .physical: return [Color(hex: "4CAF50"), Color(hex: "66BB6A")]
@@ -207,6 +228,15 @@ enum BQDesign {
             Color(uiColor: UIColor { traits in
                 srgb(traits.userInterfaceStyle == .dark ? dark : light)
             })
+        }
+
+        /// A token that resolves to the same value in both appearances, deliberately.
+        ///
+        /// Distinct from a bare `Color(hex:)` in two ways that matter here: the `0xRRGGBB` form
+        /// makes a typo a compile error rather than a silent black, and the name records that the
+        /// invariance is a decision — this file's default is `adaptive(light:dark:)`.
+        private static func invariant(_ rgb: UInt32) -> Color {
+            Color(uiColor: srgb(rgb))
         }
 
         private static func srgb(_ rgb: UInt32) -> UIColor {

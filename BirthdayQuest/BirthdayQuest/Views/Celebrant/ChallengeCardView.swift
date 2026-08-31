@@ -106,7 +106,7 @@ private extension ChallengeCardView {
                     isCompleted
                     ? AnyShapeStyle(
                         LinearGradient(
-                            colors: [Color(hex: "C5C0B8"), Color(hex: "B0A89E")],
+                            colors: BQDesign.Colors.completedBadgeTint,
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -130,11 +130,11 @@ private extension ChallengeCardView {
             if isCompleted {
                 Image(systemName: "checkmark")
                     .font(.system(size: badgeIconSize, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(BQDesign.Colors.badgeGlyph)
             } else {
                 Image(systemName: challenge.category.icon)
                     .font(.system(size: badgeIconSize, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(BQDesign.Colors.badgeGlyph)
             }
         }
     }

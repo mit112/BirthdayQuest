@@ -200,6 +200,35 @@ private enum Cases {
         .init("secretAccent on secretDark", Palette.secretAccent, on: Palette.secretDark, floor: largeTextAndUIFloor),
         .init("primaryPurple on background", Palette.primaryPurple, on: Palette.background, floor: largeTextAndUIFloor)
     ]
+
+    /// The challenge badge's glyph, against every fill it is ever drawn on.
+    ///
+    /// This is SC 1.4.11 rather than 1.4.3: the badge carries an SF Symbol, not text. The floor
+    /// applies because `ChallengeCardView` names the category nowhere in words, so the glyph and
+    /// its disc are the only thing telling one category from another — a graphic required to
+    /// understand the card, not decoration.
+    ///
+    /// Generated from `categoryTint` rather than transcribed, so a stop added to a category, or a
+    /// sixth `ChallengeCategory` case, is covered the day it lands instead of the day someone
+    /// remembers to extend a list here.
+    static let badgeGlyph: [PaletteContrastCase] =
+        ChallengeCategory.allCases.flatMap { category in
+            Palette.categoryTint(category).enumerated().map { index, stop in
+                PaletteContrastCase(
+                    "badgeGlyph on \(category.rawValue) tint stop \(index)",
+                    Palette.badgeGlyph,
+                    on: stop,
+                    floor: largeTextAndUIFloor
+                )
+            }
+        } + Palette.completedBadgeTint.enumerated().map { index, stop in
+            PaletteContrastCase(
+                "badgeGlyph on completed badge stop \(index)",
+                Palette.badgeGlyph,
+                on: stop,
+                floor: largeTextAndUIFloor
+            )
+        }
 }
 
 // MARK: - Suite
@@ -241,6 +270,20 @@ struct PaletteContrastTests {
 
     @Test("Large-text and UI colours clear 3:1 in dark mode", arguments: Cases.largeTextAndUI)
     func largeTextInDark(testCase: PaletteContrastCase) {
+        let measured = ratio(testCase, .dark)
+        #expect(measured >= testCase.floor, "\(testCase.label) is \(measured):1 in dark, needs \(testCase.floor):1")
+    }
+
+    // MARK: Badge glyph — 3:1 on every disc it lands on, both appearances
+
+    @Test("Badge glyph clears 3:1 on every badge fill in light mode", arguments: Cases.badgeGlyph)
+    func badgeGlyphInLight(testCase: PaletteContrastCase) {
+        let measured = ratio(testCase, .light)
+        #expect(measured >= testCase.floor, "\(testCase.label) is \(measured):1 in light, needs \(testCase.floor):1")
+    }
+
+    @Test("Badge glyph clears 3:1 on every badge fill in dark mode", arguments: Cases.badgeGlyph)
+    func badgeGlyphInDark(testCase: PaletteContrastCase) {
         let measured = ratio(testCase, .dark)
         #expect(measured >= testCase.floor, "\(testCase.label) is \(measured):1 in dark, needs \(testCase.floor):1")
     }
