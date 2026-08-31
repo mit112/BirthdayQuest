@@ -702,10 +702,13 @@ documented commands rather than trusting these.)
 
 ## Direction (as of 2026-08-31, evening — main is PUSHED, and five of six parked findings closed)
 
-`origin/main` was brought up to `4d7b36b` (the nine commits the overnight run left unpushed), then
-five more landed on top — `ddd3bac` `f6d94fa` `0e57a6c` `87557e0` `c251771`. Use
-`git rev-list --count origin/main..main` for the real unpushed count rather than trusting a number
-written here; these five were **not** pushed at the time of writing.
+**The long-standing "main is ahead of origin" state is finished.** Two attended pushes on Mit's
+explicit go: the nine commits the overnight run had left behind (`8ec418f..4d7b36b`), then this
+session's work (`4d7b36b..557305e`) — `ddd3bac` `f6d94fa` `0e57a6c` `87557e0` `c251771` for the
+code, plus guide/test commits. **`origin/main` was at `557305e` as of the last push**; anything
+after that is this entry's own reconciliation, so run `git rev-list --count origin/main..main`
+rather than trusting any count written here. Do not re-import "main is unpushed" from an older
+Direction entry below — every one of those is a record of its own moment.
 
 The session's whole queue was the six findings the previous one had parked. **Five are closed and
 one grew a sibling.** Each entry above carries the mechanism; the corrections worth reading are:
@@ -744,12 +747,21 @@ bug — the "known remaining" non-adaptive-colour list presented itself as exhau
 sites — and chasing it is what surfaced the duplicate mapping above. A clean audit is not a wasted
 audit; it is what lets the next session trust the guide instead of re-deriving it.
 
-**Gates, real exit codes, on `c251771`:** Swift **358 passed / 0 failed / 4 skipped**, exit 0
+**Gates, real exit codes, on the final tree (`557305e`):** Swift **359 passed / 0 failed / 4 skipped**, exit 0
 (counted from the `.xcresult`, not the streamed log). SwiftLint `--strict` **0 violations, 79
 files**. Rules suite **correctly not re-run** — `git diff` over `firestore.rules`/`storage.rules`
-is empty across all five commits. Mutation-proven: defeating either `accept*` guard or the upload
-compensation reddens exactly five named tests and no others, while `successfulSaveDiscardsNothing`
-— the over-deletion guard — stays green.
+is empty across all seven commits. Three mutations, each discriminating: defeating either
+`accept*` guard reddens exactly its own test (audio, video, oversized); removing the upload
+compensation reddens both discard tests while `successfulSaveDiscardsNothing` — the over-deletion
+guard — stays green; and removing `uploadsThisSave = []` reddens
+`retryDiscardsOnlyItsOwnUploads` alone.
+  - **That third mutation is the one worth remembering, because the test only survived it after
+    being reshaped.** The obvious shape — fail, then succeed, assert one discard — is *vacuous*
+    for the reset: without it the retry appends to the previous attempt's paths and then succeeds,
+    so nothing discards and the count is still 1. Failing *both* attempts is what separates them.
+    The old shape is kept as `successfulRetryDiscardsNothingFurther` and **passes** under that
+    mutation, which is the standing demonstration that it never covered the reset. A commit
+    message had already claimed the reset was defended before this was checked.
 
 **Two environment traps hit again, both already documented and both still worth the reflex:** a
 second `xcodebuild` run wedged at 0% CPU with the log frozen mid-line (stop it with `TaskStop`,
@@ -770,7 +782,8 @@ A further run of commits on `main`, linear, starting at `8ec418f` — five code,
 guide (`git log --oneline 8ec418f..main` for the real list; the count kept going stale inside the
 session because the doc commits change it). **NOT pushed** — `origin/main` is still at `8ec418f`
 and the push was left as a deliberate attended step, since it is outward-facing on a public repo
-and costs one command. The premise of the entry above — that nothing but human-gated work was
+and costs one command. *(Resolved 2026-08-31 evening: pushed, along with the seven that followed.
+`origin/main` is at `557305e`. This paragraph is the record of that moment, not the current state.)* The premise of the entry above — that nothing but human-gated work was
 left — did not survive a review pass. What found the work was **auditing the guide's own claims
 against the code**, not reading the diff.
 
