@@ -622,10 +622,13 @@ documented commands rather than trusting these.)
 
 ## Direction (as of 2026-08-31, later — the "only human-gated items remain" claim was wrong)
 
-Five more commits on `main` (linear, `8ec418f..670d63a`). **NOT pushed** — `origin/main` is still
-at `8ec418f`; the push was left as a deliberate attended step. The premise of the entry above —
-that nothing but human-gated work was left — did not survive a review pass. What found the work
-was **auditing the guide's own claims against the code**, not reading the diff.
+A further run of commits on `main`, linear, starting at `8ec418f` — five code, the rest this
+guide (`git log --oneline 8ec418f..main` for the real list; the count kept going stale inside the
+session because the doc commits change it). **NOT pushed** — `origin/main` is still at `8ec418f`
+and the push was left as a deliberate attended step, since it is outward-facing on a public repo
+and costs one command. The premise of the entry above — that nothing but human-gated work was
+left — did not survive a review pass. What found the work was **auditing the guide's own claims
+against the code**, not reading the diff.
 
 - **`e6c8722` — the transaction harness has its own emulator port (8181).** See the Known Gaps
   entry above for the mechanism. The bug: the integration emulator and the *strict production*
