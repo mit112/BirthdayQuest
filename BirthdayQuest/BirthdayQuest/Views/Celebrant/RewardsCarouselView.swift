@@ -28,19 +28,39 @@ struct RewardsCarouselView: View {
         }
     }
     
+    /// Extracted from `body` so the scroll container above does not add its two nesting levels
+    /// to an already heavily-modified `body` (this one carries six presentation modifiers) and
+    /// push it over the SwiftUI type-checker's budget.
+    @ViewBuilder
+    private var contentBody: some View {
+        switch viewModel.contentState {
+        case .loading:
+            RewardsSkeletonView()
+        case .failed(let message):
+            ContentFailureView(message: message)
+        case .empty:
+            emptyState
+        case .ready:
+            mainContent
+        }
+    }
+
     var body: some View {
         ZStack {
             BQDesign.Colors.background.ignoresSafeArea()
-            
-            switch viewModel.contentState {
-            case .loading:
-                RewardsSkeletonView()
-            case .failed(let message):
-                ContentFailureView(message: message)
-            case .empty:
-                emptyState
-            case .ready:
-                mainContent
+
+            // Somewhere to overflow *to*. `mainContent` is a plain VStack whose every element
+            // grows with Dynamic Type — the points header, the hero title, the cards themselves
+            // (their viewport is a `minHeight`, so they get taller, not clipped) and the footer —
+            // and with no scroll container SwiftUI compresses them all instead. `minHeight` keeps
+            // the two `Spacer()`s working, so the layout stays optically centred while it fits and
+            // only scrolls once it doesn't.
+            GeometryReader { proxy in
+                ScrollView {
+                    contentBody
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .onAppear { viewModel.startListening() }

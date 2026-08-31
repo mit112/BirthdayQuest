@@ -108,114 +108,138 @@ struct RewardContentSheet: View {
 
     private let logger = Logger(subsystem: "com.example.birthdayquest", category: "RewardContent")
     
+    /// Extracted from `body` deliberately. Wrapping this in `GeometryReader` + `ScrollView`
+    /// added the two nesting levels that push a SwiftUI body over the type-checker's budget
+    /// (`ChallengeAuthoringView` and `GiftCurationView` already sit near it); keeping the
+    /// switch in its own property is the documented remedy rather than fighting the compiler.
+    private var content: some View {
+        VStack(spacing: BQDesign.Spacing.lg) {
+            // Header
+            Capsule()
+                .fill(BQDesign.Colors.textTertiary.opacity(0.3))
+                .frame(width: 40, height: 5)
+                .padding(.top, BQDesign.Spacing.md)
+            
+            Spacer()
+            
+            // Content area
+            VStack(spacing: BQDesign.Spacing.md) {
+                Text("🎉")
+                    .font(.system(size: confettiEmojiSize))
+                    .scaleEffect(appeared ? 1 : 0.3)
+                
+                Text("A gift from \(reward.fromName)")
+                    .font(BQDesign.Typography.screenTitle)
+                    .foregroundColor(BQDesign.Colors.textPrimary)
+                    .multilineTextAlignment(.center)
+                    // Takes its full wrapped height rather than being squeezed to an ellipsis.
+                    // A sender's name is the one thing on this screen that must not be clipped.
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(appeared ? 1 : 0)
+                
+                // Content based on type
+                Group {
+                    switch presentation {
+                    case .loading:
+                        ProgressView()
+                            .tint(BQDesign.Colors.primaryPurple)
+                            .frame(height: 200)
+                    case .text(let message):
+                        TextRewardView(text: message, fromName: reward.fromName)
+                    case .video(let url):
+                        VideoPlayerView(url: url)
+                    case .audio(let url):
+                        AudioPlayerView(url: url, fromName: reward.fromName)
+                    case .gallery(let urls):
+                        ImageGalleryView(urls: urls, fromName: reward.fromName)
+                    case .unavailable:
+                        contentUnavailable("Nothing was added to this gift")
+                    case .expired:
+                        contentUnavailable("This gift from \(reward.fromName) isn't available anymore. Ask them to send it again.")
+                    }
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 20)
+            }
+            
+            Spacer()
+            
+            // Dismiss
+            Button {
+                BQDesign.Haptics.light()
+                onDismiss()
+            } label: {
+                Text("Done")
+                    .font(BQDesign.Typography.bodyBold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 52)
+                    .background(BQDesign.Colors.primaryGradient)
+                    .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
+                    .padding(.horizontal, BQDesign.Spacing.xl)
+            }
+
+            // Low-key and subordinate to Done/confetti on purpose — this is a safety
+            // valve, not a feature to promote. Only rendered when a caller actually
+            // wants it (see `onReport`'s doc comment).
+            if let onReport {
+                Button {
+                    BQDesign.Haptics.light()
+                    showReportConfirm = true
+                } label: {
+                    Text("Report this gift")
+                        .font(BQDesign.Typography.caption)
+                        .foregroundColor(BQDesign.Colors.textSecondary)
+                        .frame(minHeight: 44)
+                }
+                .padding(.bottom, BQDesign.Spacing.md)
+                .confirmationDialog(
+                    "Report this gift to the host?",
+                    isPresented: $showReportConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Report", role: .destructive) {
+                        Task { reportMessage = await onReport() }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("The host will be able to see and remove it.")
+                }
+                // Hosted on the sheet (not the presenting carousel) so it can actually appear
+                // while this sheet is on screen.
+                .alert(
+                    "Report",
+                    isPresented: Binding(
+                        get: { reportMessage != nil },
+                        set: { if !$0 { reportMessage = nil } }
+                    )
+                ) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(reportMessage ?? "")
+                }
+            } else {
+                Spacer().frame(height: BQDesign.Spacing.xl)
+            }
+        }
+    }
     var body: some View {
         ZStack {
             BQDesign.Colors.background.ignoresSafeArea()
-            
-            VStack(spacing: BQDesign.Spacing.lg) {
-                // Header
-                Capsule()
-                    .fill(BQDesign.Colors.textTertiary.opacity(0.3))
-                    .frame(width: 40, height: 5)
-                    .padding(.top, BQDesign.Spacing.md)
-                
-                Spacer()
-                
-                // Content area
-                VStack(spacing: BQDesign.Spacing.md) {
-                    Text("🎉")
-                        .font(.system(size: confettiEmojiSize))
-                        .scaleEffect(appeared ? 1 : 0.3)
-                    
-                    Text("A gift from \(reward.fromName)")
-                        .font(BQDesign.Typography.screenTitle)
-                        .foregroundColor(BQDesign.Colors.textPrimary)
-                        .opacity(appeared ? 1 : 0)
-                    
-                    // Content based on type
-                    Group {
-                        switch presentation {
-                        case .loading:
-                            ProgressView()
-                                .tint(BQDesign.Colors.primaryPurple)
-                                .frame(height: 200)
-                        case .text(let message):
-                            TextRewardView(text: message, fromName: reward.fromName)
-                        case .video(let url):
-                            VideoPlayerView(url: url)
-                        case .audio(let url):
-                            AudioPlayerView(url: url, fromName: reward.fromName)
-                        case .gallery(let urls):
-                            ImageGalleryView(urls: urls, fromName: reward.fromName)
-                        case .unavailable:
-                            contentUnavailable("Nothing was added to this gift")
-                        case .expired:
-                            contentUnavailable("This gift from \(reward.fromName) isn't available anymore. Ask them to send it again.")
-                        }
-                    }
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                }
-                
-                Spacer()
-                
-                // Dismiss
-                Button {
-                    BQDesign.Haptics.light()
-                    onDismiss()
-                } label: {
-                    Text("Done")
-                        .font(BQDesign.Typography.bodyBold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 52)
-                        .background(BQDesign.Colors.primaryGradient)
-                        .clipShape(RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous))
-                        .padding(.horizontal, BQDesign.Spacing.xl)
-                }
 
-                // Low-key and subordinate to Done/confetti on purpose — this is a safety
-                // valve, not a feature to promote. Only rendered when a caller actually
-                // wants it (see `onReport`'s doc comment).
-                if let onReport {
-                    Button {
-                        BQDesign.Haptics.light()
-                        showReportConfirm = true
-                    } label: {
-                        Text("Report this gift")
-                            .font(BQDesign.Typography.caption)
-                            .foregroundColor(BQDesign.Colors.textSecondary)
-                            .frame(minHeight: 44)
-                    }
-                    .padding(.bottom, BQDesign.Spacing.md)
-                    .confirmationDialog(
-                        "Report this gift to the host?",
-                        isPresented: $showReportConfirm,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Report", role: .destructive) {
-                            Task { reportMessage = await onReport() }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("The host will be able to see and remove it.")
-                    }
-                    // Hosted on the sheet (not the presenting carousel) so it can actually appear
-                    // while this sheet is on screen.
-                    .alert(
-                        "Report",
-                        isPresented: Binding(
-                            get: { reportMessage != nil },
-                            set: { if !$0 { reportMessage = nil } }
-                        )
-                    ) {
-                        Button("OK", role: .cancel) {}
-                    } message: {
-                        Text(reportMessage ?? "")
-                    }
-                } else {
-                    Spacer().frame(height: BQDesign.Spacing.xl)
+            // Somewhere to overflow *to*. At the largest accessibility text sizes this
+            // content is taller than a 390pt-wide phone's screen, and with no scroll
+            // container SwiftUI compressed it instead of letting it grow: rendered at AX5 on
+            // an iPhone 17e the title read "A gift from Priya Raghu…", the card's own
+            // attribution read "From Priya R…", the reason read "Nothing was a…", and the
+            // heart glyph spilled over the card's top edge. `minHeight` keeps it optically
+            // centred while it fits and lets it scroll once it doesn't.
+            GeometryReader { proxy in
+                ScrollView {
+                    content
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .confettiCannon(
                 trigger: $confettiCounter,
@@ -289,11 +313,14 @@ private extension RewardContentSheet {
             Text("From \(reward.fromName)")
                 .font(BQDesign.Typography.cardTitle)
                 .foregroundColor(BQDesign.Colors.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
             Text(reason)
                 .font(BQDesign.Typography.caption)
                 .foregroundColor(BQDesign.Colors.textSecondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, BQDesign.Spacing.md)
         }
         .frame(maxWidth: .infinity)
