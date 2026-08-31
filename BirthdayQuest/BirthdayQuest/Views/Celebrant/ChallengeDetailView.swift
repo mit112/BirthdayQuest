@@ -642,17 +642,10 @@ private extension ChallengeDetailView {
     
     // MARK: Gradient Helper
     var categoryGradient: LinearGradient {
-        switch challenge.category {
-        case .physical:
-            return LinearGradient(colors: [Color(hex: "4CAF50"), Color(hex: "66BB6A")], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .social:
-            return LinearGradient(colors: [Color(hex: "5B9FE6"), Color(hex: "7BB3ED")], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .creative:
-            return LinearGradient(colors: [BQDesign.Colors.primaryPurple, BQDesign.Colors.primaryPink], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .sentimental:
-            return LinearGradient(colors: [BQDesign.Colors.primaryPink, Color(hex: "FF8FB1")], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .adventure:
-            return LinearGradient(colors: [BQDesign.Colors.primaryOrange, Color(hex: "FFB74D")], startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
+        LinearGradient(
+            colors: BQDesign.Colors.categoryTint(challenge.category),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }

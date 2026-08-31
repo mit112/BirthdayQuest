@@ -168,6 +168,34 @@ enum BQDesign {
             endPoint: .bottom
         )
 
+        // MARK: Category tint
+
+        /// The two-stop tint a challenge category is drawn with — the single source of truth for
+        /// both the card (`ChallengeCardView`) and the detail header (`ChallengeDetailView`).
+        ///
+        /// It was two copies with identical values and nothing keeping them identical; an
+        /// invariant audit found the second one, unrecorded. The values here are unchanged from
+        /// both, so unifying them is a pure de-duplication.
+        ///
+        /// Deliberately still MIXED — three cases are fixed hexes, two are adaptive brand tokens
+        /// — and that inconsistency, rather than the fixed hexes on their own, is the open defect:
+        /// inside one array the brand stop shifts between light and dark while the hex beside it
+        /// does not, so the gradient's two ends drift apart in dark mode. Which way to resolve it
+        /// is a real design call and is **not** settled here. A saturated brand gradient carrying
+        /// white glyphs is legitimately scheme-invariant under this file's own doctrine, so making
+        /// all ten stops fixed is as defensible as making all ten adaptive — and either way the
+        /// result has to be checked by eye in both appearances, which is why this commit does not
+        /// guess at eight dark values it cannot verify.
+        static func categoryTint(_ category: ChallengeCategory) -> [Color] {
+            switch category {
+            case .physical: return [Color(hex: "4CAF50"), Color(hex: "66BB6A")]
+            case .social: return [Color(hex: "5B9FE6"), Color(hex: "7BB3ED")]
+            case .creative: return [primaryPurple, primaryPink]
+            case .sentimental: return [primaryPink, Color(hex: "FF8FB1")]
+            case .adventure: return [primaryOrange, Color(hex: "FFB74D")]
+            }
+        }
+
         // MARK: Appearance resolution
 
         /// A token with an explicit, hand-picked value in each appearance.

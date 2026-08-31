@@ -244,18 +244,5 @@ private extension ChallengeCardView {
     
     // MARK: Category Colors
     
-    var categoryColors: [Color] {
-        switch challenge.category {
-        case .physical:
-            return [Color(hex: "4CAF50"), Color(hex: "66BB6A")]
-        case .social:
-            return [Color(hex: "5B9FE6"), Color(hex: "7BB3ED")]
-        case .creative:
-            return [BQDesign.Colors.primaryPurple, BQDesign.Colors.primaryPink]
-        case .sentimental:
-            return [BQDesign.Colors.primaryPink, Color(hex: "FF8FB1")]
-        case .adventure:
-            return [BQDesign.Colors.primaryOrange, Color(hex: "FFB74D")]
-        }
-    }
+    var categoryColors: [Color] { BQDesign.Colors.categoryTint(challenge.category) }
 }
