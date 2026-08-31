@@ -50,10 +50,23 @@ struct EmptyOccasionsView: View {
     var body: some View {
         ZStack {
             BQDesign.Colors.background.ignoresSafeArea()
-            if let errorMessage = session.errorMessage {
-                failure(errorMessage)
-            } else {
-                empty
+            // Somewhere to overflow *to*. At the largest accessibility text sizes this content is
+            // taller than a 390pt-wide phone's screen, and with no scroll container SwiftUI
+            // compresses it instead: the invitation truncated to "or join w…" and the primary
+            // button to "Create an occ…". `minHeight` keeps it optically centred while it fits,
+            // and lets it grow and scroll once it doesn't.
+            GeometryReader { proxy in
+                ScrollView {
+                    Group {
+                        if let errorMessage = session.errorMessage {
+                            failure(errorMessage)
+                        } else {
+                            empty
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         // Overlaid on the ZStack rather than placed inside either branch, so the account —
@@ -84,13 +97,28 @@ struct EmptyOccasionsView: View {
                 .font(BQDesign.Typography.body)
                 .foregroundStyle(BQDesign.Colors.textSecondary)
                 .multilineTextAlignment(.center)
+                // Takes its full wrapped height rather than being squeezed into an ellipsis.
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, BQDesign.Spacing.xl)
 
             VStack(spacing: BQDesign.Spacing.sm) {
-                Button("Create an occasion") { creating = true }
-                    .buttonStyle(.borderedProminent)
-                Button("Join with a link") { joining = true }
+                // Spelled out with an explicit label, not `Button("…")`: the string form renders a
+                // single-line Text that truncates, and a clipped verb is the one word on this
+                // screen a new user needs to read.
+                Button { creating = true } label: {
+                    Text("Create an occasion")
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button { joining = true } label: {
+                    Text("Join with a link")
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .padding(.horizontal, BQDesign.Spacing.lg)
         }
     }
 
@@ -108,6 +136,8 @@ struct EmptyOccasionsView: View {
                 .font(BQDesign.Typography.body)
                 .foregroundStyle(BQDesign.Colors.textPrimary)
                 .multilineTextAlignment(.center)
+                // Same reason as the empty state's invitation: a truncated error explains nothing.
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, BQDesign.Spacing.xl)
 
             if isRetrying {
