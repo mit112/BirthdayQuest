@@ -29,7 +29,12 @@ Or use Cmd+R / Cmd+U in Xcode. The XcodeBuildMCP tools are also available.
 Every ViewModel takes `service: GameBackend = FirestoreService.shared`, and anything touching auth
 takes `auth: AuthProviding = AuthService.shared`. Never reference `FirestoreService.shared`
 anywhere else — inject the protocol instead, so tests can pass `MockGameBackend` /
-`MockAuthProviding` (in `BirthdayQuestTests/`). Views must not touch the backend or auth at all.
+`MockAuthProviding` (in `BirthdayQuestTests/`). Views must not touch the backend or auth at all —
+with **one measured exception**, so the rule reads as absolute and is not: `OccasionListView`
+calls `AuthService.randomNonce()` and `AuthService.sha256(_:)` directly (Sign in with Apple).
+Both are `static`, pure, offline crypto and are not on `AuthProviding`; the auth operation itself
+still goes through the injected seam (`session.linkApple(idToken:nonce:)`). Either move the two
+helpers behind the protocol or leave them — but do not read the sentence above as already true.
 
 ### Services
 - **AppSession** — auth state, uid, Apple-link state, and the user's occasion list. Knows nothing
@@ -222,11 +227,17 @@ Two tiers, and both must stay green:
   `BirthdayQuestTests/TransactionIntegrationTests` seeds docs via a secondary emulator-pointed
   `FirebaseApp` and runs the *real* methods against the Firestore emulator — a short balance is
   refused and writes nothing (the balance re-check), a double-submit awards once (the idempotency
-  guard). The suite is gated on `EmulatorProbe.isReachable` (a socket probe to :8080), so the
+  guard). The suite is gated on `EmulatorProbe.isReachable` (a socket probe to **:8181**), so the
   normal `-only-testing:BirthdayQuestTests` pass **skips** it (verified: the four cases report
   `skipped`); a dedicated CI job runs it wrapped in `firebase emulators:exec` against the **open**
   rules in `integration-tests/` (authorization is out of scope here — the 183-test rules suite owns
-  it). Both guards were proven **non-vacuous**: with each guard defeated, its test fails. See
+  it). **8181 is deliberate and must not be "tidied" back to Firestore's default 8080** — that is
+  where the emulator carrying the *strict* production ruleset runs (`cd firebase-tests && npm
+  test`, via the repo-root `firebase.json`), and a reachability probe cannot tell two rulesets
+  apart. Measured 2026-08-31 with the rules emulator up: the suite un-skipped and reported **4
+  failed / 0 skipped** on denied seed writes. A port of its own also lets the rules suite and the
+  Swift unit suite run concurrently. `EmulatorProbe.port` and `integration-tests/firebase.json`
+  must move together; a drift shows up as a SKIP, which the CI job already fails on. Both guards were proven **non-vacuous**: with each guard defeated, its test fails. See
   `integration-tests/README.md` and `docs/superpowers/specs/2026-08-25-transaction-harness-feasibility.md`.
 - **Any member can rewrite `state/main` (point balances) and flip `rewards.isUnlocked`.** The rules
   gate those on membership only. This is the pre-existing no-Functions trust model, not a
@@ -244,10 +255,22 @@ Two tiers, and both must stay green:
     truncated in two places: the invitation read "or join w…" and the primary button "Create an
     occ…". A Pro Max is wide enough to hide exactly the defect this check exists to find. Fixed —
     see the reflow entry below.
-  - **The `failure(_:)` branch of that same view is still visually UNVERIFIED.** It got the same
-    `.fixedSize` treatment and sits inside the same new ScrollView, so it is very likely fine — but
-    rendering it needs `session.errorMessage` non-nil, which did not happen in this pass. Do not
-    read the empty-state screenshots as covering it.
+  - **The `failure(_:)` branch of that same view — VERIFIED CLEAN 2026-08-31, and the reasoning
+    that stood here before was wrong even though its conclusion held.** The old note said it "got
+    the same `.fixedSize` treatment" so was "very likely fine". It did not: `ec1a1b5` gave the
+    branch's message `Text` a `.fixedSize` and left both of its buttons in the truncating
+    `Button("…")` string form. A code review reading the same file predicted they would truncate.
+    Rendered at AX5 on iPhone 17e they do **not** — the message wraps to four lines and both
+    buttons show in full, because unlike the `empty` branch these buttons carry no horizontal
+    padding, so the shorter label has the whole 390pt to sit in. Both sub-states were rendered,
+    including the `isRetrying` spinner row. **A code-read prediction about reflow is not evidence
+    in either direction; only the render is.**
+  - **How to render it, since "it needs `session.errorMessage` non-nil" stalled the last pass.**
+    No source patch and no tap tool: stage a `GoogleService-Info.plist` whose `API_KEY` is
+    invalid but whose other keys are intact. `FirebaseApp.configure()` still succeeds, anonymous
+    sign-in 400s, `bootstrap()` lands in its `catch`, and the app boots straight onto this
+    branch. The `isRetrying` sub-state is transient, so that one does need a throwaway
+    `@State ... = true` flip. Restore the real plist afterwards.
   - `AccountView` and `TermsView` **verified clean** at `accessibility-extra-extra-extra-large` on
     iPhone 17e, top and scrolled: every label wraps, the `Label` + chevron row and the destructive
     button both grow to two lines, nothing clips or overlaps.
@@ -591,10 +614,61 @@ The emulator rules suite (**195**) was correctly **not** re-run — `git diff` o
 and `storage.rules` is empty across everything since `5b91034`. (Derive all four with the
 documented commands rather than trusting these.)
 
-**Next up:** only human-gated items remain — Apple Developer account + real `DEVELOPMENT_TEAM` and
-bundle id (still `com.example.birthdayquest`, `DEVELOPMENT_TEAM` empty in all seven pbxproj
-blocks), the two `REPLACE_WITH_*` placeholders in `LegalCopy.swift`, enabling the **Apple** auth
-provider in the Firebase console (Anonymous is verified working), and the store listing.
+## Direction (as of 2026-08-31, later — the "only human-gated items remain" claim was wrong)
+
+Five more commits on `main` (linear, `8ec418f..670d63a`). **NOT pushed** — `origin/main` is still
+at `8ec418f`; the push was left as a deliberate attended step. The premise of the entry above —
+that nothing but human-gated work was left — did not survive a review pass. What found the work
+was **auditing the guide's own claims against the code**, not reading the diff.
+
+- **`e6c8722` — the transaction harness has its own emulator port (8181).** See the Known Gaps
+  entry above for the mechanism. The bug: the integration emulator and the *strict production*
+  rules emulator both sat on 8080, and a reachability probe cannot tell rulesets apart, so anyone
+  running `npm test` in one terminal and the Swift suite in another got 4 red tests describing
+  nothing. Proven both ways — strict emulator up: 4 failed → 4 skipped; open emulator on 8181: 4
+  passed, 0 permission-denied.
+- **`35d3e74` — a save taken while PHOTOS are loading no longer drops them.** `70a5d73` fixed this
+  for video; the photo path had neither guard and was worse, because a library read shows no
+  progress row at all. Also fixes a lost-selection race (two overlapping loads, last-to-finish
+  wins, so re-picking two local photos over ten iCloud ones kept the ten), refuses a save while an
+  oversized pick is still displayed as rejected, and refuses one taken mid-recording.
+  Mutation-proven: dropping the three new guard clauses reddens **exactly** the two new tests
+  while the pre-existing video test stays green.
+- **`8ed851c` — the two authoring empty states reflow instead of truncating**, and the last
+  `.segmented` picker in the app follows the gift-type picker to `.menu`.
+- **`2642673` — 14 gradient stops stop fading to `.clear`.** `.clear` is transparent *black*; the
+  guide already forbade it and the fix had only ever been applied in `TimelineBackgroundView`.
+- **`670d63a` — the launch screen's error-glyph contrast figure was wrong** (3.83:1 is the ratio
+  on white; that screen paints `background`, where it is 3.59:1). Derived, not copied.
+
+**Gates, real exit codes, on `670d63a`:** Swift **351 passed / 4 skipped / 0 failed**, exit 0.
+SwiftLint `--strict` **0 violations, 79 files**. Rules suite **195 passed**, exit 0 (run once at
+the start of the session; correctly not re-run after, `git diff` over both `.rules` files is empty
+across all five commits). Integration suite **4 passed** under `emulators:exec`.
+
+**Found and deliberately NOT fixed — recorded so the decision is visible, not lost:**
+- `RewardsCarouselView` and `RewardContentSheet` have no scroll container and can overflow at AX5.
+  Real, but they need populated celebrant content to verify, and an unverifiable layout change to
+  the celebrant's main screen is not worth making blind.
+- `SecretEntryCardView:54` fills the dossier card with a hardcoded `Color(hex: "1C1B2E")` where
+  the adaptive `secretDark` token belongs. In dark mode this is much closer to the page background
+  than the token's deliberately-lightened dark value, so the card gets less separation than the
+  mechanism documented above is supposed to guarantee. A palette judgement, not a sweep.
+- `ChallengeCardView.categoryColors` mixes fixed `Color(hex:)` with adaptive tokens in one array.
+- A failed `createReward` **after** a successful upload orphans the Storage object: `rewardId` is
+  minted per `save()`, so the retry uploads into a different folder and nothing can ever reach the
+  first one.
+- `AudioRecorderController`'s 5-minute auto-stop `Timer` is not gated by the view's
+  `.disabled(isSaving)` freeze, so it can call `acceptAudio` → unlink the very file
+  `putFileAsync` is streaming. Needs an upload still running 5 minutes after Save.
+- `AdminControlsView`'s reports row is `.lineLimit(1)` with no way to see the full title, unlike
+  the sibling row that documents why its own truncation is recoverable.
+
+**Still human-gated, unchanged:** Apple Developer account + real `DEVELOPMENT_TEAM` and bundle id
+(still `com.example.birthdayquest`, `DEVELOPMENT_TEAM` empty in all seven pbxproj blocks), the two
+`REPLACE_WITH_*` placeholders in `LegalCopy.swift`, enabling the **Apple** auth provider in the
+Firebase console (Anonymous is verified working), the store listing — and now **pushing these five
+commits**.
 
 ## Direction (as of 2026-08-28)
 
