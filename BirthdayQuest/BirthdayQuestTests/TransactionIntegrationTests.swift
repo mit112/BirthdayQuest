@@ -25,7 +25,20 @@ import FirebaseFirestore
 /// is refused immediately (no timeout needed), so this is safe to evaluate at test-collection
 /// time via `@Suite(.enabled(if:))`.
 enum EmulatorProbe {
-    static var isReachable: Bool { canConnect(host: "127.0.0.1", port: 8080) }
+    /// Deliberately NOT Firestore's default 8080, and this must not be "tidied" back to it.
+    /// 8080 is where the emulator carrying the STRICT PRODUCTION ruleset runs — that is what
+    /// `cd firebase-tests && npm test` starts, from the repo-root `firebase.json`. This suite
+    /// seeds its documents unauthenticated, so answering that emulator turns four correct skips
+    /// into four permission-denied failures describing nothing real (measured: `xcodebuild
+    /// -only-testing:BirthdayQuestTests/TransactionIntegrationTests` with the rules emulator up
+    /// reports 4 failed / 0 skipped). A port of its own is what makes the probe mean "the OPEN
+    /// ruleset from integration-tests/ is up", and it lets the two suites run at the same time.
+    ///
+    /// It must match `integration-tests/firebase.json`. A drift there shows up as a SKIP, which
+    /// the CI integration job already fails on rather than passing green.
+    static let port: UInt16 = 8181
+
+    static var isReachable: Bool { canConnect(host: "127.0.0.1", port: port) }
 
     private static func canConnect(host: String, port: UInt16) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
@@ -85,7 +98,7 @@ enum EmulatorFirebase {
         // SDK attempt TLS against the plaintext emulator and retry the failed handshake forever.
         let firestore = Firestore.firestore(app: app)
         let settings = firestore.settings
-        settings.host = "127.0.0.1:8080"
+        settings.host = "127.0.0.1:\(EmulatorProbe.port)"
         settings.isSSLEnabled = false
         settings.cacheSettings = MemoryCacheSettings()
         firestore.settings = settings
