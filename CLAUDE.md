@@ -128,6 +128,26 @@ Three invariants now hold there, and all are easy to break by accident:
   alpha, never `.clear` (`.clear` is transparent *black*, and SwiftUI interpolates neighbours
   through it, which shows up as a visible dark fringe). A locked reward card recedes *below*
   `cardBackground` in both schemes now, not just in light.
+  **The category tint has one source of truth**, `BQDesign.Colors.categoryTint(_:)`. It used to be
+  two — `ChallengeCardView.categoryColors` and `ChallengeDetailView.categoryGradient`, identical
+  ten stops, nothing keeping them in sync; only the first was ever recorded. It lives in
+  `DesignSystem.swift` and not on `ChallengeCategory` because the model layer imports no SwiftUI
+  (`difficulty.color` returns a hex *string* for exactly that reason). It is still deliberately
+  MIXED — three cases fixed hexes, two adaptive brand tokens — and **the mixing, not the fixed
+  hexes on their own, is the open defect**: inside one array the brand stop shifts between light
+  and dark while the hex beside it does not, so the gradient's two ends drift apart in dark mode.
+  Which way to resolve it is unsettled on purpose. A saturated brand gradient carrying white
+  glyphs is legitimately scheme-invariant under this file's own doctrine, so making all ten stops
+  fixed is as defensible as making all ten adaptive — and either way it needs checking by eye in
+  both appearances.
+  **The list below is NOT exhaustive, and used to claim to be.** An audit of this guide's stated
+  invariants against the code found four more non-adaptive sites that no list here mentioned:
+  `ChallengeCardView.swift:109` (locked-badge gradient `C5C0B8`/`B0A89E`), `TimelineNodeView.swift`
+  (`circleFill`'s reward gradient plus all six `challengeColors` palettes, entirely fixed hex),
+  `FinalBadgeView.swift` (locked purple veil `3D2C5E` and the unlocked gold `badgeFill`), and
+  `TimelineBackgroundView.swift`'s `BokehDot` (three adaptive tokens mixed with five fixed hexes in
+  one particle array). None carries text directly, so none is a known contrast failure — but the
+  impact is unverified and needs rendering, and "the exhaustive list" framing was wrong.
   Known remaining, not regressions: `Challenge.difficulty.color` is a model-supplied hex string
   and is not adaptive (accepted — difficulty is carried by star count, so colour is never the only
   signal); the audio scrub thumb stays `Color.white` to match `UISlider` and fails WCAG 1.4.11
@@ -250,6 +270,23 @@ Two tiers, and both must stay green:
   System section). **Reflow at the largest accessibility sizes — CLOSED 2026-08-30 for the screens
   that were open, and the earlier "reflow correctly" claim was WRONG.** Still no snapshot tests, so
   the unit suite catches none of this; it is a visual pass and has to be re-run by eye.
+  - **`RewardsCarouselView` and `RewardContentSheet` — CLOSED 2026-08-31 (`c251771`), and the
+    parked note understated the defect.** It read "can overflow at AX5". Rendered at AX5 on an
+    iPhone 17e the sheet showed *three* ellipses on one screen ("A gift from Priya Raghu…", "From
+    Priya R…", "Nothing was a…") **and** its heart glyph spilled over the card's top edge, because
+    the card's `minHeight: 200` is a minimum and the outer VStack was squeezing its children below
+    their natural height. No `lineLimit` exists in either file — it was pure vertical compression,
+    which is why one scroll container fixed all of it. Both use the `ec1a1b5` pattern
+    (`GeometryReader` + `ScrollView` + `minHeight: proxy.size.height`), so the `Spacer()`s still
+    centre the layout while it fits.
+  - **Extract the content property BEFORE adding the scroll container.** Two nesting levels is
+    what pushes a SwiftUI body over the type-checker's budget; both of these bodies were near it
+    already (`RewardsCarouselView.body` carries six presentation modifiers). Extracting first is
+    cheaper than diagnosing a timeout after.
+  - **The parked reason — "needs populated celebrant content to verify" — was solvable in one
+    command.** Force the `contentState` switch to `mainContent`, return fixtures from
+    `loopedRewards`, point `ContentView` at the view, and `git checkout --` afterwards. Do not
+    park a render behind that again.
   - **Measure on the NARROWEST device, not the widest.** The 2026-08-28 pass ran on iPhone 17 Pro
     Max and reported `EmptyOccasionsView` clean. Re-run at 390pt (iPhone 17e), the same screen
     truncated in two places: the invitation read "or join w…" and the primary button "Create an
@@ -516,6 +553,43 @@ Two tiers, and both must stay green:
     exit 65). The test asserts **both** halves — refusal while held, *then* the new clip actually
     uploaded after release — because a refusal-only test passes just as happily against a `save()`
     that never saves anything.
+- **Media arriving during a save no longer unlinks the file being streamed — CLOSED (`f6d94fa`,
+  2026-08-31).** `acceptVideo`/`acceptAudio` unlink the selection they supersede, which is right
+  until the file they unlink is the one `putFileAsync` is streaming. Both now discard the
+  *arriving* file while `isSaving`, and the oversized branch needed the same guard because it
+  unlinks the previous selection too.
+  - **Guard the unlink, not the entry.** The view's `.disabled(isSaving)` freeze blocks a *tap*,
+    and the arrival that matters is not a tap: `AudioRecorderController`'s 5-minute auto-stop is a
+    `Timer` calling `stop()` → `onFinish` → `acceptAudio` on its own, and disabling the section a
+    recording lives in does not cancel a recording already running. Putting the guard in the view
+    model covers every entry path (recorder, `.fileImporter`, re-pick) in one place.
+  - **`AudioRecorderController.start()` sets `isRecording` only inside the async permission
+    callback**, so `recorder.isRecording` is false between the Record tap and that callback
+    landing and the Save button is briefly live. That is how a recording ends up running *under*
+    the freeze. `GiftAuthoringView`'s comment claimed "`save()` refuses each of these too" — false
+    for `isRecording`, which has no view-model mirror; corrected in place.
+  - Do **not** justify this guard by the width of that window. Justify it by the invariant: never
+    unlink a file that may be mid-transfer.
+- **A failed reward write no longer strands the media it uploaded — CLOSED (`0e57a6c`,
+  2026-08-31).** `save()` discards this attempt's uploads before surfacing the error.
+  - **The mechanism previously recorded for this was WRONG, and would have produced the wrong
+    fix.** It said `rewardId` is minted per `save()` so a retry uploads into a different folder.
+    Pinning the id across a retry rescues nothing: `uploadRewardMedia` mints a fresh UUID
+    *filename* every time (which the re-send path needs — `MediaStore` keys its cache on
+    `lastPathComponent`), so the first attempt's object is stranded either way. The real mechanism
+    is that **purge is path-named**: `MediaStore.storagePaths` reads the document's own
+    `contentUrl`/`contentUrls` and `deleteRewardMedia` deletes exactly those, so an object no
+    document names is unreachable by anyone, forever. The stranding is per-object, not per-folder.
+  - The compensation lives in `save()`'s catch, not at each write site: all four upload-then-write
+    paths converge there, and it is the only place that can see a gallery which failed part-way
+    through uploading. `uploadsThisSave` is reset at the top of each save so a previous failure's
+    paths cannot be deleted on the back of a later success.
+  - **Accepted ambiguity, recorded at the helper:** a write that throws but did land server-side
+    loses its media. Reward writes are atomic batches whose errors are effectively definitive, and
+    that case is recoverable (the listener delivers the gift, the retry re-uploads). An
+    unreachable object is not. Do not "harden" this into never deleting.
+  - `MockGameBackend` gained `createRewardError`/`updateRewardError` — `errorToThrow` fails the
+    upload first and so leaves nothing to strand, which is why the bug had no test before.
 
 ### Audit bugs — status after the event-scoping migration
 
@@ -620,6 +694,70 @@ The emulator rules suite (**195**) was correctly **not** re-run — `git diff` o
 and `storage.rules` is empty across everything since `5b91034`. (Derive all four with the
 documented commands rather than trusting these.)
 
+## Direction (as of 2026-08-31, evening — main is PUSHED, and five of six parked findings closed)
+
+`origin/main` was brought up to `4d7b36b` (the nine commits the overnight run left unpushed), then
+five more landed on top — `ddd3bac` `f6d94fa` `0e57a6c` `87557e0` `c251771`. Use
+`git rev-list --count origin/main..main` for the real unpushed count rather than trusting a number
+written here; these five were **not** pushed at the time of writing.
+
+The session's whole queue was the six findings the previous one had parked. **Five are closed and
+one grew a sibling.** Each entry above carries the mechanism; the corrections worth reading are:
+
+- **`0e57a6c` — a failed reward write no longer strands its uploaded media.** The recorded
+  *mechanism* for this bug was wrong and would have produced a fix that fixed nothing. It blamed
+  the per-`save()` `rewardId`; the real cause is that purge is **path-named** off the document's
+  own `contentUrl`/`contentUrls`, and `uploadRewardMedia` mints a fresh UUID filename per attempt,
+  so a shared folder rescues nothing. **Check a recorded mechanism before implementing against it.**
+- **`f6d94fa` — media arriving mid-save no longer unlinks the file being streamed.** Guard the
+  unlink, not the entry: `.disabled(isSaving)` blocks a tap, and the 5-minute auto-stop is a
+  `Timer`. Also found: `start()` sets `isRecording` inside the async permission callback, so the
+  Save button is briefly live after the Record tap — which is how a recording ends up running under
+  the freeze, and which the view's own comment denied.
+- **`c251771` — the two celebrant screens reflow instead of compressing.** The parked note said
+  "can overflow"; the render showed three ellipses on one screen plus a glyph overlapping its card.
+  It also said verification needed populated celebrant content, which turned out to be a
+  three-line throwaway patch. **A parked item's stated blocker deserves the same scepticism as its
+  stated mechanism.**
+- **`87557e0` — the category tint has one source of truth.** An audit found
+  `ChallengeDetailView.categoryGradient` was an unrecorded *duplicate* of
+  `ChallengeCardView.categoryColors` — ten identical stops, nothing keeping them in sync. Unified
+  with values unchanged; the adaptivity question is deliberately left open as a design call, and
+  the reasoning is in the Design System section (the *mixing* is the defect, and scheme-invariance
+  may be correct here under this file's own white-on-brand-gradient doctrine).
+- **`ddd3bac` — the dossier card uses the adaptive token.** The argument that matters is coverage:
+  `PaletteContrastTests` already asserts `secretDark` in both appearances, and the hardcoded fill
+  was the one thing in the app bypassing exactly that check.
+
+**The audit lane paid for itself again, and differently this time.** Dispatched read-only as "for
+each invariant CLAUDE.md states as binding, report VERIFIED with evidence or DRIFTED": 7 of 8
+clusters came back fully clean with file:line evidence (DI/Views separation, typography, motion
+gating, all six Firestore patterns, the re-send payload, the purge guards, the 200 MB and
+`maxPhotoCount` cap agreements). The one drift was a **doc-completeness** failure rather than a
+bug — the "known remaining" non-adaptive-colour list presented itself as exhaustive and missed four
+sites — and chasing it is what surfaced the duplicate mapping above. A clean audit is not a wasted
+audit; it is what lets the next session trust the guide instead of re-deriving it.
+
+**Gates, real exit codes, on `c251771`:** Swift **358 passed / 0 failed / 4 skipped**, exit 0
+(counted from the `.xcresult`, not the streamed log). SwiftLint `--strict` **0 violations, 79
+files**. Rules suite **correctly not re-run** — `git diff` over `firestore.rules`/`storage.rules`
+is empty across all five commits. Mutation-proven: defeating either `accept*` guard or the upload
+compensation reddens exactly five named tests and no others, while `successfulSaveDiscardsNothing`
+— the over-deletion guard — stays green.
+
+**Two environment traps hit again, both already documented and both still worth the reflex:** a
+second `xcodebuild` run wedged at 0% CPU with the log frozen mid-line (stop it with `TaskStop`,
+never `pkill`, then `xcrun simctl shutdown all`), and a stale `.git/index.lock` appeared with no
+git process running. A third worth adding: **do not pass a fresh `-derivedDataPath` for a probe
+build** — it rebuilds all of Firebase from source. Reuse the default; the test runs have already
+compiled it for the same simulator architecture.
+
+**Still open, and the honest list:** `AdminControlsView`'s `.lineLimit(1)` reports row; the
+category-tint adaptivity design call; the four newly-found non-adaptive colour sites; and one
+**new** finding observed during the render — the reward card's "View" button breaks *mid-word* as
+"Vie / w" at AX5 on a 390pt device. That last one is in `RewardCardView` and the remedy is card
+width, i.e. carousel paging geometry, so it was deliberately not changed blind.
+
 ## Direction (as of 2026-08-31, later — the "only human-gated items remain" claim was wrong)
 
 A further run of commits on `main`, linear, starting at `8ec418f` — five code, the rest this
@@ -670,29 +808,32 @@ SwiftLint `--strict` **0 violations, 79 files**. Rules suite **195 passed**, exi
 the start of the session; correctly not re-run after, `git diff` over both `.rules` files is empty
 across all five commits). Integration suite **4 passed** under `emulators:exec`.
 
-**Found and deliberately NOT fixed — recorded so the decision is visible, not lost:**
-- `RewardsCarouselView` and `RewardContentSheet` have no scroll container and can overflow at AX5.
-  Real, but they need populated celebrant content to verify, and an unverifiable layout change to
-  the celebrant's main screen is not worth making blind.
-- `SecretEntryCardView:54` fills the dossier card with a hardcoded `Color(hex: "1C1B2E")` where
-  the adaptive `secretDark` token belongs. In dark mode this is much closer to the page background
-  than the token's deliberately-lightened dark value, so the card gets less separation than the
-  mechanism documented above is supposed to guarantee. A palette judgement, not a sweep.
-- `ChallengeCardView.categoryColors` mixes fixed `Color(hex:)` with adaptive tokens in one array.
-- A failed `createReward` **after** a successful upload orphans the Storage object: `rewardId` is
-  minted per `save()`, so the retry uploads into a different folder and nothing can ever reach the
-  first one.
-- `AudioRecorderController`'s 5-minute auto-stop `Timer` is not gated by the view's
-  `.disabled(isSaving)` freeze, so it can call `acceptAudio` → unlink the very file
-  `putFileAsync` is streaming. Needs an upload still running 5 minutes after Save.
-- `AdminControlsView`'s reports row is `.lineLimit(1)` with no way to see the full title, unlike
-  the sibling row that documents why its own truncation is recoverable.
+**Found and deliberately NOT fixed — recorded so the decision is visible, not lost.** Five of the
+six were closed on 2026-08-31 (later); see the Direction entry for that date. Status:
+- ~~`RewardsCarouselView` and `RewardContentSheet` have no scroll container.~~ **CLOSED** (`c251771`)
+  — and the "can overflow" framing understated it; three ellipses and an overlapping glyph.
+- ~~`SecretEntryCardView:54` hardcodes `Color(hex: "1C1B2E")`.~~ **CLOSED** (`ddd3bac`).
+- ~~`ChallengeCardView.categoryColors` mixes fixed hexes with adaptive tokens.~~ **Half closed**
+  (`87557e0`) — de-duplicated into `BQDesign.Colors.categoryTint(_:)`, still mixed on purpose. See
+  the Design System section; the adaptivity question is a design call, not a sweep.
+- ~~A failed `createReward` after a successful upload orphans the Storage object.~~ **CLOSED**
+  (`0e57a6c`), and **the mechanism recorded here was wrong** — see the dedicated Known Gap entry.
+  It is not the per-`save()` `rewardId`; pinning that rescues nothing.
+- ~~`AudioRecorderController`'s 5-minute auto-stop `Timer` can unlink the file `putFileAsync` is
+  streaming.~~ **CLOSED** (`f6d94fa`), guarded where the unlink is rather than where the tap is.
+  The reachability story was also incomplete — see the Known Gap entry.
+- **STILL OPEN:** `AdminControlsView`'s reports row is `.lineLimit(1)` with no way to see the full
+  title, unlike the sibling row that documents why its own truncation is recoverable.
+- **NEW, still open:** the reward card's "View" button breaks *mid-word* — "Vie / w" — at AX5 on a
+  390pt device. Seen while rendering `c251771`, so this one is observed, not predicted. It is in
+  `RewardCardView` and the remedy is card width, which is carousel paging geometry
+  (`horizontalInset` / `scrollViewWidth`), so it was not changed blind.
 
 **Still human-gated, unchanged:** Apple Developer account + real `DEVELOPMENT_TEAM` and bundle id
 (still `com.example.birthdayquest`, `DEVELOPMENT_TEAM` empty in all seven pbxproj blocks), the two
 `REPLACE_WITH_*` placeholders in `LegalCopy.swift`, enabling the **Apple** auth provider in the
-Firebase console (Anonymous is verified working), the store listing — and now **pushing these five
-commits**.
+Firebase console (Anonymous is verified working), and the store listing. **Pushing is no longer on
+this list** — `origin/main` was brought up to `4d7b36b` on 2026-08-31.
 
 ## Direction (as of 2026-08-28)
 
