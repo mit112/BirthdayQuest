@@ -138,10 +138,20 @@ struct GiftAuthoringView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BQDesign.Colors.primaryPurple)
-                // Also disabled mid-transcode: the clip the contributor just picked is not in
-                // `selectedVideoURL` yet, and the progress row directly above says so. `save()`
-                // refuses this case too — this is what keeps the tap from looking available.
-                .disabled(!viewModel.canAttachMedia || viewModel.isTranscoding)
+                // Also disabled while any picked media is still on its way into the view model:
+                // mid-transcode, mid-photo-load, or mid-recording, the thing the contributor
+                // just chose is not in the selection yet, and a row directly above says so.
+                // `save()` refuses each of these too — this is what keeps the tap from looking
+                // available. `recorder.isRecording` has no view-model mirror because the
+                // recorder is owned here, so that clause can only live on this modifier.
+                .disabled(
+                    !viewModel.canAttachMedia
+                        || viewModel.isTranscoding
+                        || viewModel.isLoadingPhotos
+                        || viewModel.videoTooLarge
+                        || viewModel.audioTooLarge
+                        || recorder.isRecording
+                )
             } footer: {
                 Text(saveFooter)
                     .font(BQDesign.Typography.captionSmall)
@@ -218,6 +228,21 @@ struct GiftAuthoringView: View {
                 .foregroundStyle(BQDesign.Colors.primaryPurple)
             }
             .accessibilityLabel("Add photos")
+
+            // Indeterminate, unlike the transcode row: PhotosUI reports no progress for a
+            // library read. It earns a row anyway because without one the wait is invisible —
+            // an iCloud-backed photo takes seconds, and the strip below still shows the
+            // previous selection while it does.
+            if viewModel.isLoadingPhotos {
+                HStack(spacing: BQDesign.Spacing.sm) {
+                    ProgressView()
+                    Text("Getting your photos")
+                        .font(BQDesign.Typography.captionSmall)
+                        .foregroundStyle(BQDesign.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
 
             if !viewModel.photoPreviews.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {

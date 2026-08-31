@@ -383,3 +383,89 @@ struct SaveDuringVideoPreparationTests {
                 "and its path is written to the gift")
     }
 }
+
+@MainActor
+@Suite("A save taken while picked photos are still loading")
+struct SaveDuringPhotoPreparationTests {
+
+    /// An editable photo gift already on the server — the same shape that made the video case
+    /// bite, and worse here: `isValid` is satisfied by the existing `contentUrls`, and unlike
+    /// the transcode there was no progress row on screen to suggest anything was pending.
+    private func loadedPhotoGift(_ mock: MockGameBackend) async -> GiftAuthoringViewModel {
+        mock.rewards = [
+            .fixture(id: "r_mine", contentType: .image,
+                     contentUrls: ["events/evt_1/rewards/r_mine/old.jpg"])
+        ]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        return vm
+    }
+
+    /// Both halves matter. A test asserting only the refusal would pass just as happily against
+    /// a `save()` that never saves anything at all.
+    @Test("is refused mid-load, and writes the new photos once they land")
+    func saveMidPhotoLoadDropsNothing() async {
+        let mock = MockGameBackend()
+        let vm = await loadedPhotoGift(mock)
+        #expect(vm.contentMode == .photos, "an image gift should open on the photos tab")
+
+        // Half 1: the contributor has picked new photos, the library read is still running, and
+        // `photoPreviews` still holds nothing. This is the tap that used to report "Saved".
+        vm.isLoadingPhotos = true
+        await vm.save()
+
+        #expect(mock.updatedRewards.isEmpty, "a mid-load save must not write the old photos")
+        #expect(mock.uploadedRewardMedia.isEmpty, "and must not upload a stale selection")
+        #expect(!vm.saveSuccess, "and must not claim success")
+
+        // Half 2: the same save, once the photos the contributor picked actually exist.
+        vm.isLoadingPhotos = false
+        vm.photoPreviews = [Self.pixel(), Self.pixel()]
+
+        await vm.save()
+
+        #expect(mock.uploadedRewardMedia.count == 2, "both new photos are what get uploaded")
+        #expect(mock.updatedRewards.count == 1)
+        #expect(mock.updatedRewards.last?.fields["contentUrls"] != nil,
+                "and their paths are written to the gift")
+    }
+
+    /// The oversized-clip counterpart. `acceptVideo` refuses the file into `selectedVideoURL`,
+    /// so without a guard the save wrote `title`/`teaser`, sent no media, and confirmed "Saved"
+    /// directly beneath "That video is still over 200 MB."
+    @Test("a save is refused while an oversized pick is still being shown as rejected")
+    func saveWithOversizedSelectionDropsNothing() async {
+        let mock = MockGameBackend()
+        mock.rewards = [
+            .fixture(id: "r_mine", contentType: .video,
+                     contentUrl: "events/evt_1/rewards/r_mine/old.mov")
+        ]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock)
+        vm.loadExisting(userId: "u1", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+
+        vm.videoTooLarge = true
+        await vm.save()
+
+        #expect(mock.updatedRewards.isEmpty, "a refused pick must not write the text fields")
+        #expect(!vm.saveSuccess, "and must not confirm a save that sent no media")
+
+        // And the same save goes through once the contributor picks something that fits.
+        vm.videoTooLarge = false
+        vm.selectedVideoURL = TranscodeTestFiles.file(bytes: 1024)
+
+        await vm.save()
+
+        #expect(mock.updatedRewards.count == 1, "a valid pick still saves")
+    }
+
+    /// A 1×1 JPEG-encodable image — `savePhotos` compresses each preview before uploading, and
+    /// a zero-size image would be dropped by `compressImage` rather than uploaded.
+    private static func pixel() -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
+            UIColor.systemPink.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+    }
+}

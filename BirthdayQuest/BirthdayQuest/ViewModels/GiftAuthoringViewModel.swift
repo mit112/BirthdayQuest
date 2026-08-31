@@ -125,9 +125,39 @@ final class GiftAuthoringViewModel: ObservableObject {
     @Published var contentMode: GiftContentMode = .letter {
         didSet { videoTooLarge = false; audioTooLarge = false }
     }
+    /// Each pick cancels the one before it and *waits* for it to unwind, for the same reason
+    /// `selectedVideoItem` below does. Two overlapping loads each assign `photoPreviews` when
+    /// they finish, so the one that finishes LAST wins regardless of which was picked last:
+    /// choose ten iCloud-backed photos, immediately re-pick two local ones, and the two you
+    /// settled on are silently replaced by the ten you abandoned.
+    ///
+    /// The cap is applied here rather than inside the loader. It has to be a write-back, so the
+    /// picker stops showing a selection that will not be uploaded — but doing it mid-load
+    /// re-entered this observer and started a second, competing load of the same photos. Doing
+    /// it first means the write-back re-enters once, with an already-capped value that falls
+    /// straight through to the load.
     @Published var selectedPhotos: [PhotosPickerItem] = [] {
-        didSet { Task { await loadPhotoPreviews() } }
+        didSet {
+            guard selectedPhotos.count <= Self.maxPhotoCount else {
+                selectedPhotos = Array(selectedPhotos.prefix(Self.maxPhotoCount))
+                return
+            }
+            let previous = photoPreparation
+            photoPreparation = Task { [weak self] in
+                previous?.cancel()
+                await previous?.value
+                await self?.loadPhotoPreviews()
+            }
+        }
     }
+    /// Set while picked photos are being read out of the library. Not instant: an iCloud-backed
+    /// photo under Optimize iPhone Storage is a real download, and nothing else on screen would
+    /// explain the wait.
+    ///
+    /// Settable rather than `private(set)` for the same reason `photoPreviews` is — a
+    /// `PhotosPickerItem` cannot be built outside PhotosUI's live picker, so a test cannot park
+    /// this view model mid-load through the real path the way `prepareVideo` allows for video.
+    @Published var isLoadingPhotos = false
     /// Settable rather than `private(set)`: tests inject preview images directly, the same
     /// way `ChallengeSubmissionViewModel.selectedImageData` bypasses `PhotosPickerItem`'s
     /// async load, which cannot be constructed from a unit test.
@@ -190,6 +220,7 @@ final class GiftAuthoringViewModel: ObservableObject {
     private var didCheckMediaExpiry = false
     /// The in-flight load-and-transcode for the most recent pick. See `selectedVideoItem`.
     private var videoPreparation: Task<Void, Never>?
+    private var photoPreparation: Task<Void, Never>?
 
     private let service: GameBackend
     private let mediaProbe: RewardMediaProbing
@@ -411,15 +442,19 @@ final class GiftAuthoringViewModel: ObservableObject {
 
     // MARK: Photo selection
 
-    /// Reloads `photoPreviews` from `selectedPhotos`. Caps at `maxPhotoCount` — the picker's
-    /// own `maxSelectionCount` already enforces this, but a re-pick could still hand back a
-    /// larger array, and uploading past the cap is what this guard closes.
+    /// Reloads `photoPreviews` from `selectedPhotos`, which the observer above has already
+    /// capped at `maxPhotoCount`.
+    ///
+    /// The cancellation check is on the SUCCESS path, not only in a `catch` — the same guard
+    /// `prepareVideo` needs, for the same reason. `loadTransferable` can return normally long
+    /// after the pick that superseded this one, and the guarantee is that a superseded load
+    /// never writes the selection.
     private func loadPhotoPreviews() async {
-        let capped = Array(selectedPhotos.prefix(Self.maxPhotoCount))
-        if capped.count != selectedPhotos.count { selectedPhotos = capped }
+        isLoadingPhotos = true
+        defer { isLoadingPhotos = false }
 
         var images: [UIImage] = []
-        for item in capped {
+        for item in selectedPhotos {
             do {
                 if let data = try await item.loadTransferable(type: Data.self),
                    let image = UIImage(data: data) {
@@ -429,6 +464,7 @@ final class GiftAuthoringViewModel: ObservableObject {
                 logger.error("Photo load error: \(error.localizedDescription)")
             }
         }
+        guard !Task.isCancelled else { return }
         photoPreviews = images
     }
 
@@ -452,19 +488,33 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// save taken mid-preparation would upload nothing, write only `title`/`teaser`, and report
     /// success while the contributor watches the progress row for the clip that was dropped.
     ///
-    /// Two guards, because the preparation has two phases and neither covers the other: the
-    /// transcode is observable (`isTranscoding` drives the disabled Save button and is what a
-    /// test can reach through `prepareVideo`), but the PhotosUI copy that precedes it in
-    /// `loadVideoSelection` is not, and on a 4K clip it is seconds of its own. Awaiting the task
-    /// covers that phase; `isSaving` is set *before* the await so the button shows the wait and a
-    /// second tap cannot re-enter.
+    /// Two guards per media kind, because the preparation has two phases and neither covers the
+    /// other: the work itself is observable (`isTranscoding` / `isLoadingPhotos` drive the
+    /// disabled Save button and are what a test can reach), but the window between the pick and
+    /// the task actually starting is not, and neither is the PhotosUI copy that precedes the
+    /// transcode in `loadVideoSelection` — seconds of its own on a 4K clip. Awaiting the task
+    /// handle covers both, because the handle is assigned synchronously in the observer.
+    ///
+    /// `isSaving` is set *before* the await, so the button shows the wait and a second tap
+    /// cannot re-enter.
+    ///
+    /// Photos need this every bit as much as video did, and were the more dangerous case: on an
+    /// EXISTING gift `isValid` is satisfied by the old `contentUrls` alone, so a save taken while
+    /// the new photos were still loading uploaded nothing, wrote `title`/`teaser`, and reported
+    /// success — with no progress row on screen to suggest anything was pending.
+    ///
+    /// The size guards are here rather than only on the picker for the same reason: an oversized
+    /// clip is refused into `selectedVideoURL`, so a save would otherwise write the text fields,
+    /// send no media, and confirm "Saved" directly beneath "That video is still over 200 MB".
     func save() async {
-        guard !isSaving, !isTranscoding, canAttachMedia, let userId else { return }
+        guard !isSaving, !isTranscoding, !isLoadingPhotos, !videoTooLarge, !audioTooLarge,
+              canAttachMedia, let userId else { return }
 
         isSaving = true
         defer { isSaving = false }
 
         await videoPreparation?.value
+        await photoPreparation?.value
 
         guard isValid else {
             showValidation = true

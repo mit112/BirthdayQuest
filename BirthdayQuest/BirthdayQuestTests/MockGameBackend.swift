@@ -604,6 +604,7 @@ extension Reward {
         pointCost: Int = 100,
         contentType: RewardContentType = .video,
         contentUrl: String? = nil,
+        contentUrls: [String]? = nil,
         isUnlocked: Bool = false,
         sortOrder: Int = 1
     ) -> Reward {
@@ -615,7 +616,7 @@ extension Reward {
             pointCost: pointCost,
             contentType: contentType,
             contentUrl: contentUrl,
-            contentUrls: nil,
+            contentUrls: contentUrls,
             contentText: nil,
             isUnlocked: isUnlocked,
             unlockedAt: nil,
