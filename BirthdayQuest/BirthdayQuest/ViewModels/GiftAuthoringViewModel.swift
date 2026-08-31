@@ -804,7 +804,20 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// Accepts a picked video only if it is under the Storage cap, so an oversized clip is rejected
     /// before a doomed upload. Split out from the PhotosUI load so it is unit-testable — a
     /// `PhotosPickerItem` cannot be constructed in a test.
+    ///
+    /// Nothing arriving during a save may unlink the current selection. Video, voice and re-send
+    /// upload with `putFileAsync`, so the selected file is streamed off disk for the whole
+    /// transfer — removing it mid-flight fails the upload. The newly arrived file is discarded
+    /// instead, which is the safe direction: the contributor can always pick again, and the gift
+    /// they already committed to keeps going.
+    ///
+    /// The view's `.disabled(isSaving)` freeze is a courtesy, not this guarantee — it blocks a
+    /// *tap*, and an arrival can outlive the tap that started it (see `acceptAudio`).
     func acceptVideo(url: URL, sizeBytes: Int) {
+        guard !isSaving else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         guard sizeBytes < Self.maxVideoBytes else {
             videoTooLarge = true
             if let previous = selectedVideoURL {
@@ -881,7 +894,21 @@ final class GiftAuthoringViewModel: ObservableObject {
     /// Accepts a picked/recorded audio clip only if it is under the Storage cap. Mirrors
     /// `acceptVideo`: an oversized import is rejected before a doomed upload, and a replacement
     /// deletes the prior temp file. The recorder and the file importer both funnel through here.
+    ///
+    /// The same no-unlink-during-a-save guard as `acceptVideo`, and this is the path that makes
+    /// it more than theoretical. `AudioRecorderController`'s 5-minute auto-stop is a `Timer`, not
+    /// a tap: it calls `stop()` → `onFinish` → here on its own, and disabling the section it
+    /// lives in does not cancel a recording already running. A recording *can* still be running
+    /// during a save, because `start()` sets `isRecording` only inside the async permission
+    /// callback — so between the Record tap and that callback landing, `recorder.isRecording` is
+    /// false and the Save button is live. The contributor taps Record, taps Save, recording then
+    /// begins under the freeze, and five minutes later the timer would unlink the very file
+    /// `putFileAsync` is still streaming.
     func acceptAudio(url: URL, sizeBytes: Int) {
+        guard !isSaving else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         guard sizeBytes < Self.maxAudioBytes else {
             audioTooLarge = true
             if let previous = selectedAudioURL {

@@ -142,8 +142,13 @@ struct GiftAuthoringView: View {
                 // mid-transcode, mid-photo-load, or mid-recording, the thing the contributor
                 // just chose is not in the selection yet, and a row directly above says so.
                 // `save()` refuses each of these too — this is what keeps the tap from looking
-                // available. `recorder.isRecording` has no view-model mirror because the
-                // recorder is owned here, so that clause can only live on this modifier.
+                // available — *except* `recorder.isRecording`, which has no view-model mirror
+                // because the recorder is owned here, so that clause can only live on this
+                // modifier. It is therefore not a guarantee: `start()` sets `isRecording` inside
+                // the async permission callback, so this button is briefly live after the Record
+                // tap, and a recording that begins under the freeze keeps its auto-stop `Timer`.
+                // What actually protects the file being streamed is the `!isSaving` guard in
+                // `acceptAudio`/`acceptVideo`.
                 .disabled(
                     !viewModel.canAttachMedia
                         || viewModel.isTranscoding
