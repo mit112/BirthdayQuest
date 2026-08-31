@@ -641,7 +641,22 @@ was **auditing the guide's own claims against the code**, not reading the diff.
   Mutation-proven: dropping the three new guard clauses reddens **exactly** the two new tests
   while the pre-existing video test stays green.
 - **`8ed851c` — the two authoring empty states reflow instead of truncating**, and the last
-  `.segmented` picker in the app follows the gift-type picker to `.menu`.
+  `.segmented` picker in the app follows the gift-type picker to `.menu`. **Rendered, not
+  assumed** — AX5 on iPhone 17e, both screens, top and bottom: `ChallengeAuthoringView`'s
+  "Create your first challenge" wraps to three lines inside its button and "Add starter
+  challenges" to two, `GiftCurationView`'s paragraph wraps to its last word, and both scroll
+  rather than compress. This claim was written before it was true and then earned; that is the
+  same mistake the note it corrected had made, and it is easy to make twice in one session.
+  - **Two `body`s are now near the SwiftUI type-checker's budget.** SourceKit reports "unable to
+    type-check this expression in reasonable time" for `ChallengeAuthoringView`'s and
+    `GiftCurationView`'s bodies. That one is real compiler behaviour, not the `Cannot find
+    'BQDesign' in scope` noise SourceKit emits without whole-module context — adding a nesting
+    layer is exactly what pushes a body over. `xcodebuild` compiles both fine today; the next
+    modifier added there may not, and the remedy is to extract a subview, not to fight it.
+  - How the two were rendered, since neither is reachable without taps: force the view's
+    `contentState` switch onto `.empty`, point `ContentView`'s `.empty` case at the view inside a
+    `NavigationStack` with a throwaway `EventSession(eventId:)`, and add `.defaultScrollAnchor(.bottom)`
+    to reach the far end. Revert all three files afterwards with `git checkout --`.
 - **`2642673` — 14 gradient stops stop fading to `.clear`.** `.clear` is transparent *black*; the
   guide already forbade it and the fix had only ever been applied in `TimelineBackgroundView`.
 - **`670d63a` — the launch screen's error-glyph contrast figure was wrong** (3.83:1 is the ratio
