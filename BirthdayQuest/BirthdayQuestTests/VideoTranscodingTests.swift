@@ -324,3 +324,62 @@ struct StreamingUploadTests {
         #expect(mock.uploadedRewardMediaFileURLs == [url])
     }
 }
+
+@MainActor
+@Suite("A save taken while a pick is still being prepared")
+struct SaveDuringVideoPreparationTests {
+
+    /// An editable video gift already on the server, the case where this bites hardest: `isValid`
+    /// is satisfied by the *existing* `contentUrl`, so nothing else stops a mid-preparation save
+    /// from writing `title`/`teaser` alone and reporting success.
+    private func loadedVideoGift(
+        _ mock: MockGameBackend, _ transcoder: StubVideoTranscoder
+    ) async -> GiftAuthoringViewModel {
+        mock.rewards = [
+            .fixture(id: "r_mine", contentType: .video,
+                     contentUrl: "events/evt_1/rewards/r_mine/old.mov")
+        ]
+        let vm = GiftAuthoringViewModel(eventId: "evt_1", service: mock, transcoder: transcoder)
+        vm.loadExisting(userId: "u1", name: "Jordan")
+        for _ in 0..<8 { await Task.yield() }
+        return vm
+    }
+
+    /// Both halves matter, and a test asserting only the first would pass just as happily against
+    /// a `save()` that never saves anything at all.
+    @Test("is refused mid-transcode, and writes the new clip once it lands")
+    func saveMidTranscodeDropsNothing() async {
+        let mock = MockGameBackend()
+        let transcoder = StubVideoTranscoder()
+        transcoder.outputBytes = 8 * 1024 * 1024
+        transcoder.holdUntilReleased = true
+        let vm = await loadedVideoGift(mock, transcoder)
+
+        let source = TranscodeTestFiles.file(bytes: 600 * 1024 * 1024)
+        let preparation = Task { await vm.prepareVideo(source: source) }
+        var spins = 0
+        while !vm.isTranscoding && spins < 10_000 {
+            await Task.yield()
+            spins += 1
+        }
+        #expect(vm.isTranscoding, "the stub should be parked mid-export")
+
+        // Half 1: the save a contributor takes while the progress row is on screen.
+        await vm.save()
+
+        #expect(mock.updatedRewards.isEmpty, "a mid-transcode save must not write the old clip")
+        #expect(mock.uploadedRewardMediaFileURLs.isEmpty, "and must not upload a stale selection")
+
+        // Half 2: the same save, once the clip the contributor picked actually exists.
+        transcoder.release()
+        await preparation.value
+        #expect(!vm.isTranscoding)
+
+        await vm.save()
+
+        #expect(mock.uploadedRewardMediaFileURLs.count == 1, "the new clip is what gets uploaded")
+        #expect(mock.updatedRewards.count == 1)
+        #expect(mock.updatedRewards.last?.fields["contentUrl"] != nil,
+                "and its path is written to the gift")
+    }
+}

@@ -446,16 +446,31 @@ final class GiftAuthoringViewModel: ObservableObject {
 
     // MARK: Save
 
+    /// A pick that has not finished being prepared must never be saved *past*. Until the
+    /// preparation lands, `selectedVideoURL` still holds the previous clip or nothing at all,
+    /// while `isValid` for an existing gift is satisfied by the old `contentUrl` alone — so a
+    /// save taken mid-preparation would upload nothing, write only `title`/`teaser`, and report
+    /// success while the contributor watches the progress row for the clip that was dropped.
+    ///
+    /// Two guards, because the preparation has two phases and neither covers the other: the
+    /// transcode is observable (`isTranscoding` drives the disabled Save button and is what a
+    /// test can reach through `prepareVideo`), but the PhotosUI copy that precedes it in
+    /// `loadVideoSelection` is not, and on a 4K clip it is seconds of its own. Awaiting the task
+    /// covers that phase; `isSaving` is set *before* the await so the button shows the wait and a
+    /// second tap cannot re-enter.
     func save() async {
-        guard !isSaving, canAttachMedia, let userId else { return }
+        guard !isSaving, !isTranscoding, canAttachMedia, let userId else { return }
+
+        isSaving = true
+        defer { isSaving = false }
+
+        await videoPreparation?.value
+
         guard isValid else {
             showValidation = true
             BQDesign.Haptics.error()
             return
         }
-
-        isSaving = true
-        defer { isSaving = false }
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTeaser = teaser.trimmingCharacters(in: .whitespacesAndNewlines)

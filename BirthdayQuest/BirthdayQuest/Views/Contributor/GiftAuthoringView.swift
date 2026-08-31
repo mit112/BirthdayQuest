@@ -103,16 +103,24 @@ struct GiftAuthoringView: View {
                 }
             }
 
-            switch viewModel.contentMode {
-            case .letter:
-                letterSection
-            case .photos:
-                photosSection
-            case .video:
-                videoSection
-            case .voice:
-                voiceSection
+            // Frozen while the upload runs. Picking a replacement mid-save deletes the file the
+            // previous selection pointed at (`acceptVideo`/`acceptAudio` both unlink the one they
+            // supersede), and since this lane moved video, voice and re-send to `putFileAsync`
+            // that file has to stay on disk for the whole transfer, not just long enough to be
+            // read into memory.
+            Group {
+                switch viewModel.contentMode {
+                case .letter:
+                    letterSection
+                case .photos:
+                    photosSection
+                case .video:
+                    videoSection
+                case .voice:
+                    voiceSection
+                }
             }
+            .disabled(viewModel.isSaving)
 
             Section {
                 Button {
@@ -130,7 +138,10 @@ struct GiftAuthoringView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BQDesign.Colors.primaryPurple)
-                .disabled(!viewModel.canAttachMedia)
+                // Also disabled mid-transcode: the clip the contributor just picked is not in
+                // `selectedVideoURL` yet, and the progress row directly above says so. `save()`
+                // refuses this case too — this is what keeps the tap from looking available.
+                .disabled(!viewModel.canAttachMedia || viewModel.isTranscoding)
             } footer: {
                 Text(saveFooter)
                     .font(BQDesign.Typography.captionSmall)
@@ -307,9 +318,11 @@ struct GiftAuthoringView: View {
             }
 
             if viewModel.videoTooLarge {
-                // Reaching this now means the clip was already shrunk and still does not fit,
-                // so "pick a shorter one" is the only remaining advice that is actually true.
-                fieldError("Even shrunk, that video is over 200 MB. Please pick a shorter one.")
+                // "still", not "even shrunk": this is also the landing place when the export
+                // *failed* and `prepareVideo` fell back to the untouched original, and claiming
+                // a shrink that did not happen would be a plain untruth about what just ran.
+                // Either way the clip did not fit, so the advice is the same.
+                fieldError("That video is still over 200 MB. Please pick a shorter one.")
             }
 
             if viewModel.showValidation
