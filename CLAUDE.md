@@ -133,16 +133,38 @@ Three invariants now hold there, and all are easy to break by accident:
   ten stops, nothing keeping them in sync; only the first was ever recorded. It lives in
   `DesignSystem.swift` and not on `ChallengeCategory` because the model layer imports no SwiftUI
   (`difficulty.color` returns a hex *string* for exactly that reason). It is still deliberately
-  MIXED — three cases fixed hexes, two adaptive brand tokens — and **the mixing, not the fixed
-  hexes on their own, is the open defect**: inside one array the brand stop shifts between light
-  and dark while the hex beside it does not, so the gradient's two ends drift apart in dark mode.
-  Which way to resolve it is unsettled on purpose. A saturated brand gradient carrying white
-  glyphs is legitimately scheme-invariant under this file's own doctrine, so making all ten stops
-  fixed is as defensible as making all ten adaptive — and either way it needs checking by eye in
-  both appearances.
+  MIXED — three cases fixed hexes, two adaptive brand tokens — so inside one array the brand stop
+  shifts between light and dark while the hex beside it does not.
+  **Rendered side by side in both appearances 2026-08-31: the drift is real but cosmetic.** Only
+  `creative`, `sentimental` and `adventure` move at all, and only by a slight paling you have to
+  look for. Still unsettled, still a design call, but now a *small* one — and the framing it used
+  to carry, that the mixing was "the open defect" on this surface, was wrong. The open defect was
+  the **glyph**, and it is now closed:
+  **`badgeGlyph` is the ink for anything drawn inside a challenge badge**, and it is
+  scheme-INVARIANT on purpose. It replaced `Color.white`, which measured 1.73:1 – 2.78:1 against
+  the ten `categoryTint` stops and 1.81:1 / 2.35:1 against `completedBadgeTint` — under the 3:1
+  WCAG 1.4.11 floor on all twelve, in both appearances. The floor applies because
+  `ChallengeCardView` names the category nowhere in words, so the glyph and its disc are the only
+  thing distinguishing one category from another. The invariance is the load-bearing part: the
+  disc is itself scheme-invariant, so an adaptive ink would invert to near-white in dark and
+  reinstate the exact failure — **`textPrimary` is the wrong token here** despite being the right
+  colour in light. `PaletteContrastTests` pins it, generating the cases from `categoryTint` so a
+  new stop or a sixth `ChallengeCategory` is covered the day it lands; mutation-proven.
+  `invariant(_:)` sits beside `adaptive(light:dark:)` for exactly this, and using it is how you
+  say "the sameness is a decision" rather than leaving a bare hex that reads as an oversight.
+  **Not fixed, and now measured rather than assumed: white *text* on `primaryGradient` is
+  4.38:1 / 2.68:1 in light and 2.50:1 / 2.21:1 in dark, against an AA floor of 4.5:1.** That
+  gradient carries the primary CTAs app-wide — the reward card's "View" pill, "Check out your
+  timeline", the unlock capsules. This file's line that white text on a saturated brand gradient
+  is scheme-invariant is true and was never the whole story: it is scheme-invariantly *below AA*.
+  Recorded on Mit's explicit call (2026-08-31) rather than fixed, because deepening
+  `primaryPurple`/`primaryPink` changes the app's signature colours on every surface and wants a
+  deliberate pass, not a session-end patch.
   **The list below is NOT exhaustive, and used to claim to be.** An audit of this guide's stated
   invariants against the code found four more non-adaptive sites that no list here mentioned:
-  `ChallengeCardView.swift:109` (locked-badge gradient `C5C0B8`/`B0A89E`), `TimelineNodeView.swift`
+  `ChallengeCardView.swift:109` (locked-badge gradient `C5C0B8`/`B0A89E` — since 2026-08-31 this
+  one is `BQDesign.Colors.completedBadgeTint`, same values, still scheme-invariant, but now named
+  and covered by `PaletteContrastTests` via the glyph that sits on it), `TimelineNodeView.swift`
   (`circleFill`'s reward gradient plus all six `challengeColors` palettes, entirely fixed hex),
   `FinalBadgeView.swift` (locked purple veil `3D2C5E` and the unlocked gold `badgeFill`), and
   `TimelineBackgroundView.swift`'s `BokehDot` (three adaptive tokens mixed with five fixed hexes in
@@ -280,11 +302,15 @@ Two tiers, and both must stay green:
     (`GeometryReader` + `ScrollView` + `minHeight: proxy.size.height`), so the `Spacer()`s still
     centre the layout while it fits.
     **What was rendered, precisely:** the sheet's `.unavailable` branch, and the carousel's
-    `.ready` branch with three gift cards *and* the timeline prompt. **Not** rendered: the
-    carousel's expiry-reminder banner (the tallest optional element, and it sits above the points
-    header). That is a deliberate gap, not an oversight — the banner is additive to a layout that
-    already scrolls, so it cannot reintroduce the compression the scroll container removed — but it
-    is unrendered, and this file does not get to call unrendered layout verified.
+    `.ready` branch with three gift cards *and* the timeline prompt.
+    ~~**Not** rendered: the carousel's expiry-reminder banner.~~ **Rendered 2026-08-31 and clean.**
+    At AX5 on iPhone 17e the banner alone is taller than the screen; it wraps to its last word,
+    its 44pt dismiss button stays reachable at the top right, and the points header, "Your Gifts",
+    the cards and the footer all follow below it in the scroll. Also checked in the same pass, and
+    it is a **non-finding worth keeping so it is not re-predicted**: the progress footer
+    ("1 of 3 gifts unlocked") sits edge-to-edge at AX5 with no horizontal padding and looks like it
+    must clip, but forced to a two-digit count it **wraps to two lines** rather than truncating.
+    No fix was made and none is needed.
   - **Extract the content property BEFORE adding the scroll container.** Two nesting levels is
     what pushes a SwiftUI body over the type-checker's budget; both of these bodies were near it
     already (`RewardsCarouselView.body` carries six presentation modifiers). Extracting first is
@@ -626,6 +652,73 @@ assumption they needed the media pipeline. They did not:
   `RewardContentPresentation` enum with tests.
 - `README.md`, plus `SECURITY.md`, `CONTRIBUTING.md` and the bug-report template.
 
+## Direction (2026-08-31, after the evening entry — NEWEST; read this one first)
+
+The Direction sections below are not in a reliable order — several are records of a moment rather
+than of a date, and two of them contradict each other about where `origin/main` is. This one is
+the newest. Three commits on top of `5527c02`, all a11y, all rendered before and after:
+`a46b6b0` `ca5927c` `c17daef`. **Not pushed** — `git rev-list --count origin/main..main` for the
+real number; pushing was not asked for and is one attended command.
+
+- **`a46b6b0` — a gift card grows with Dynamic Type instead of breaking "View" mid-word.** The
+  parked note called the remedy "carousel paging geometry", which was right but vaguer than the
+  cause: the width was **two literals** that agreed only by luck, `RewardsCarouselView.cardWidth`
+  feeding `horizontalInset` and `RewardCardView.frame(width: 260)` standing alone. The carousel
+  now owns one derivation and passes it in. Bounded twice — by the container less one `lg` inset a
+  side (342pt at 390pt, and this is the bound that binds on a phone in portrait) and by 1.5× base,
+  because 260 at the AX5 body factor is over 800pt and iPhone landscape is wide enough to hand it
+  that. **The 1.5× cap is unrendered** — in portrait the container clamp always wins, so it fires
+  only in landscape, and this file does not get to call it verified any more than the hero below. The container width also moved from a `@State` captured in `.onAppear` (starting at 0,
+  falling back to 390) to the `GeometryReader` already in `body`: tolerable when it only nudged an
+  inset, not when it sizes the card on frame one.
+- **`ca5927c` — a report names the content it flags in full.** The last untouched item of the
+  original six. Rendered first, and worse than recorded: at AX5 the host read "Happy birthd…" and
+  "8F3C21A0-4…". The second is the sharper half — `reportedContentTitle` falls back to the raw
+  `contentId`, so one line of a UUID identifies nothing, on a card that is documented read-only
+  and therefore has nothing behind the row to recover it from.
+- **`c17daef` — the challenge badge gets a glyph you can see.** This started as item #3, the
+  category-tint adaptivity call, and the adaptivity turned out to be the *small* question. See the
+  Design System section for the mechanism, the measurements and the `primaryGradient` finding.
+
+**Two lessons this session, both about what "the open defect" means.**
+
+- **The parked framing of item #3 was wrong in the same way the parked *mechanisms* were wrong
+  last session.** It said the fixed-vs-adaptive *mixing* was the defect. Rendered side by side,
+  the mixing is a slight paling on three of five categories that you have to hunt for. The actual
+  defect on that surface was a white glyph at **1.73:1** that no one had measured, on a badge
+  whose colour and icon are the only carrier of category anywhere on the card. **A parked item's
+  stated defect is a third claim to re-derive**, alongside its mechanism and its blocker.
+- **Measuring one thing you were already touching found a bigger thing.** Computing white-on-tint
+  took one script; running the same arithmetic on `primaryGradient` took one more line and turned
+  up 2.21:1 white text on the app's primary CTAs — a pattern this guide describes as settled. It
+  is settled as *scheme-invariant*, which was the only property anyone had checked.
+
+**Method note, since it worked three times today.** Every one of these was reproduced in a render
+before being touched, and the "needs real data" blocker was a throwaway patch each time: force the
+view model's state property to the branch you want, give its `@Published` collection fixtures,
+point `ContentView`'s body at the view, `git checkout --` after. Two extra tricks earned today:
+the reports card needed `get: { false }` on the result-alert binding (the listener fails against a
+fake event id and the alert covers the screen) and `inviteCard` swapped for `EmptyView()` to bring
+the card in question to the top; and a whole screen of `ChallengeCardView`s can be rendered with
+no view model at all, because it takes only a `Challenge`.
+
+**Gates, real exit codes, on `c17daef`:** Swift **361 passed / 0 failed / 4 skipped**, exit 0
+(counted from the `.xcresult`, not the streamed log — 359 before, +2 for the new parameterized
+contrast tests). SwiftLint `--strict` **0 violations, 79 files**, exit 0. Rules suite **correctly
+not re-run** — `git diff 4d7b36b..HEAD -- firestore.rules storage.rules` is empty. One mutation,
+discriminating: putting `badgeGlyph` back to white reddens **exactly** the two new tests and
+nothing else. **`a46b6b0` and `ca5927c` are view-only and no suite covers either** — the renders
+are the whole of the evidence, and no test was added or regressed for them. `ChallengeDetailView`'s
+100pt hero takes the same `badgeGlyph` on the same gradient and was **not** separately rendered;
+the pairing is identical to the card badge's and the test covers it, but the pixels are unseen.
+
+**Still open after this session:** the category-tint adaptivity call (now measured as cosmetic);
+`primaryGradient` under white text (recorded on Mit's call, not fixed); and three of the four
+originally-unrecorded non-adaptive colour sites — `TimelineNodeView`, `FinalBadgeView`,
+`TimelineBackgroundView`'s `BokehDot` — still unrendered, so still unverified in either direction.
+Human-gated list unchanged: Apple Developer account, real `DEVELOPMENT_TEAM` and bundle id, the two
+`REPLACE_WITH_*` placeholders in `LegalCopy.swift`, the Apple auth provider, the store listing.
+
 ## Direction (as of 2026-08-30)
 
 Two security-rules gaps closed, merged to `main` (linear, `2a63353`, **pushed** — `origin/main` in
@@ -841,12 +934,14 @@ six were closed on 2026-08-31 (later); see the Direction entry for that date. St
 - ~~`AudioRecorderController`'s 5-minute auto-stop `Timer` can unlink the file `putFileAsync` is
   streaming.~~ **CLOSED** (`f6d94fa`), guarded where the unlink is rather than where the tap is.
   The reachability story was also incomplete — see the Known Gap entry.
-- **STILL OPEN:** `AdminControlsView`'s reports row is `.lineLimit(1)` with no way to see the full
-  title, unlike the sibling row that documents why its own truncation is recoverable.
-- **NEW, still open:** the reward card's "View" button breaks *mid-word* — "Vie / w" — at AX5 on a
-  390pt device. Seen while rendering `c251771`, so this one is observed, not predicted. It is in
-  `RewardCardView` and the remedy is card width, which is carousel paging geometry
-  (`horizontalInset` / `scrollViewWidth`), so it was not changed blind.
+- ~~**STILL OPEN:** `AdminControlsView`'s reports row is `.lineLimit(1)`.~~ **CLOSED** (`ca5927c`).
+  Rendered first: at AX5 the host read "Happy birthd…" and "8F3C21A0-4…". The fallback is the
+  worse half — `reportedContentTitle` returns the raw `contentId` when the reported document is no
+  longer loaded, and one line of a UUID identifies nothing.
+- ~~**NEW, still open:** the reward card's "View" button breaks *mid-word* — "Vie / w".~~
+  **CLOSED** (`a46b6b0`). The remedy was card width, as predicted, but the cause was narrower than
+  "carousel paging geometry": the width was **two literals**, `RewardsCarouselView.cardWidth`
+  feeding the inset and `RewardCardView.frame(width: 260)` standing alone, agreeing only by luck.
 
 **Still human-gated, unchanged:** Apple Developer account + real `DEVELOPMENT_TEAM` and bundle id
 (still `com.example.birthdayquest`, `DEVELOPMENT_TEAM` empty in all seven pbxproj blocks), the two
