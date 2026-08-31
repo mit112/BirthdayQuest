@@ -212,7 +212,7 @@ private extension ChallengeCardView {
                 LinearGradient(
                     colors: [
                         categoryColors[0].opacity(0.03),
-                        Color.clear
+                        categoryColors[0].opacity(0)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing

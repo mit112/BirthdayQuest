@@ -130,8 +130,8 @@ private extension ProfileView {
                     .fill(
                         RadialGradient(
                             colors: isCelebrant
-                                ? [BQDesign.Colors.gold.opacity(avatarGlow ? 0.25 : 0.08), Color.clear]
-                                : [BQDesign.Colors.primaryPurple.opacity(avatarGlow ? 0.2 : 0.06), Color.clear],
+                                ? [BQDesign.Colors.gold.opacity(avatarGlow ? 0.25 : 0.08), BQDesign.Colors.gold.opacity(0)]
+                                : [BQDesign.Colors.primaryPurple.opacity(avatarGlow ? 0.2 : 0.06), BQDesign.Colors.primaryPurple.opacity(0)],
                             center: .center,
                             startRadius: 50,
                             endRadius: 100

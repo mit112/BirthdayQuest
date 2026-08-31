@@ -13,9 +13,9 @@ struct ShimmerModifier: ViewModifier {
                     let width = geo.size.width
                     LinearGradient(
                         stops: [
-                            .init(color: .clear, location: max(0, phase - 0.3)),
+                            .init(color: Color.white.opacity(0), location: max(0, phase - 0.3)),
                             .init(color: Color.white.opacity(0.35), location: phase),
-                            .init(color: .clear, location: min(1, phase + 0.3)),
+                            .init(color: Color.white.opacity(0), location: min(1, phase + 0.3)),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing

@@ -58,7 +58,7 @@ struct SecretEntryCardView: View {
                         RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [.clear, .white.opacity(0.06), .clear],
+                                    colors: [.white.opacity(0), .white.opacity(0.06), .white.opacity(0)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )

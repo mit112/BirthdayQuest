@@ -37,7 +37,7 @@ struct StatCard: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [color.opacity(0.04), Color.clear],
+                            colors: [color.opacity(0.04), color.opacity(0)],
                             startPoint: .top,
                             endPoint: .bottom
                         )

@@ -102,8 +102,8 @@ private extension FinalBadgeView {
                 .fill(
                     RadialGradient(
                         colors: isUnlocked
-                            ? [BQDesign.Colors.gold.opacity(0.25), Color.clear]
-                            : [BQDesign.Colors.primaryPurple.opacity(glowIntensity * 0.4), Color.clear],
+                            ? [BQDesign.Colors.gold.opacity(0.25), BQDesign.Colors.gold.opacity(0)]
+                            : [BQDesign.Colors.primaryPurple.opacity(glowIntensity * 0.4), BQDesign.Colors.primaryPurple.opacity(0)],
                         center: .center,
                         startRadius: 10,
                         endRadius: 100
@@ -117,8 +117,8 @@ private extension FinalBadgeView {
                 .fill(
                     RadialGradient(
                         colors: isUnlocked
-                            ? [BQDesign.Colors.gold.opacity(0.35), Color.clear]
-                            : [BQDesign.Colors.primaryPurple.opacity(glowIntensity * 0.6), Color.clear],
+                            ? [BQDesign.Colors.gold.opacity(0.35), BQDesign.Colors.gold.opacity(0)]
+                            : [BQDesign.Colors.primaryPurple.opacity(glowIntensity * 0.6), BQDesign.Colors.primaryPurple.opacity(0)],
                         center: .center,
                         startRadius: 5,
                         endRadius: 60
@@ -229,9 +229,9 @@ private extension FinalBadgeView {
             .fill(
                 LinearGradient(
                     colors: [
-                        .clear,
+                        Color.white.opacity(0),
                         Color.white.opacity(isUnlocked ? 0.4 : 0.15 + progressFraction * 0.1),
-                        .clear
+                        Color.white.opacity(0)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
