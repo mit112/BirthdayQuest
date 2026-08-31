@@ -244,6 +244,10 @@ Two tiers, and both must stay green:
     truncated in two places: the invitation read "or join w…" and the primary button "Create an
     occ…". A Pro Max is wide enough to hide exactly the defect this check exists to find. Fixed —
     see the reflow entry below.
+  - **The `failure(_:)` branch of that same view is still visually UNVERIFIED.** It got the same
+    `.fixedSize` treatment and sits inside the same new ScrollView, so it is very likely fine — but
+    rendering it needs `session.errorMessage` non-nil, which did not happen in this pass. Do not
+    read the empty-state screenshots as covering it.
   - `AccountView` and `TermsView` **verified clean** at `accessibility-extra-extra-extra-large` on
     iPhone 17e, top and scrolled: every label wraps, the `Label` + chevron row and the destructive
     button both grow to two lines, nothing clips or overlaps.
