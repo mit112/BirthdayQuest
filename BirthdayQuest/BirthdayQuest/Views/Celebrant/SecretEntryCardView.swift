@@ -51,7 +51,7 @@ struct SecretEntryCardView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: BQDesign.Radius.lg, style: .continuous)
-                        .fill(Color(hex: "1C1B2E"))
+                        .fill(BQDesign.Colors.secretDark)
                     
                     // Shimmer sweep
                     if hasSecrets {
