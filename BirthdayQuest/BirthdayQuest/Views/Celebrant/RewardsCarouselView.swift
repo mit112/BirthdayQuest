@@ -5,7 +5,7 @@ struct RewardsCarouselView: View {
     @EnvironmentObject private var event: EventSession
     @StateObject private var viewModel: RewardsViewModel
     @State private var scrolledID: Int?
-    @State private var scrollViewWidth: CGFloat = 0
+    @ScaledMetric private var scaledCardWidth: CGFloat = 260
     @ScaledMetric private var giftEmojiSize: CGFloat = 60
     @ScaledMetric private var timelineArrowIconSize: CGFloat = 14
 
@@ -14,11 +14,25 @@ struct RewardsCarouselView: View {
     }
 
     private let loopMultiplier = 5
-    private let cardWidth: CGFloat = 260
+    private let baseCardWidth: CGFloat = 260
 
-    private var horizontalInset: CGFloat {
-        let width = scrollViewWidth > 0 ? scrollViewWidth : 390
-        return (width - cardWidth) / 2
+    /// A gift card's width, and with it the paging inset — one derivation, because
+    /// `.viewAligned` only snaps cards to the centre while the two agree.
+    ///
+    /// It has to grow with Dynamic Type. At 260pt the unlocked card's "View" pill had ~164pt of
+    /// room for a label that needs more than that at AX5, and "View" is a single word with no
+    /// break opportunity, so it broke *mid-word* — "Vie / w".
+    ///
+    /// Two bounds, and the container one is what binds on a phone in portrait: 260pt scaled by
+    /// the AX5 body factor is over 800pt, which is a page rather than a card, and an iPhone in
+    /// landscape is wide enough to hand it that. 1.5x base is a judgement, not a measurement —
+    /// it is a ceiling on absurdity, not the value any rendered layout depends on.
+    private func cardWidth(in containerWidth: CGFloat) -> CGFloat {
+        min(scaledCardWidth, baseCardWidth * 1.5, containerWidth - 2 * BQDesign.Spacing.lg)
+    }
+
+    private func horizontalInset(in containerWidth: CGFloat) -> CGFloat {
+        (containerWidth - cardWidth(in: containerWidth)) / 2
     }
     
     private var loopedRewards: [Reward] {
@@ -32,7 +46,7 @@ struct RewardsCarouselView: View {
     /// to an already heavily-modified `body` (this one carries six presentation modifiers) and
     /// push it over the SwiftUI type-checker's budget.
     @ViewBuilder
-    private var contentBody: some View {
+    private func contentBody(width: CGFloat) -> some View {
         switch viewModel.contentState {
         case .loading:
             RewardsSkeletonView()
@@ -41,7 +55,7 @@ struct RewardsCarouselView: View {
         case .empty:
             emptyState
         case .ready:
-            mainContent
+            mainContent(width: width)
         }
     }
 
@@ -57,7 +71,7 @@ struct RewardsCarouselView: View {
             // only scrolls once it doesn't.
             GeometryReader { proxy in
                 ScrollView {
-                    contentBody
+                    contentBody(width: proxy.size.width)
                         .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -122,7 +136,7 @@ private extension RewardsCarouselView {
         .padding(BQDesign.Spacing.xl)
     }
     
-    var mainContent: some View {
+    func mainContent(width: CGFloat) -> some View {
         VStack(spacing: BQDesign.Spacing.lg) {
             if let info = viewModel.expiryReminder {
                 expiryReminderBanner(info)
@@ -144,7 +158,8 @@ private extension RewardsCarouselView {
                     ForEach(Array(loopedRewards.enumerated()), id: \.offset) { index, reward in
                         RewardCardView(
                             reward: reward,
-                            isAffordable: !reward.isUnlocked && event.currentPoints >= reward.pointCost
+                            isAffordable: !reward.isUnlocked && event.currentPoints >= reward.pointCost,
+                            width: cardWidth(in: width)
                         ) {
                             if reward.isUnlocked {
                                 viewModel.justUnlockedReward = reward
@@ -160,13 +175,10 @@ private extension RewardsCarouselView {
             }
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
-            .contentMargins(.horizontal, horizontalInset, for: .scrollContent)
+            .contentMargins(.horizontal, horizontalInset(in: width), for: .scrollContent)
             // minHeight, not a fixed height: the cards inside grow with Dynamic Type, and a
             // fixed viewport would clip them.
             .frame(minHeight: 400)
-            .background(GeometryReader { proxy in
-                Color.clear.onAppear { scrollViewWidth = proxy.size.width }
-            })
             .onAppear {
                 jumpToCenter()
             }

@@ -4,6 +4,10 @@ struct RewardCardView: View {
     
     let reward: Reward
     let isAffordable: Bool
+    /// Supplied by `RewardsCarouselView`, which also derives the carousel's paging inset from
+    /// it. The card must not re-declare a width of its own: the two numbers have to agree or
+    /// `.viewAligned` snaps the cards off centre.
+    let width: CGFloat
     let onTap: () -> Void
 
     @State private var glowOpacity: Double = 0.0
@@ -119,7 +123,7 @@ struct RewardCardView: View {
                 }
                 .padding(BQDesign.Spacing.lg)
             }
-            .frame(width: 260)
+            .frame(width: width)
             .frame(minHeight: 380)
             .bqShadow(BQDesign.Shadows.card)
         }
