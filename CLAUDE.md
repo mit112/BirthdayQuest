@@ -288,8 +288,14 @@ Two tiers, and both must stay green:
 - `fetchMyOccasions` fans out **concurrently** (`withTaskGroup`, `@MainActor` children so nothing
   crosses an isolation boundary). Its **skip-on-failure is load-bearing and has no test**: each
   child returns `Occasion?` and never throws, so a membership naming a deleted event is skipped
-  rather than failing the whole list. No test is possible while every Swift test substitutes
-  `MockGameBackend` for `FirestoreService`, so do not "tidy" that optional into a `throws`.
+  rather than failing the whole list. Do not "tidy" that optional into a `throws`.
+  **The old "no test is possible" line was imprecise** (checked 2026-08-31). The emulator harness
+  can now run the *real* `FirestoreService` against a Firestore emulator, so the mock is no longer
+  the obstacle. The actual obstacle is one line: `currentUid()` reads
+  `Auth.auth().currentUser?.uid` off the **default** `FirebaseApp`, while the harness injects a
+  `db` belonging to a *secondary* emulator-pointed app. Covering this therefore costs either the
+  Auth emulator plus CI wiring, or a second injectable seam on `FirestoreService.init`. Both are
+  real options; neither is free, and neither was taken.
 - The 3 `BirthdayQuestUITests` are Xcode template boilerplate (`testExample`, `testLaunch`,
   `testLaunchPerformance`) — **not** character-select tests, contrary to the earlier note here
   (verified 2026-08-25). They compile and are CI-skipped (`-skip-testing:BirthdayQuestUITests`). Real
