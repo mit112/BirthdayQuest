@@ -793,10 +793,16 @@ private extension AdminControlsView {
                         Text(viewModel.reportedContentKind(report))
                             .font(BQDesign.Typography.captionSmall)
                             .foregroundColor(BQDesign.Colors.textSecondary)
+                        // Wraps, unlike the force-complete row's deliberately single-line
+                        // title. That row's truncation is recoverable — the confirmation
+                        // dialog it opens names the challenge in full. This card is
+                        // read-only, so nothing sits behind the row to recover it from, and
+                        // identifying the flagged item is the entire job of the row. It also
+                        // falls back to the raw `contentId` when the reported document is no
+                        // longer loaded, and a truncated document id names nothing at all.
                         Text(viewModel.reportedContentTitle(report))
                             .font(BQDesign.Typography.caption)
                             .foregroundColor(BQDesign.Colors.textPrimary)
-                            .lineLimit(1)
                         if let reason = report.reason, !reason.isEmpty {
                             Text(reason)
                                 .font(BQDesign.Typography.captionSmall)
